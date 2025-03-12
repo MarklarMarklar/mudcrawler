@@ -305,7 +305,7 @@ class Room:
         # Check if position is within bounds
         if not (0 <= y < self.height and 0 <= x < self.width):
             return False
-            
+        
         # Check if there's a destroyable wall at this position
         if self.tiles[y][x] == 1 and self.destroyable_walls[y][x]:
             # Destroy the wall
@@ -326,10 +326,11 @@ class Room:
                 self.arrow_pickups.append(ArrowPickup(center_x, center_y))
                 print(f"Arrow pickup spawned at {center_x}, {center_y} from destroyed wall")
                 
-        return True
+            return True
         
+        # Wall was not destroyed
         return False
-            
+        
     def try_pickup_health(self, player_rect):
         """Check if player is touching a health pickup"""
         for pickup in self.health_pickups:

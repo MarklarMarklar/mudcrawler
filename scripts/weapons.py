@@ -14,7 +14,7 @@ class Arrow:
         self.damage = 2
         
         # Create a rectangle for collision detection - make arrow larger
-        self.size = TILE_SIZE * 0.75  # Increased from TILE_SIZE // 2
+        self.size = TILE_SIZE * 1.0  # Increased from TILE_SIZE * 0.75 for better visibility
         self.rect = pygame.Rect(x - self.size//2, y - self.size//2, self.size, self.size)
         
         self.asset_manager = get_asset_manager()
@@ -25,6 +25,7 @@ class Arrow:
             if os.path.exists(arrow_path):
                 self.arrow_texture = self.asset_manager.load_image(arrow_path, scale=(self.size, self.size))
                 print(f"DEBUG: Arrow created at ({x}, {y}) with direction {direction}")
+                print(f"DEBUG: Arrow rect: {self.rect}, size: {self.size}")
             else:
                 print(f"Arrow texture does not exist: {arrow_path}")
                 self.arrow_texture = None
@@ -43,6 +44,11 @@ class Arrow:
         
         # Reduce lifetime
         self.lifetime -= 1
+        
+        # Print debug info every 10 frames
+        if self.lifetime % 10 == 0:
+            print(f"DEBUG: Arrow at ({self.x}, {self.y}), lifetime: {self.lifetime}")
+            print(f"DEBUG: Arrow movement: speed = {self.speed}, direction = ({self.direction[0]}, {self.direction[1]})")
         
         # Return True if arrow should be removed
         return self.lifetime <= 0
@@ -72,32 +78,33 @@ class Arrow:
         """Enhanced fallback rendering for when texture isn't available"""
         # Draw a bigger, more visible arrow
         
-        # Draw a circle at the center
+        # Draw a circle at the center (larger for better visibility)
+        pygame.draw.circle(surface, (255, 0, 0), (int(self.x), int(self.y)), int(self.size//2))  # Red outer circle
         pygame.draw.circle(surface, YELLOW, (int(self.x), int(self.y)), int(self.size//3))
         pygame.draw.circle(surface, BROWN, (int(self.x), int(self.y)), int(self.size//4))
         
-        # Draw the arrow shaft
+        # Draw the arrow shaft - thicker
         shaft_length = self.size * 0.8
         end_x = int(self.x - self.direction[0] * shaft_length/2)
         end_y = int(self.y - self.direction[1] * shaft_length/2)
         pygame.draw.line(surface, BROWN, 
                         (int(self.x), int(self.y)), 
                         (end_x, end_y), 
-                        int(self.size//6))
+                        int(self.size//5))  # Thicker shaft
         
-        # Draw the arrow head
+        # Draw the arrow head - thicker
         head_length = self.size * 0.8
         tip_x = int(self.x + self.direction[0] * head_length/2)
         tip_y = int(self.y + self.direction[1] * head_length/2)
         pygame.draw.line(surface, YELLOW, 
                         (int(self.x), int(self.y)), 
                         (tip_x, tip_y), 
-                        int(self.size//4))
+                        int(self.size//3))  # Thicker head
                         
-        # Draw a glow effect
-        glow_surf = pygame.Surface((self.size*1.5, self.size*1.5), pygame.SRCALPHA)
-        pygame.draw.circle(glow_surf, (255, 255, 0, 50), (self.size*1.5//2, self.size*1.5//2), self.size*1.5//2)
-        surface.blit(glow_surf, (self.x - self.size*1.5//2, self.y - self.size*1.5//2))
+        # Draw a larger, more visible glow effect
+        glow_surf = pygame.Surface((self.size*2, self.size*2), pygame.SRCALPHA)
+        pygame.draw.circle(glow_surf, (255, 255, 0, 70), (self.size, self.size), self.size)
+        surface.blit(glow_surf, (self.x - self.size, self.y - self.size))
         
         print(f"DEBUG: Drew enhanced fallback arrow")
 
@@ -199,6 +206,7 @@ class Bow:
         try:
             arrow = Arrow(x, y, direction)
             self.arrows.append(arrow)
+            print(f"DEBUG: BOW - Arrow added to arrows list. Total arrows: {len(self.arrows)}")
         except Exception as e:
             print(f"Error creating arrow: {e}")
         
@@ -260,6 +268,9 @@ class WeaponManager:
         # Update bow and arrows
         self.bow.update()
         
+        # Track arrows before boundary check
+        arrow_count_before = len(self.bow.arrows)
+        
         # Remove arrows that go out of bounds
         arrows_to_remove = []
         for arrow in self.bow.arrows:
@@ -267,6 +278,7 @@ class WeaponManager:
                 if (arrow.rect.left < 0 or arrow.rect.right > WINDOW_WIDTH or
                     arrow.rect.top < 0 or arrow.rect.bottom > WINDOW_HEIGHT):
                     arrows_to_remove.append(arrow)
+                    print(f"DEBUG: Arrow out of bounds at ({arrow.x}, {arrow.y}), rect: {arrow.rect}")
             except Exception as e:
                 print(f"Error checking arrow bounds: {e}")
                 arrows_to_remove.append(arrow)
@@ -274,6 +286,10 @@ class WeaponManager:
         # Remove arrows safely
         for arrow in arrows_to_remove:
             self.bow.remove_arrow(arrow)
+        
+        # Track arrows after boundary check
+        if arrow_count_before > len(self.bow.arrows):
+            print(f"DEBUG: Removed {arrow_count_before - len(self.bow.arrows)} arrows due to boundary violations")
     
     def clear_arrows(self):
         """Clear all arrows when moving between rooms or resetting game state"""
@@ -329,6 +345,7 @@ class WeaponManager:
                     # If attack_bow returned a valid direction, shoot the arrow
                     self.bow.shoot(self.player.rect.centerx, self.player.rect.centery, (dx, dy))
                     print(f"Arrow shot! Arrows remaining: {self.player.arrow_count}")
+                    print(f"DEBUG: Currently tracking {len(self.bow.arrows)} arrows")
                 else:
                     print("DEBUG: Player attack_bow returned None (cooldown or no arrows)")
             else:
@@ -341,6 +358,8 @@ class WeaponManager:
         hit_count = 0
         arrows_to_remove = []
         
+        print(f"DEBUG: Checking collisions for {len(self.bow.arrows)} arrows against {len(sprite_groups)} sprite groups")
+        
         for arrow in self.bow.arrows:
             for sprite_group in sprite_groups:
                 collision_occurred = False
@@ -351,6 +370,7 @@ class WeaponManager:
                             arrows_to_remove.append(arrow)
                             hit_count += 1
                             collision_occurred = True
+                            print(f"DEBUG: Arrow collision detected with sprite at {sprite.rect}")
                             break
                     except Exception as e:
                         print(f"Error in collision detection: {e}")
@@ -364,5 +384,8 @@ class WeaponManager:
         # Remove all arrows that collided with something
         for arrow in arrows_to_remove:
             self.bow.remove_arrow(arrow)
+        
+        if hit_count > 0:
+            print(f"DEBUG: Removed {hit_count} arrows due to collisions")
                 
         return hit_count 

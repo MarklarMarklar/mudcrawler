@@ -322,6 +322,7 @@ class Game:
         # Check for arrow collisions with destroyable walls
         arrows_to_remove = []
         try:
+            print(f"DEBUG: Checking wall collisions for {len(self.weapon_manager.bow.arrows)} arrows")
             for arrow in self.weapon_manager.bow.arrows:
                 try:
                     # Get the tile at the arrow's position
@@ -340,6 +341,8 @@ class Game:
             print(f"Error checking arrow-wall collisions: {e}")
             
         # Remove arrows that hit walls
+        if arrows_to_remove:
+            print(f"DEBUG: Removing {len(arrows_to_remove)} arrows that hit walls")
         for arrow in arrows_to_remove:
             try:
                 self.weapon_manager.bow.remove_arrow(arrow)
@@ -462,6 +465,11 @@ class Game:
         self.hud.draw(self.player, self.current_level)
         
         # Draw arrows LAST to ensure they're on top
+        arrow_count = len(self.weapon_manager.bow.arrows)
+        print(f"DEBUG: Rendering {arrow_count} arrows")
+        if arrow_count > 0:
+            for arrow in self.weapon_manager.bow.arrows:
+                print(f"DEBUG: Arrow position: ({arrow.x}, {arrow.y}), rect: {arrow.rect}")
         self.weapon_manager.bow.draw(self.screen)
         
         # Draw a debug message showing arrow count
@@ -469,6 +477,12 @@ class Game:
             debug_font = pygame.font.Font(None, 24)
             debug_text = debug_font.render(f"Left-click to shoot ({self.player.arrow_count} arrows)", True, (255, 255, 0))
             self.screen.blit(debug_text, (10, 10))
+        
+        # Draw active arrow count on screen
+        if arrow_count > 0:
+            debug_font = pygame.font.Font(None, 24)
+            debug_text = debug_font.render(f"Active arrows: {arrow_count}", True, (255, 0, 255))
+            self.screen.blit(debug_text, (10, 40))
         
     def run(self):
         print("Starting game loop")
