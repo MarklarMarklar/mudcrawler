@@ -99,6 +99,10 @@ class Menu:
         # Welcome screen image
         self.welcome_screen = None
         self.use_welcome_screen = False
+        
+        # Game over custom image
+        self.gameover_custom_img = None
+        self.use_gameover_custom_img = False
             
         # Try to load menu background textures if they exist
         try:
@@ -144,6 +148,18 @@ class Menu:
                 print(f"Welcome screen image not found: {welcome_path}")
         except Exception as e:
             print(f"Failed to load welcome screen: {e}")
+            
+        # Try to load custom game over image
+        try:
+            gameover_custom_path = os.path.join(ASSET_PATH, "images/84adca9a-3915-4957-a916-f241219bf674.png")
+            if os.path.exists(gameover_custom_path):
+                self.gameover_custom_img = self.asset_manager.load_image(gameover_custom_path, scale=(WINDOW_WIDTH, WINDOW_HEIGHT))
+                self.use_gameover_custom_img = True
+                print(f"Successfully loaded custom game over image: {gameover_custom_path}")
+            else:
+                print(f"Custom game over image not found: {gameover_custom_path}")
+        except Exception as e:
+            print(f"Failed to load custom game over image: {e}")
         
         # Create buttons with more space between them
         button_width = 200
@@ -209,10 +225,18 @@ class Menu:
         
     def draw_game_over(self):
         # Draw background
-        self.screen.blit(self.gameover_bg, (0, 0))
+        if self.use_gameover_custom_img and self.gameover_custom_img:
+            self.screen.blit(self.gameover_custom_img, (0, 0))
+        else:
+            self.screen.blit(self.gameover_bg, (0, 0))
         
-        # Draw title
-        title = self.font.render("GAME OVER", True, RED)
+        # Draw title (only if not using custom image, or make it more visible)
+        if not self.use_gameover_custom_img or self.gameover_custom_img is None:
+            title = self.font.render("GAME OVER", True, RED)
+        else:
+            # Create a better visible title for custom background
+            title = self.font.render("GAME OVER", True, (255, 0, 0))
+            
         title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3))
         self.screen.blit(title, title_rect)
         
