@@ -283,7 +283,7 @@ class Menu:
             'options': Button(0, 0, self.button_width, self.button_height, "Options", font_size=32),
             'quit': Button(0, 0, self.button_width, self.button_height, "Quit", font_size=32),
             'back': Button(0, 0, self.button_width, self.button_height, "Back", font_size=32),
-            'fullscreen': Button(0, 0, self.button_width, self.button_height, "Fullscreen: Off", font_size=32)
+            'fullscreen': Button(0, 0, self.button_width, self.button_height, "Fullscreen: Off", font_size=28)
         }
         
         # Track menu states
