@@ -325,11 +325,4 @@ class Player(pygame.sprite.Sprite):
         # Uncomment to debug hitbox visualization
         # pygame.draw.rect(surface, (0, 255, 0), self.hitbox, 1)
         
-        # Draw health bar
-        health_bar_width = 50
-        health_bar_height = 5
-        health_ratio = self.health / PLAYER_START_HEALTH
-        pygame.draw.rect(surface, RED, (self.rect.x, self.rect.y - 10,
-                                      health_bar_width, health_bar_height))
-        pygame.draw.rect(surface, GREEN, (self.rect.x, self.rect.y - 10,
-                                        health_bar_width * health_ratio, health_bar_height)) 
+        # Health bar removed - already displayed in HUD 

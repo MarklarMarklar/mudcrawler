@@ -750,61 +750,108 @@ class HUD:
         health_ratio = max(0, min(1, player.health / PLAYER_START_HEALTH))
         arrow_ratio = max(0, min(1, player.arrow_count / player.max_arrows))
         
+        # Calculate health bar color based on health ratio
+        # Green (0, 255, 0) when full health
+        # Yellow (255, 255, 0) at around 50% health
+        # Red (255, 0, 0) when health is low
+        if health_ratio > 0.5:
+            # Transition from green to yellow (from 100% to 50%)
+            red = int(255 * (1 - health_ratio) * 2)  # Increases as health decreases
+            green = 255
+            health_color = (red, green, 0)
+        else:
+            # Transition from yellow to red (from 50% to 0%)
+            red = 255
+            green = int(255 * health_ratio * 2)  # Decreases as health decreases
+            health_color = (red, green, 0)
+        
         if self.use_custom_health_bar and self.health_bar_bg:
             # Draw the health bar background
             self.screen.blit(self.health_bar_bg, (bar_x, bar_y))
             
             # Draw the health and arrow bars based on the alpha reference if available
             if self.health_bar_rect:
-                # Health bar (green)
+                # Health bar with dynamic color
                 health_fill_rect = pygame.Rect(
                     bar_x + self.health_bar_rect.x,
                     bar_y + self.health_bar_rect.y,
                     int(self.health_bar_rect.width * health_ratio),
                     self.health_bar_rect.height
                 )
-                pygame.draw.rect(self.screen, (0, 255, 0), health_fill_rect)
+                pygame.draw.rect(self.screen, health_color, health_fill_rect)
             else:
                 # Fallback to estimated position
                 health_bar_x = bar_x + 85
                 health_bar_y = bar_y + 22
                 health_bar_width = int(120 * health_ratio)
                 health_bar_height = 16
-                pygame.draw.rect(self.screen, (0, 255, 0), 
+                pygame.draw.rect(self.screen, health_color, 
                               (health_bar_x, health_bar_y, health_bar_width, health_bar_height))
             
             if self.arrow_bar_rect:
-                # Arrow bar (yellow)
-                arrow_fill_rect = pygame.Rect(
-                    bar_x + self.arrow_bar_rect.x,
-                    bar_y + self.arrow_bar_rect.y,
-                    int(self.arrow_bar_rect.width * arrow_ratio),
-                    self.arrow_bar_rect.height
-                )
-                pygame.draw.rect(self.screen, (255, 255, 0), arrow_fill_rect)
+                # Arrow bar (yellow) divided into 10 segments
+                total_width = self.arrow_bar_rect.width
+                segment_width = total_width / player.max_arrows
+                segment_spacing = 2  # Gap between segments
+                adjusted_segment_width = segment_width - segment_spacing
+                
+                # Draw each arrow segment
+                for i in range(min(player.arrow_count, player.max_arrows)):
+                    segment_rect = pygame.Rect(
+                        bar_x + self.arrow_bar_rect.x + (i * segment_width),
+                        bar_y + self.arrow_bar_rect.y,
+                        max(1, adjusted_segment_width),  # Ensure segments are visible
+                        self.arrow_bar_rect.height
+                    )
+                    pygame.draw.rect(self.screen, (255, 255, 0), segment_rect)
             else:
-                # Fallback to estimated position
+                # Fallback to estimated position with segmented arrow bar
                 arrow_bar_x = bar_x + 85
                 arrow_bar_y = bar_y + 46
-                arrow_bar_width = int(120 * arrow_ratio)
-                arrow_bar_height = 16
-                pygame.draw.rect(self.screen, (255, 255, 0), 
-                              (arrow_bar_x, arrow_bar_y, arrow_bar_width, arrow_bar_height))
+                arrow_bar_total_width = 120
+                segment_width = arrow_bar_total_width / player.max_arrows
+                segment_spacing = 2
+                adjusted_segment_width = segment_width - segment_spacing
+                
+                # Draw each arrow segment
+                for i in range(min(player.arrow_count, player.max_arrows)):
+                    segment_rect = pygame.Rect(
+                        arrow_bar_x + (i * segment_width),
+                        arrow_bar_y,
+                        max(1, adjusted_segment_width),
+                        16  # arrow_bar_height
+                    )
+                    pygame.draw.rect(self.screen, (255, 255, 0), segment_rect)
         else:
             # Fallback to default drawing if custom health bar not available
             # Health bar
             pygame.draw.rect(self.screen, (100, 0, 0),
                           (bar_x, bar_y, std_bar_width, std_bar_height))
-            pygame.draw.rect(self.screen, (0, 255, 0),
+            pygame.draw.rect(self.screen, health_color,
                           (bar_x, bar_y, int(std_bar_width * health_ratio), std_bar_height))
             pygame.draw.rect(self.screen, WHITE,
                           (bar_x, bar_y, std_bar_width, std_bar_height), 2)
             
-            # Arrow bar
+            # Arrow bar background
             pygame.draw.rect(self.screen, (100, 100, 0),
                           (bar_x, bar_y + std_bar_height + bar_spacing, std_bar_width, std_bar_height))
-            pygame.draw.rect(self.screen, (255, 255, 0),
-                          (bar_x, bar_y + std_bar_height + bar_spacing, int(std_bar_width * arrow_ratio), std_bar_height))
+            
+            # Segmented arrow bar
+            segment_width = std_bar_width / player.max_arrows
+            segment_spacing = 2
+            adjusted_segment_width = segment_width - segment_spacing
+            
+            # Draw each arrow segment
+            for i in range(min(player.arrow_count, player.max_arrows)):
+                segment_rect = pygame.Rect(
+                    bar_x + (i * segment_width),
+                    bar_y + std_bar_height + bar_spacing,
+                    max(1, adjusted_segment_width),
+                    std_bar_height
+                )
+                pygame.draw.rect(self.screen, (255, 255, 0), segment_rect)
+            
+            # Draw outline
             pygame.draw.rect(self.screen, WHITE,
                           (bar_x, bar_y + std_bar_height + bar_spacing, std_bar_width, std_bar_height), 2)
         
