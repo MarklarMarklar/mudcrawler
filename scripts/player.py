@@ -303,6 +303,11 @@ class Player(pygame.sprite.Sprite):
         self.rect.clamp_ip(pygame.display.get_surface().get_rect())
         
         # Update animation
+        self._update_animation()
+    
+    def _update_animation(self):
+        """Update the animation state and frame"""
+        # Update animation time
         self.animation_time += self.animation_speed
         
         # If the attack animation is done, go back to idle
@@ -313,7 +318,49 @@ class Player(pygame.sprite.Sprite):
         # Calculate current frame
         self.frame = int(self.animation_time) % len(self.animations[self.current_state][self.facing])
         self.image = self.animations[self.current_state][self.facing][self.frame]
+    
+    def update_x(self):
+        """Update player position on X axis only"""
+        # Update X position
+        self.rect.x += self.velocity_x
         
+        # Update hitbox X position to follow the sprite
+        self.hitbox.centerx = self.rect.centerx
+        
+        # Keep player on screen (X axis)
+        screen_rect = pygame.display.get_surface().get_rect()
+        if self.rect.left < screen_rect.left:
+            self.rect.left = screen_rect.left
+            self.hitbox.centerx = self.rect.centerx
+        elif self.rect.right > screen_rect.right:
+            self.rect.right = screen_rect.right
+            self.hitbox.centerx = self.rect.centerx
+        
+        # Update animation
+        self._update_animation()
+    
+    def update_y(self):
+        """Update player position on Y axis only"""
+        # Update Y position
+        self.rect.y += self.velocity_y
+        
+        # Update hitbox Y position to follow the sprite
+        self.hitbox.centery = self.rect.centery
+        
+        # Keep player on screen (Y axis)
+        screen_rect = pygame.display.get_surface().get_rect()
+        if self.rect.top < screen_rect.top:
+            self.rect.top = screen_rect.top
+            self.hitbox.centery = self.rect.centery
+        elif self.rect.bottom > screen_rect.bottom:
+            self.rect.bottom = screen_rect.bottom
+            self.hitbox.centery = self.rect.centery
+        
+        # No need to update animation here, it's already done in update_x if both are called
+        # But if only moving on Y axis, we still need to update animation
+        if self.velocity_x == 0:
+            self._update_animation()
+    
     def add_arrows(self, amount):
         """Add arrows to the player's inventory, up to the maximum"""
         self.arrow_count = min(self.arrow_count + amount, self.max_arrows)

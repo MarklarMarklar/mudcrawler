@@ -35,6 +35,13 @@ class Game:
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.clock = pygame.time.Clock()
         
+        # Fullscreen flag
+        self.fullscreen = False
+        
+        # Store original window size
+        self.windowed_width = WINDOW_WIDTH
+        self.windowed_height = WINDOW_HEIGHT
+        
         # Initialize camera with screen dimensions
         self.camera = Camera(WINDOW_WIDTH, WINDOW_HEIGHT)
         
@@ -191,6 +198,29 @@ class Game:
                         self.state_transition_time = pygame.time.get_ticks()
                         # Switch to game music
                         self.sound_manager.play_music('game')
+                    elif button_clicked == 'options':
+                        print("Options button clicked")
+                        # Update button positions before showing options
+                        self.menu.showing_options = True
+                        self.menu._update_button_positions('options_menu')
+                    elif button_clicked == 'back':
+                        print("Back button clicked")
+                        self.menu.showing_options = False
+                        # Update button positions when going back to previous menu
+                        if self.state == MENU:
+                            self.menu._update_button_positions('main_menu')
+                            # Reset pause menu flag if we were in options from main menu
+                            self.menu.in_pause_menu = False
+                        elif self.state == PAUSED:
+                            self.menu._update_button_positions('pause_menu')
+                            # Set pause menu flag if we were in options from pause menu
+                            self.menu.in_pause_menu = True
+                    elif button_clicked == 'fullscreen':
+                        print("Fullscreen toggle button clicked")
+                        self.toggle_fullscreen()
+                        # Make sure we stay in options menu after toggling fullscreen
+                        self.menu.showing_options = True
+                        self.menu._update_button_positions('options_menu')
                     elif button_clicked == 'quit':
                         print("Quit button clicked")
                         self.running = False
@@ -213,7 +243,10 @@ class Game:
                         # Unpause music
                         self.sound_manager.unpause_music()
                 elif event.key == pygame.K_RETURN:
-                    if self.state == MENU:
+                    # Alt+Enter toggles fullscreen
+                    if pygame.key.get_mods() & pygame.KMOD_ALT:
+                        self.toggle_fullscreen()
+                    elif self.state == MENU:
                         print("Enter key pressed at menu")
                         if self.level is None:
                             self.initialize_level()
@@ -311,15 +344,26 @@ class Game:
         keys = pygame.key.get_pressed()
         self.player.move(keys)
         
-        # Update player position if no collision
-        old_rect = self.player.rect.copy()
-        old_hitbox = self.player.hitbox.copy()
-        self.player.update()
+        # Check collision using separate X and Y axis checks to allow sliding
+        # Store original position
+        orig_x = self.player.rect.x
+        orig_y = self.player.rect.y
+        orig_hitbox_x = self.player.hitbox.x
+        orig_hitbox_y = self.player.hitbox.y
         
-        # Check collision using the smaller hitbox instead of the full sprite rect
+        # First update X position and check for collision
+        self.player.update_x()
         if self.level.check_collision(self.player.hitbox):
-            self.player.rect = old_rect
-            self.player.hitbox = old_hitbox
+            # Collision on X axis, revert X position only
+            self.player.rect.x = orig_x
+            self.player.hitbox.x = orig_hitbox_x
+        
+        # Then update Y position and check for collision
+        self.player.update_y()
+        if self.level.check_collision(self.player.hitbox):
+            # Collision on Y axis, revert Y position only
+            self.player.rect.y = orig_y
+            self.player.hitbox.y = orig_hitbox_y
             
         # Update camera to follow player
         self.camera.update(self.player.rect.centerx, self.player.rect.centery)
@@ -534,12 +578,18 @@ class Game:
         
         # Render based on game state
         if self.state == MENU:
-            self.menu.draw_main_menu()
+            if self.menu.showing_options:
+                self.menu.draw_options_menu()
+            else:
+                self.menu.draw_main_menu()
         elif self.state == PLAYING:
             self.render_game()
         elif self.state == PAUSED:
             self.render_game()  # Draw game state in background
-            self.menu.draw_pause_menu()
+            if self.menu.showing_options:
+                self.menu.draw_options_menu()
+            else:
+                self.menu.draw_pause_menu()
         elif self.state == GAME_OVER:
             self.menu.draw_game_over()
         elif self.state == VICTORY:
@@ -598,17 +648,62 @@ class Game:
 
         # Get the visible portion of the room based on camera position
         view_rect = pygame.Rect(
-            self.camera.x, self.camera.y,
-            self.camera.view_width, self.camera.view_height
+            int(self.camera.x), 
+            int(self.camera.y),
+            int(self.camera.view_width), 
+            int(self.camera.view_height)
         )
         
-        # Scale and blit the visible portion to the screen
-        visible_portion = room_surface.subsurface(view_rect)
-        scaled_portion = pygame.transform.scale(
-            visible_portion, 
-            (WINDOW_WIDTH, WINDOW_HEIGHT)
-        )
-        self.screen.blit(scaled_portion, (0, 0))
+        # Ensure view_rect is within bounds of room_surface
+        if view_rect.left < 0:
+            view_rect.left = 0
+        if view_rect.top < 0:
+            view_rect.top = 0
+        if view_rect.right > room_width:
+            view_rect.width = room_width - view_rect.left
+        if view_rect.bottom > room_height:
+            view_rect.height = room_height - view_rect.top
+            
+        # Make sure view_rect has valid dimensions
+        if view_rect.width <= 0:
+            view_rect.width = 1
+        if view_rect.height <= 0:
+            view_rect.height = 1
+            
+        # One final safety check
+        if (view_rect.right > room_width or 
+            view_rect.bottom > room_height or 
+            view_rect.left < 0 or 
+            view_rect.top < 0):
+            print(f"Warning: Invalid view_rect: {view_rect}, room size: {room_width}x{room_height}")
+            view_rect = pygame.Rect(0, 0, min(room_width, 100), min(room_height, 100))
+        
+        try:
+            # Scale and blit the visible portion to the screen
+            visible_portion = room_surface.subsurface(view_rect)
+            scaled_portion = pygame.transform.scale(
+                visible_portion, 
+                (WINDOW_WIDTH, WINDOW_HEIGHT)
+            )
+            self.screen.blit(scaled_portion, (0, 0))
+        except ValueError as e:
+            print(f"Error creating subsurface: {e}")
+            print(f"View rect: {view_rect}, Room surface: {room_surface.get_size()}")
+            # Fall back to drawing the entire room surface scaled down
+            try:
+                scaled_portion = pygame.transform.scale(
+                    room_surface, 
+                    (WINDOW_WIDTH, WINDOW_HEIGHT)
+                )
+                self.screen.blit(scaled_portion, (0, 0))
+            except Exception as e2:
+                print(f"Fatal error during fallback rendering: {e2}")
+                # Last resort - just fill the screen with a solid color
+                self.screen.fill((0, 0, 0))
+        except Exception as ex:
+            print(f"Unexpected error during rendering: {ex}")
+            # Last resort - just fill the screen with a solid color
+            self.screen.fill((0, 0, 0))
         
         # Create lighting effect - dark overlay with circular light around player
         if self.torch_enabled:
@@ -748,6 +843,116 @@ class Game:
             
         pygame.quit()
         sys.exit()
+
+    def toggle_fullscreen(self):
+        """Toggle between fullscreen and windowed mode"""
+        global WINDOW_WIDTH, WINDOW_HEIGHT
+        
+        # Toggle fullscreen flag
+        self.fullscreen = not self.fullscreen
+        
+        try:
+            print(f"Attempting to switch to {'fullscreen-like' if self.fullscreen else 'windowed'} mode")
+            
+            if self.fullscreen:
+                # Save current window size for later
+                self.windowed_size = (WINDOW_WIDTH, WINDOW_HEIGHT)
+                print(f"Saved windowed size: {self.windowed_size}")
+                
+                # Try different methods to get a reasonable screen size
+                try:
+                    # Method 1: Get info from pygame display
+                    display_info = pygame.display.Info()
+                    new_width = display_info.current_w
+                    new_height = display_info.current_h
+                    
+                    # If the values are unreasonable, try alternative method
+                    if new_width <= 800 or new_height <= 600:
+                        raise ValueError("Display info returned current resolution")
+                        
+                except:
+                    # Method 2: Use a preset large resolution that should work well
+                    print("Using preset larger resolution instead of querying display")
+                    new_width = 1280
+                    new_height = 720
+                
+                print(f"Switching to larger window: {new_width}x{new_height}")
+                
+                # Use a larger size window instead of actual fullscreen (more compatible)
+                # In WSL, true fullscreen often fails but larger windows work
+                WINDOW_WIDTH = new_width
+                WINDOW_HEIGHT = new_height
+                
+                # Just create a larger window without fullscreen flag
+                self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+                pygame.display.flip()  # Ensure display is updated
+                
+            else:
+                # Restore windowed mode with saved dimensions
+                WINDOW_WIDTH, WINDOW_HEIGHT = self.windowed_size
+                print(f"Returning to windowed mode: {WINDOW_WIDTH}x{WINDOW_HEIGHT}")
+                
+                self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+                pygame.display.flip()  # Ensure display is updated
+            
+            # Always reset the camera after changing modes
+            print(f"Resetting camera for new dimensions: {WINDOW_WIDTH}x{WINDOW_HEIGHT}")
+            self.camera.width = WINDOW_WIDTH
+            self.camera.height = WINDOW_HEIGHT
+            self.camera.view_width = WINDOW_WIDTH / self.camera.zoom
+            self.camera.view_height = WINDOW_HEIGHT / self.camera.zoom
+            
+            # Force camera update to center on player
+            if self.player:
+                player_x = self.player.rect.centerx
+                player_y = self.player.rect.centery
+                print(f"Centering camera on player at {player_x}, {player_y}")
+                self.camera.center_on_point(player_x, player_y)
+            else:
+                print("No player to center on, resetting camera to origin")
+                self.camera.x = 0
+                self.camera.y = 0
+                
+            # Recreate menu to ensure it matches the new screen size
+            self.menu = Menu(self.screen)
+            
+            # Update fullscreen button text in all menus
+            # Make sure we only update Button objects, not strings or other items
+            fullscreen_text = "Fullscreen: On" if self.fullscreen else "Fullscreen: Off"
+            for button in self.menu.buttons:
+                if hasattr(button, 'text') and isinstance(button.text, str) and button.text.startswith("Fullscreen:"):
+                    button.text = fullscreen_text
+            
+            print(f"Mode switch complete. Current mode: {'Fullscreen-like' if self.fullscreen else 'Windowed'}")
+            return True
+            
+        except Exception as e:
+            print(f"Error during screen mode toggle: {e}")
+            # Try to recover by reverting to a safe state
+            self.fullscreen = not self.fullscreen  # Revert flag
+            
+            try:
+                # Try to set a safe fallback resolution
+                WINDOW_WIDTH, WINDOW_HEIGHT = 800, 600
+                self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+                
+                # Reset camera for fallback dimensions
+                self.camera.width = WINDOW_WIDTH
+                self.camera.height = WINDOW_HEIGHT
+                self.camera.view_width = WINDOW_WIDTH / self.camera.zoom
+                self.camera.view_height = WINDOW_HEIGHT / self.camera.zoom
+                
+                if self.player:
+                    self.camera.center_on_point(self.player.rect.centerx, self.player.rect.centery)
+                
+                # Recreate menu
+                self.menu = Menu(self.screen)
+                
+                print("Recovered to fallback window mode after error")
+            except Exception as e2:
+                print(f"Critical error during recovery: {e2}")
+                
+            return False
 
 if __name__ == "__main__":
     print("Initializing Mud Crawler game...")

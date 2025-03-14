@@ -280,8 +280,20 @@ class Menu:
             'start': Button(0, 0, self.button_width, self.button_height, "Start Game", font_size=32),
             'resume': Button(0, 0, self.button_width, self.button_height, "Resume", font_size=32),
             'restart': Button(0, 0, self.button_width, self.button_height, "Restart", font_size=32),
-            'quit': Button(0, 0, self.button_width, self.button_height, "Quit", font_size=32)
+            'options': Button(0, 0, self.button_width, self.button_height, "Options", font_size=32),
+            'quit': Button(0, 0, self.button_width, self.button_height, "Quit", font_size=32),
+            'back': Button(0, 0, self.button_width, self.button_height, "Back", font_size=32),
+            'fullscreen': Button(0, 0, self.button_width, self.button_height, "Fullscreen: Off", font_size=32)
         }
+        
+        # Track menu states
+        self.showing_options = False
+        self.in_pause_menu = False
+        self.in_game_over = False
+        self.in_victory = False
+        
+        # Track fullscreen state
+        self.fullscreen_enabled = False
         
         # Set initial positions
         self._update_button_positions('main_menu')
@@ -295,8 +307,11 @@ class Menu:
             self.buttons['start'].rect.x = self.center_x
             self.buttons['start'].rect.y = WINDOW_HEIGHT // 2
             
+            self.buttons['options'].rect.x = self.center_x
+            self.buttons['options'].rect.y = WINDOW_HEIGHT // 2 + 70
+            
             self.buttons['quit'].rect.x = self.center_x
-            self.buttons['quit'].rect.y = WINDOW_HEIGHT // 2 + 70
+            self.buttons['quit'].rect.y = WINDOW_HEIGHT // 2 + 140
             
         elif menu_type == 'pause_menu':
             # Position buttons for pause menu
@@ -306,8 +321,19 @@ class Menu:
             self.buttons['restart'].rect.x = self.center_x
             self.buttons['restart'].rect.y = WINDOW_HEIGHT // 2 + 70
             
+            self.buttons['options'].rect.x = self.center_x
+            self.buttons['options'].rect.y = WINDOW_HEIGHT // 2 + 140
+            
             self.buttons['quit'].rect.x = self.center_x
-            self.buttons['quit'].rect.y = WINDOW_HEIGHT // 2 + 140
+            self.buttons['quit'].rect.y = WINDOW_HEIGHT // 2 + 210
+            
+        elif menu_type == 'options_menu':
+            # Position buttons for options menu
+            self.buttons['fullscreen'].rect.x = self.center_x
+            self.buttons['fullscreen'].rect.y = WINDOW_HEIGHT // 2
+            
+            self.buttons['back'].rect.x = self.center_x
+            self.buttons['back'].rect.y = WINDOW_HEIGHT // 2 + 140
             
         elif menu_type == 'game_over' or menu_type == 'victory':
             # Position buttons for game over and victory screens
@@ -320,6 +346,11 @@ class Menu:
     def draw_main_menu(self):
         # Update button positions first
         self._update_button_positions('main_menu')
+        
+        # Update state flags
+        self.in_pause_menu = False
+        self.in_game_over = False
+        self.in_victory = False
         
         # Draw welcome screen if available, otherwise fallback to default background
         if self.use_welcome_screen and self.welcome_screen:
@@ -356,6 +387,7 @@ class Menu:
         
         # Draw buttons with enhanced visibility
         self.buttons['start'].draw(self.screen)
+        self.buttons['options'].draw(self.screen)
         self.buttons['quit'].draw(self.screen)
         
         # Draw instructions with pixelated font
@@ -366,6 +398,11 @@ class Menu:
     def draw_pause_menu(self):
         # Update button positions first
         self._update_button_positions('pause_menu')
+        
+        # Update state flags
+        self.in_pause_menu = True
+        self.in_game_over = False
+        self.in_victory = False
         
         # Semi-transparent overlay
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
@@ -381,11 +418,17 @@ class Menu:
         # Draw buttons
         self.buttons['resume'].draw(self.screen)
         self.buttons['restart'].draw(self.screen)
+        self.buttons['options'].draw(self.screen)
         self.buttons['quit'].draw(self.screen)
         
     def draw_game_over(self):
         # Update button positions first
         self._update_button_positions('game_over')
+        
+        # Update state flags
+        self.in_pause_menu = False
+        self.in_game_over = True
+        self.in_victory = False
         
         # Draw background
         if self.use_gameover_custom_img and self.gameover_custom_img:
@@ -411,6 +454,11 @@ class Menu:
         # Update button positions first
         self._update_button_positions('victory')
         
+        # Update state flags
+        self.in_pause_menu = False
+        self.in_game_over = False
+        self.in_victory = True
+        
         # Draw background
         self.screen.blit(self.victory_bg, (0, 0))
         
@@ -428,10 +476,61 @@ class Menu:
         self.buttons['restart'].draw(self.screen)
         self.buttons['quit'].draw(self.screen)
         
+    def draw_options_menu(self):
+        """Draw the options menu with settings"""
+        # Update button positions first
+        self._update_button_positions('options_menu')
+        
+        # Update state flags - showing_options is already set elsewhere
+        
+        # Semi-transparent overlay
+        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+        overlay.fill((0, 0, 0))
+        overlay.set_alpha(128)
+        self.screen.blit(overlay, (0, 0))
+        
+        # Draw title with pixelated font
+        title = self.font.render("OPTIONS", True, WHITE)
+        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3))
+        self.screen.blit(title, title_rect)
+        
+        # Update fullscreen button text based on current state
+        self.buttons['fullscreen'].text = f"Fullscreen: {'On' if self.fullscreen_enabled else 'Off'}"
+        
+        # Draw option buttons
+        self.buttons['fullscreen'].draw(self.screen)
+        self.buttons['back'].draw(self.screen)
+        
+    def toggle_fullscreen(self):
+        """Toggle the fullscreen state and update button text"""
+        self.fullscreen_enabled = not self.fullscreen_enabled
+        return self.fullscreen_enabled
+        
     def handle_event(self, event):
-        for button_name, button in self.buttons.items():
-            if button.handle_event(event):
+        # Define which buttons should be active based on current state
+        active_buttons = []
+        
+        if self.showing_options:
+            # Only fullscreen and back buttons are active in options menu
+            active_buttons = ['fullscreen', 'back']
+        elif hasattr(self, 'in_pause_menu') and self.in_pause_menu:
+            # Pause menu buttons
+            active_buttons = ['resume', 'restart', 'options', 'quit']
+        elif hasattr(self, 'in_game_over') and self.in_game_over:
+            # Game over buttons
+            active_buttons = ['restart', 'quit']
+        elif hasattr(self, 'in_victory') and self.in_victory:
+            # Victory buttons
+            active_buttons = ['restart', 'quit']
+        else:
+            # Default to main menu buttons
+            active_buttons = ['start', 'options', 'quit']
+            
+        # Only check active buttons
+        for button_name in active_buttons:
+            if button_name in self.buttons and self.buttons[button_name].handle_event(event):
                 return button_name
+                
         return None
 
 class HUD:

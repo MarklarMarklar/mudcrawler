@@ -61,4 +61,30 @@ class Camera:
         """Scale a surface according to zoom factor"""
         width = int(surface.get_width() * self.zoom)
         height = int(surface.get_height() * self.zoom)
-        return pygame.transform.scale(surface, (width, height)) 
+        return pygame.transform.scale(surface, (width, height))
+        
+    def center_on_point(self, x, y):
+        """Center the camera view on a specific point in world coordinates"""
+        # Calculate position to center the view on the specified point
+        self.x = x - self.view_width / 2
+        self.y = y - self.view_height / 2
+        
+        # Ensure camera doesn't go out of bounds of the current room
+        room_width_pixels = ROOM_WIDTH * TILE_SIZE
+        room_height_pixels = ROOM_HEIGHT * TILE_SIZE
+        
+        # If room is smaller than view, center the view
+        if room_width_pixels < self.view_width:
+            self.x = (room_width_pixels - self.view_width) / 2
+        else:
+            # Otherwise, clamp camera position
+            self.x = max(0, min(self.x, room_width_pixels - self.view_width))
+            
+        if room_height_pixels < self.view_height:
+            self.y = (room_height_pixels - self.view_height) / 2
+        else:
+            self.y = max(0, min(self.y, room_height_pixels - self.view_height))
+            
+        # Ensure coordinates are integers to avoid subsurface issues
+        self.x = int(self.x)
+        self.y = int(self.y) 
