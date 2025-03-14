@@ -42,7 +42,10 @@ python scripts/main.py
 
 ## Screenshots
 
-(Add screenshots here)
+![image](https://github.com/user-attachments/assets/72bb3fde-d0e8-47de-a25b-91e8fe50395b)
+![image](https://github.com/user-attachments/assets/28e3f38c-7692-4c95-b978-ef3732e3112d)
+
+
 
 ## Development
 
