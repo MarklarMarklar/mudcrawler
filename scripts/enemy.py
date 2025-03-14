@@ -48,6 +48,8 @@ class Enemy(pygame.sprite.Sprite):
                     selected_texture = self.level_instance.selected_skeleton_texture
                 elif enemy_name == 'slime':
                     selected_texture = self.level_instance.selected_slime_texture
+                elif enemy_name == 'ghost':
+                    selected_texture = self.level_instance.selected_ghost_texture
                     
                 if selected_texture:
                     custom_texture_path = selected_texture
@@ -657,6 +659,26 @@ class Boss(Enemy):
                         continue  # Skip the rest of this iteration
                 except Exception as e:
                     print(f"Failed to load boss_2.png for level 2 boss: {e}")
+                    # Continue with the normal animation loading
+            
+            # Check for level 3 boss to use boss_3.png
+            elif level == 3:
+                try:
+                    # Try to load the new boss_3.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_3.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2, TILE_SIZE*2))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_3.png for level 3 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
+                except Exception as e:
+                    print(f"Failed to load boss_3.png for level 3 boss: {e}")
                     # Continue with the normal animation loading
             
             # Now try to load actual animations but don't crash if they're missing

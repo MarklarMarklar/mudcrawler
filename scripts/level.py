@@ -1264,6 +1264,11 @@ class Level:
         self.selected_skeleton_texture = self.get_random_enemy_texture('skeletons')
         self.selected_slime_texture = self.get_random_enemy_texture('slimes')
         
+        # Add ghost texture selection for level 3
+        self.selected_ghost_texture = None
+        if level_number == 3:
+            self.selected_ghost_texture = self.get_random_enemy_texture('ghost')
+        
         # Load tile textures
         self.tiles = self.load_tile_textures()
         
