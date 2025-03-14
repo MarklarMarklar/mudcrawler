@@ -1246,9 +1246,6 @@ class Level:
         current_room = self.rooms[self.current_room_coords]
         current_room.draw(surface, self.tiles, self)
         
-        # Draw mini-map
-        self.draw_minimap(surface)
-        
         # Draw key pickup notification
         if hasattr(self, 'key_pickup_time'):
             time_since_pickup = pygame.time.get_ticks() - self.key_pickup_time
@@ -1293,122 +1290,58 @@ class Level:
             self.draw_exit_confirmation(surface)
         
     def draw_exit_confirmation(self, surface):
-        """Draw confirmation dialog for exiting the level"""
-        # Overlay
+        """Draw confirmation dialog when trying to exit level"""
+        # Darken the screen
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 128))
+        overlay.fill((0, 0, 0, 180))  # Semi-transparent black
         surface.blit(overlay, (0, 0))
         
-        # Dialog box - make it wider to fit the text
-        dialog_width = 500
-        dialog_height = 180
+        # Create the dialog box
+        dialog_width = 400
+        dialog_height = 200
         dialog_x = (WINDOW_WIDTH - dialog_width) // 2
         dialog_y = (WINDOW_HEIGHT - dialog_height) // 2
         
-        # Draw dialog background
-        pygame.draw.rect(surface, (50, 50, 50), 
-                         (dialog_x, dialog_y, dialog_width, dialog_height))
-        pygame.draw.rect(surface, WHITE, 
-                         (dialog_x, dialog_y, dialog_width, dialog_height), 2)
+        dialog_rect = pygame.Rect(dialog_x, dialog_y, dialog_width, dialog_height)
+        pygame.draw.rect(surface, (50, 50, 50), dialog_rect)
+        pygame.draw.rect(surface, (200, 200, 200), dialog_rect, 3)
         
-        # Draw text - use a slightly smaller font and ensure it's centered
-        font = pygame.font.Font(None, 30)
-        text = font.render(EXIT_CONFIRMATION_TEXT, True, WHITE)
-        text_rect = text.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 30))
+        # Dialog text
+        font = pygame.font.Font(None, 36)
+        text = font.render("Exit to next level?", True, (255, 255, 255))
+        text_rect = text.get_rect(center=(WINDOW_WIDTH // 2, dialog_y + 50))
         surface.blit(text, text_rect)
         
-        # Draw buttons - move them down a bit
-        yes_text = font.render("Yes", True, WHITE)
-        no_text = font.render("No", True, WHITE)
+        # Buttons
+        button_width = 120
+        button_height = 50
+        button_spacing = 40
         
-        yes_rect = pygame.Rect(dialog_x + dialog_width//4 - 40, dialog_y + 120, 80, 30)
-        no_rect = pygame.Rect(dialog_x + dialog_width*3//4 - 40, dialog_y + 120, 80, 30)
-        
+        # Yes button
+        yes_rect = pygame.Rect(
+            dialog_x + (dialog_width // 2) - button_width - (button_spacing // 2),
+            dialog_y + dialog_height - 70,
+            button_width,
+            button_height
+        )
         pygame.draw.rect(surface, (0, 128, 0), yes_rect)
-        pygame.draw.rect(surface, (128, 0, 0), no_rect)
-        
+        pygame.draw.rect(surface, (200, 200, 200), yes_rect, 2)
+        yes_text = font.render("YES", True, (255, 255, 255))
         yes_text_rect = yes_text.get_rect(center=yes_rect.center)
-        no_text_rect = no_text.get_rect(center=no_rect.center)
-        
         surface.blit(yes_text, yes_text_rect)
+        
+        # No button
+        no_rect = pygame.Rect(
+            dialog_x + (dialog_width // 2) + (button_spacing // 2),
+            dialog_y + dialog_height - 70,
+            button_width,
+            button_height
+        )
+        pygame.draw.rect(surface, (128, 0, 0), no_rect)
+        pygame.draw.rect(surface, (200, 200, 200), no_rect, 2)
+        no_text = font.render("NO", True, (255, 255, 255))
+        no_text_rect = no_text.get_rect(center=no_rect.center)
         surface.blit(no_text, no_text_rect)
         
         # Return button rects for click handling
-        return yes_rect, no_rect
-        
-    def draw_minimap(self, surface):
-        """Draw a small map in the corner showing room layout"""
-        minimap_size = 10  # Size of each room on the minimap
-        minimap_padding = 5
-        minimap_x = WINDOW_WIDTH - (minimap_padding + len(self.rooms) * minimap_size)
-        minimap_y = minimap_padding
-        
-        # Calculate bounds for centering
-        min_x = min(x for x, y in self.rooms.keys())
-        max_x = max(x for x, y in self.rooms.keys())
-        min_y = min(y for x, y in self.rooms.keys())
-        max_y = max(y for x, y in self.rooms.keys())
-        
-        width = max_x - min_x + 1
-        height = max_y - min_y + 1
-        
-        # Draw background
-        background_rect = pygame.Rect(
-            minimap_x - minimap_padding,
-            minimap_y - minimap_padding,
-            width * minimap_size + 2 * minimap_padding,
-            height * minimap_size + 2 * minimap_padding
-        )
-        pygame.draw.rect(surface, (0, 0, 0, 128), background_rect)
-        
-        # Draw each room
-        for (x, y), room in self.rooms.items():
-            # Adjust for minimum coordinates
-            adjusted_x = x - min_x
-            adjusted_y = y - min_y
-            
-            # Calculate position
-            room_x = minimap_x + adjusted_x * minimap_size
-            room_y = minimap_y + adjusted_y * minimap_size
-            
-            # Choose color based on room type
-            if room.room_type == 'start':
-                color = (0, 255, 0)  # Green for start
-            elif room.room_type == 'boss':
-                color = (255, 0, 0)  # Red for boss
-            elif room.room_type == 'treasure':
-                color = (255, 215, 0)  # Gold for treasure
-            else:
-                color = (200, 200, 200)  # Gray for normal
-                
-            # Highlight current room
-            if (x, y) == self.current_room_coords:
-                # Draw current room marker
-                pygame.draw.rect(surface, (255, 255, 255), 
-                              (room_x, room_y, minimap_size, minimap_size))
-                pygame.draw.rect(surface, color, 
-                              (room_x + 1, room_y + 1, minimap_size - 2, minimap_size - 2))
-            else:
-                pygame.draw.rect(surface, color, 
-                              (room_x, room_y, minimap_size, minimap_size))
-                
-            # Draw connections
-            for direction, is_door in room.doors.items():
-                if is_door:
-                    # Draw a line indicating a connection
-                    if direction == 'north' and (x, y - 1) in self.rooms:
-                        pygame.draw.line(surface, (255, 255, 255),
-                                       (room_x + minimap_size // 2, room_y),
-                                       (room_x + minimap_size // 2, room_y - 1))
-                    elif direction == 'south' and (x, y + 1) in self.rooms:
-                        pygame.draw.line(surface, (255, 255, 255),
-                                       (room_x + minimap_size // 2, room_y + minimap_size),
-                                       (room_x + minimap_size // 2, room_y + minimap_size + 1))
-                    elif direction == 'east' and (x + 1, y) in self.rooms:
-                        pygame.draw.line(surface, (255, 255, 255),
-                                       (room_x + minimap_size, room_y + minimap_size // 2),
-                                       (room_x + minimap_size + 1, room_y + minimap_size // 2))
-                    elif direction == 'west' and (x - 1, y) in self.rooms:
-                        pygame.draw.line(surface, (255, 255, 255),
-                                       (room_x, room_y + minimap_size // 2),
-                                       (room_x - 1, room_y + minimap_size // 2)) 
+        return yes_rect, no_rect 

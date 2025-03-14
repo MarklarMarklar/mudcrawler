@@ -125,6 +125,7 @@ class Sword(pygame.sprite.Sprite):
         
         # Create default sword images as placeholders
         self.sword_images = {}
+        self.animation_frames = {}  # Store animation frames for each direction
         for direction in ['down', 'up', 'left', 'right']:
             # Create a simple sword shape
             sword_img = pygame.Surface([TILE_SIZE, TILE_SIZE // 2], pygame.SRCALPHA)
@@ -159,17 +160,68 @@ class Sword(pygame.sprite.Sprite):
                 
             self.sword_images[direction] = sword_img
         
-        # Now try to load actual sword textures if they exist
-        for direction in ['down', 'up', 'left', 'right']:
-            try:
-                sword_path = os.path.join(WEAPON_SPRITES_PATH, f"sword_{direction}.png")
-                if os.path.exists(sword_path):
-                    self.sword_images[direction] = self.asset_manager.load_image(
-                        sword_path, scale=(TILE_SIZE, TILE_SIZE//2))
-            except Exception as e:
-                print(f"Failed to load sword_{direction}.png: {e}")
+        # Try to load normal sword texture first, since that's what we want to use
+        try:
+            # Load the normal_sword.png (which is in the up position)
+            normal_sword_path = os.path.join(WEAPON_SPRITES_PATH, "normal_sword.png")
+            if os.path.exists(normal_sword_path):
+                # Scale based on size ratio between sword and player - aim for ~0.675x player width (10% smaller than previous 0.75x)
+                sword_scale_factor = 0.675  # Reduced by 10% from 0.75 to make the sword smaller
+                sword_width = int(TILE_SIZE * sword_scale_factor)
+                sword_height = int(sword_width * 1.5)  # Keep aspect ratio
+                
+                # Load the up-facing sword (the default orientation in the image)
+                up_sword = self.asset_manager.load_image(normal_sword_path, scale=(sword_width, sword_height))
+                self.sword_images['up'] = up_sword
+                
+                # Create animation frames for up direction with rotation around bottom center
+                self.animation_frames['up'] = self._create_animation_frames(up_sword, 'up')
+                
+                # Rotate for other directions
+                # Down: 180 degrees from up
+                down_sword = pygame.transform.rotate(up_sword, 180)
+                self.sword_images['down'] = down_sword
+                self.animation_frames['down'] = self._create_animation_frames(down_sword, 'down')
+                
+                # Right: 270 degrees from up (90 degrees clockwise)
+                right_sword = pygame.transform.rotate(up_sword, 270)
+                self.sword_images['right'] = right_sword
+                self.animation_frames['right'] = self._create_animation_frames(right_sword, 'right')
+                
+                # Left: 90 degrees from up (90 degrees counterclockwise)
+                left_sword = pygame.transform.rotate(up_sword, 90)
+                self.sword_images['left'] = left_sword
+                self.animation_frames['left'] = self._create_animation_frames(left_sword, 'left')
+                
+                print("Successfully loaded normal_sword.png for all directions")
+            else:
+                print("normal_sword.png not found - using directional images if available")
+                # Fall back to checking for direction-specific images
+                for direction in ['down', 'up', 'left', 'right']:
+                    try:
+                        sword_path = os.path.join(WEAPON_SPRITES_PATH, f"sword_{direction}.png")
+                        if os.path.exists(sword_path):
+                            sword_img = self.asset_manager.load_image(
+                                sword_path, scale=(TILE_SIZE, TILE_SIZE//2))
+                            self.sword_images[direction] = sword_img
+                            self.animation_frames[direction] = self._create_animation_frames(sword_img, direction)
+                    except Exception as e:
+                        print(f"Failed to load sword_{direction}.png: {e}")
+        except Exception as e:
+            print(f"Failed to load normal_sword.png: {e}")
+            # Fall back to direction-specific images
+            for direction in ['down', 'up', 'left', 'right']:
+                try:
+                    sword_path = os.path.join(WEAPON_SPRITES_PATH, f"sword_{direction}.png")
+                    if os.path.exists(sword_path):
+                        sword_img = self.asset_manager.load_image(
+                            sword_path, scale=(TILE_SIZE, TILE_SIZE//2))
+                        self.sword_images[direction] = sword_img
+                        self.animation_frames[direction] = self._create_animation_frames(sword_img, direction)
+                except Exception as e:
+                    print(f"Failed to load sword_{direction}.png: {e}")
         
-        # Set initial image
+        # Set initial image and animation frame
         self.image = self.sword_images['right']
         self.rect = self.image.get_rect()
         
@@ -178,31 +230,106 @@ class Sword(pygame.sprite.Sprite):
         self.active = False
         self.animation_time = 200  # milliseconds
         self.start_time = 0
+        self.current_frame = 0
+        self.total_frames = 4  # Number of animation frames
+        
+    def _create_animation_frames(self, base_image, direction):
+        """Create 4 animation frames by rotating the sword around its handle."""
+        frames = []
+        
+        # Create rotation angles for a smooth swing animation
+        # Start at -20 degrees, swing to +20 degrees
+        angles = [-20, -6.66, 6.66, 20]
+        
+        # Find the pivot point based on direction (where the player would hold the sword)
+        original_rect = base_image.get_rect()
+        
+        for angle in angles:
+            # Start with a clean rotation surface that's large enough
+            # to avoid clipping during rotation
+            padding = max(original_rect.width, original_rect.height) * 2
+            rotation_surface = pygame.Surface((padding, padding), pygame.SRCALPHA)
+            
+            # Find the center of the rotation surface
+            rotation_center = (padding // 2, padding // 2)
+            
+            # Calculate the position to place the sword on the rotation surface
+            # so that the appropriate edge is at the center of rotation
+            if direction == 'up':
+                # For up-facing sword, handle is at bottom center
+                blit_pos = (rotation_center[0] - original_rect.width // 2, 
+                           rotation_center[1] - original_rect.height)
+            elif direction == 'down':
+                # For down-facing sword, handle is at top center
+                blit_pos = (rotation_center[0] - original_rect.width // 2, 
+                           rotation_center[1])
+            elif direction == 'left':
+                # For left-facing sword, handle is at right center
+                blit_pos = (rotation_center[0] - original_rect.width, 
+                           rotation_center[1] - original_rect.height // 2)
+            elif direction == 'right':
+                # For right-facing sword, handle is at left center
+                blit_pos = (rotation_center[0], 
+                           rotation_center[1] - original_rect.height // 2)
+            
+            # Place the sword on the rotation surface
+            rotation_surface.blit(base_image, blit_pos)
+            
+            # Rotate the entire surface around its center
+            rotated = pygame.transform.rotate(rotation_surface, angle)
+            
+            # Store the rotated frame
+            frames.append(rotated)
+        
+        return frames
         
     def start_attack(self):
         self.active = True
         self.start_time = pygame.time.get_ticks()
+        self.current_frame = 0
         
     def update(self):
         if not self.active:
             return
-            
-        # Update sword position based on player facing direction
+        
+        # Calculate frame based on elapsed time
+        elapsed_time = pygame.time.get_ticks() - self.start_time
+        frame_duration = self.animation_time / self.total_frames
+        self.current_frame = min(int(elapsed_time / frame_duration), self.total_frames - 1)
+        
+        # Update sword position and animation frame based on player facing direction
         if self.player.facing == 'right':
-            self.image = self.sword_images['right']
+            self.image = self.animation_frames['right'][self.current_frame]
+            self.rect = self.image.get_rect()
+            # Position closer to player
             self.rect.midleft = self.player.rect.midright
+            # Adjust position to be much closer to the player
+            offset_x = int((self.rect.width * 0.7))  # Move sword closer by 70% of its width
+            self.rect.x -= offset_x
         elif self.player.facing == 'left':
-            self.image = self.sword_images['left']
+            self.image = self.animation_frames['left'][self.current_frame]
+            self.rect = self.image.get_rect()
             self.rect.midright = self.player.rect.midleft
+            # Adjust position to be much closer to the player
+            offset_x = int((self.rect.width * 0.7))  # Move sword closer by 70% of its width
+            self.rect.x += offset_x
         elif self.player.facing == 'up':
-            self.image = self.sword_images['up']
+            self.image = self.animation_frames['up'][self.current_frame]
+            self.rect = self.image.get_rect()
             self.rect.midbottom = self.player.rect.midtop
+            # Adjust position to be much closer to the player
+            offset_y = int((self.rect.height * 0.7))  # Move sword closer by 70% of its height
+            self.rect.y += offset_y
         elif self.player.facing == 'down':
-            self.image = self.sword_images['down']
+            self.image = self.animation_frames['down'][self.current_frame]
+            self.rect = self.image.get_rect()
             self.rect.midtop = self.player.rect.midbottom
-            
+            # Adjust position to be much closer to the player
+            offset_y = int((self.rect.height * 0.7))  # Move sword closer by 70% of its height
+            self.rect.y -= offset_y
+        
         # Check if attack animation is finished
-        if pygame.time.get_ticks() - self.start_time > self.animation_time:
+        if elapsed_time > self.animation_time:
             self.active = False
             
 class Bow:

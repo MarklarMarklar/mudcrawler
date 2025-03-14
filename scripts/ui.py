@@ -290,6 +290,10 @@ class HUD:
         self.health_bar_rect = None
         self.arrow_bar_rect = None
         
+        # Minimap settings
+        self.minimap_size = 10  # Size of each room on the minimap
+        self.minimap_padding = 5
+        
         # Try to load health bar texture
         try:
             health_bar_path = os.path.join(UI_SPRITES_PATH, "health_bar.png")
@@ -325,7 +329,7 @@ class HUD:
                 self.bow_icon = self.asset_manager.load_image(bow_icon_path, scale=(32, 32))
         except Exception as e:
             print(f"Failed to load bow icon: {e}")
-            
+        
         # Try to load sound off icon
         try:
             sound_off_path = os.path.join(UI_SPRITES_PATH, "sound_off.png")
@@ -450,7 +454,103 @@ class HUD:
                 self.arrow_bar_rect = pygame.Rect(arrow_x_start, arrow_y, arrow_width, arrow_height)
                 print(f"Found arrow bar rectangle: {self.arrow_bar_rect}")
         
-    def draw(self, player, level_number, audio_available=True):
+    def draw_minimap(self, level):
+        """Draw a small map in the upper right corner showing room layout"""
+        if not level or not hasattr(level, 'rooms') or not level.rooms:
+            return  # Don't draw if level not available or initialized
+            
+        # Calculate bounds for centering
+        min_x = min(x for x, y in level.rooms.keys())
+        max_x = max(x for x, y in level.rooms.keys())
+        min_y = min(y for x, y in level.rooms.keys())
+        max_y = max(y for x, y in level.rooms.keys())
+        
+        width = max_x - min_x + 1
+        height = max_y - min_y + 1
+        
+        # Position minimap in the upper right corner
+        # Calculate minimap dimensions and position
+        minimap_width = width * self.minimap_size + 2 * self.minimap_padding
+        minimap_height = height * self.minimap_size + 2 * self.minimap_padding
+        minimap_x = WINDOW_WIDTH - minimap_width - 10
+        minimap_y = 10  # Top margin
+        
+        # Create the level text
+        level_text = self.font.render(f"Level: {level.level_number}", True, WHITE)
+        level_text_rect = level_text.get_rect()
+        
+        # Position the level text to the LEFT of the minimap
+        level_text_rect.right = minimap_x - 10  # 10px spacing between text and minimap
+        level_text_rect.top = minimap_y + (minimap_height // 2) - (level_text_rect.height // 2)  # Vertically center with the minimap
+        
+        # Draw background with slight transparency
+        background_rect = pygame.Rect(
+            minimap_x - self.minimap_padding,
+            minimap_y - self.minimap_padding,
+            minimap_width,
+            minimap_height
+        )
+        # Create a surface with transparency
+        bg_surface = pygame.Surface((background_rect.width, background_rect.height), pygame.SRCALPHA)
+        bg_surface.fill((0, 0, 0, 180))  # Semi-transparent black
+        self.screen.blit(bg_surface, (background_rect.x, background_rect.y))
+        
+        # Draw each room
+        for (x, y), room in level.rooms.items():
+            # Adjust for minimum coordinates
+            adjusted_x = x - min_x
+            adjusted_y = y - min_y
+            
+            # Calculate position
+            room_x = minimap_x + adjusted_x * self.minimap_size
+            room_y = minimap_y + adjusted_y * self.minimap_size
+            
+            # Choose color based on room type
+            if room.room_type == 'start':
+                color = (0, 255, 0)  # Green for start
+            elif room.room_type == 'boss':
+                color = (255, 0, 0)  # Red for boss
+            elif room.room_type == 'treasure':
+                color = (255, 215, 0)  # Gold for treasure
+            else:
+                color = (200, 200, 200)  # Gray for normal
+                
+            # Highlight current room
+            if (x, y) == level.current_room_coords:
+                # Draw current room marker
+                pygame.draw.rect(self.screen, (255, 255, 255), 
+                              (room_x, room_y, self.minimap_size, self.minimap_size))
+                pygame.draw.rect(self.screen, color, 
+                              (room_x + 1, room_y + 1, self.minimap_size - 2, self.minimap_size - 2))
+            else:
+                pygame.draw.rect(self.screen, color, 
+                              (room_x, room_y, self.minimap_size, self.minimap_size))
+                
+            # Draw connections
+            for direction, is_door in room.doors.items():
+                if is_door:
+                    # Draw a line indicating a connection
+                    if direction == 'north' and (x, y - 1) in level.rooms:
+                        pygame.draw.line(self.screen, (255, 255, 255),
+                                       (room_x + self.minimap_size // 2, room_y),
+                                       (room_x + self.minimap_size // 2, room_y - 1))
+                    elif direction == 'south' and (x, y + 1) in level.rooms:
+                        pygame.draw.line(self.screen, (255, 255, 255),
+                                       (room_x + self.minimap_size // 2, room_y + self.minimap_size),
+                                       (room_x + self.minimap_size // 2, room_y + self.minimap_size + 1))
+                    elif direction == 'east' and (x + 1, y) in level.rooms:
+                        pygame.draw.line(self.screen, (255, 255, 255),
+                                       (room_x + self.minimap_size, room_y + self.minimap_size // 2),
+                                       (room_x + self.minimap_size + 1, room_y + self.minimap_size // 2))
+                    elif direction == 'west' and (x - 1, y) in level.rooms:
+                        pygame.draw.line(self.screen, (255, 255, 255),
+                                       (room_x, room_y + self.minimap_size // 2),
+                                       (room_x - 1, room_y + self.minimap_size // 2))
+        
+        # Draw the level text to the left of the minimap
+        self.screen.blit(level_text, level_text_rect)
+        
+    def draw(self, player, level_number, audio_available=True, level=None):
         # Position the health bar in the top-left corner with some margin
         bar_x = 10
         bar_y = 10
@@ -522,11 +622,15 @@ class HUD:
             pygame.draw.rect(self.screen, WHITE,
                           (bar_x, bar_y + std_bar_height + bar_spacing, std_bar_width, std_bar_height), 2)
         
-        # Draw level number in upper right corner
-        level_text = self.font.render(f"Level: {level_number}", True, WHITE)
-        level_text_rect = level_text.get_rect()
-        level_text_rect.topright = (WINDOW_WIDTH - 10, 10)
-        self.screen.blit(level_text, level_text_rect)
+        # Draw minimap if level is provided
+        if level:
+            self.draw_minimap(level)
+        else:
+            # If no level but we need to show level number, draw it in the upper right
+            level_text = self.font.render(f"Level: {level_number}", True, WHITE)
+            level_text_rect = level_text.get_rect()
+            level_text_rect.topright = (WINDOW_WIDTH - 10, 10)
+            self.screen.blit(level_text, level_text_rect)
         
         # Draw sound off icon in bottom left if audio is unavailable
         if not audio_available and self.sound_off_icon:

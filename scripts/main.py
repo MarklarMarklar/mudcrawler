@@ -659,7 +659,8 @@ class Game:
             arrow.size = orig_size
         
         # Draw HUD - pass audio availability to draw sound icon if needed
-        self.hud.draw(self.player, self.current_level, self.sound_manager.audio_available)
+        # Also pass the level object to enable minimap drawing in the HUD
+        self.hud.draw(self.player, self.current_level, self.sound_manager.audio_available, self.level)
         
     def run(self):
         print("Starting game loop")
