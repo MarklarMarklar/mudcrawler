@@ -3,11 +3,13 @@ import math
 import os
 from config import *
 from asset_manager import get_asset_manager
+from sound_manager import get_sound_manager
 
 class Player(pygame.sprite.Sprite):
     def __init__(self, x, y):
         super().__init__()
         self.asset_manager = get_asset_manager()
+        self.sound_manager = get_sound_manager()
         
         # Load player animations from sprite sheet
         self.animations = {
@@ -66,6 +68,10 @@ class Player(pygame.sprite.Sprite):
         self.sword_cooldown = 0
         self.bow_cooldown = 0
         self.last_attack_time = pygame.time.get_ticks()
+        
+        # Walking sound cooldown
+        self.walk_sound_cooldown = 300  # milliseconds between footstep sounds
+        self.last_walk_sound_time = 0
         
         # Movement
         self.velocity_x = 0
@@ -276,6 +282,12 @@ class Player(pygame.sprite.Sprite):
         
         # Keep player on screen
         self.rect.clamp_ip(pygame.display.get_surface().get_rect())
+        
+        # Play walking sound if player is moving
+        current_time = pygame.time.get_ticks()
+        if self.current_state == 'walk' and (current_time - self.last_walk_sound_time >= self.walk_sound_cooldown):
+            self.sound_manager.play_sound("effects/walk")
+            self.last_walk_sound_time = current_time
         
         # Update animation
         self.animation_time += self.animation_speed
