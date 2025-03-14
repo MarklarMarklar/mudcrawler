@@ -35,8 +35,8 @@ UI_SPRITES_PATH = os.path.join(ASSET_PATH, "ui")
 SOUNDS_PATH = os.path.join(ASSET_PATH, "sounds")
 
 # Player Settings
-PLAYER_SPEED = 5
 PLAYER_START_HEALTH = 100
+PLAYER_SPEED = 3.5  # Reduced from 5 to make player movement slower
 SWORD_DAMAGE = 25
 BOW_DAMAGE = 15
 BOW_COOLDOWN = 1000  # milliseconds

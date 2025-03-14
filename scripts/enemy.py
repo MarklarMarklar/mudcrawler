@@ -176,6 +176,21 @@ class Enemy(pygame.sprite.Sprite):
         if (start_tile_x, start_tile_y) == (target_tile_x, target_tile_y):
             return []
             
+        # Ensure target is not a wall
+        if room.tiles[target_tile_y][target_tile_x] == 1:
+            # Try to find a nearby floor tile
+            directions = [(0, -1), (1, 0), (0, 1), (-1, 0), (1, 1), (-1, 1), (1, -1), (-1, -1)]
+            for dx, dy in directions:
+                new_tx, new_ty = target_tile_x + dx, target_tile_y + dy
+                if (0 <= new_tx < room.width and 0 <= new_ty < room.height and 
+                    room.tiles[new_ty][new_tx] == 0):
+                    # Found valid floor tile near target
+                    target_tile_x, target_tile_y = new_tx, new_ty
+                    break
+            else:
+                # No valid floor tile found near target
+                return []
+            
         # A* algorithm
         open_set = []  # Priority queue of nodes to explore
         closed_set = set()  # Set of explored nodes
@@ -195,7 +210,11 @@ class Enemy(pygame.sprite.Sprite):
         directions = [(0, -1), (1, 0), (0, 1), (-1, 0)]  # Up, right, down, left
         
         found_path = False
-        while open_set and not found_path:
+        max_iterations = 1000  # Prevent infinite loops
+        iterations = 0
+        
+        while open_set and not found_path and iterations < max_iterations:
+            iterations += 1
             # Get node with lowest f_score
             _, _, (current_x, current_y, parent) = heapq.heappop(open_set)
             
@@ -477,11 +496,15 @@ class Enemy(pygame.sprite.Sprite):
         old_velocity_x = self.velocity_x
         old_velocity_y = self.velocity_y
         
+        # Ensure player has level attribute before checking collision
+        has_level = hasattr(player, 'level') and player.level is not None
+        
         # Move horizontally first
         self.rect.x += self.velocity_x
         
         # If this would cause a collision, revert the horizontal movement
-        if hasattr(player, 'level') and player.level.check_collision(self.rect):
+        if has_level and player.level.check_collision(self.rect):
+            # Reset position to before movement
             self.rect = old_rect.copy()
             self.velocity_x = 0  # Reset velocity
             
@@ -505,7 +528,8 @@ class Enemy(pygame.sprite.Sprite):
         self.rect.y += self.velocity_y
         
         # If this would cause a collision, revert the vertical movement
-        if hasattr(player, 'level') and player.level.check_collision(self.rect):
+        if has_level and player.level.check_collision(self.rect):
+            # Reset position to before movement
             self.rect = old_rect.copy()
             self.velocity_y = 0  # Reset velocity
             
@@ -722,6 +746,13 @@ class Boss(Enemy):
         self.last_voice_time = 0
         self.voice_cooldown = 4000  # 4 seconds (in milliseconds)
         
+    def take_damage(self, amount):
+        """Override the parent take_damage method to make boss aggressive when hit"""
+        # Set the has_spotted_player flag to True when boss takes damage
+        self.has_spotted_player = True
+        # Call the parent method to handle the actual damage
+        return super().take_damage(amount)
+        
     def special_attack(self, player):
         current_time = pygame.time.get_ticks()
         if current_time - self.last_special_attack_time >= self.special_attack_cooldown:
@@ -886,18 +917,19 @@ class Boss(Enemy):
         old_velocity_x = self.velocity_x
         old_velocity_y = self.velocity_y
         
-        # Try horizontal and vertical movement separately to improve narrow passage navigation
+        # Ensure player has level attribute before checking collision
+        has_level = hasattr(player, 'level') and player.level is not None
         
         # Try moving horizontally
         self.rect.x += self.velocity_x
         
         # If collision occurs, try with half the velocity
-        if hasattr(player, 'level') and player.level.check_collision(self.rect):
+        if has_level and player.level.check_collision(self.rect):
             self.rect = old_rect.copy()
             self.rect.x += self.velocity_x * 0.5  # Try half speed
             
             # If still colliding, revert and mark as movement failure
-            if hasattr(player, 'level') and player.level.check_collision(self.rect):
+            if has_level and player.level.check_collision(self.rect):
                 self.rect = old_rect.copy()
                 self.velocity_x = 0
                 
@@ -915,12 +947,12 @@ class Boss(Enemy):
         self.rect.y += self.velocity_y
         
         # If collision occurs, try with half the velocity
-        if hasattr(player, 'level') and player.level.check_collision(self.rect):
+        if has_level and player.level.check_collision(self.rect):
             self.rect.y = old_rect.y  # Revert only Y position
             self.rect.y += self.velocity_y * 0.5  # Try half speed
             
             # If still colliding, revert and mark as movement failure
-            if hasattr(player, 'level') and player.level.check_collision(self.rect):
+            if has_level and player.level.check_collision(self.rect):
                 self.rect.y = old_rect.y
                 self.velocity_y = 0
                 

@@ -26,4 +26,7 @@ ENV/
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db 
+Thumbs.db
+
+# Testing files
+scripts/test_game.py 
