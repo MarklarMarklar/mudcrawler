@@ -172,10 +172,19 @@ class SoundManager:
             print(f"Sound effects {'enabled' if self.sfx_enabled else 'disabled'} (but audio system unavailable)")
         return self.sfx_enabled
     
-    def play_sound(self, sound_name):
-        """Play a sound effect"""
+    def play_sound(self, sound_name, loop=0):
+        """
+        Play a sound effect with optional looping
+        
+        Args:
+            sound_name (str): The name of the sound to play (without extension)
+            loop (int): Number of times to loop the sound (-1 for infinite loop, 0 for no loop)
+            
+        Returns:
+            pygame.mixer.Channel or None: The channel the sound is playing on, or None if not available
+        """
         if not self._initialized or not self.sfx_enabled or not self.audio_available:
-            return
+            return None
             
         # Load the sound if not already loaded
         if sound_name not in self.sounds:
@@ -185,13 +194,31 @@ class SoundManager:
                 self.sounds[sound_name].set_volume(self.sfx_volume)
             except Exception as e:
                 print(f"Error loading sound '{sound_name}': {e}")
-                return
+                return None
         
         # Play the sound
         try:
-            self.sounds[sound_name].play()
+            channel = self.sounds[sound_name].play(loops=loop)
+            return channel
         except Exception as e:
             print(f"Error playing sound '{sound_name}': {e}")
+            self.audio_available = False
+            return None
+            
+    def stop_sound_channel(self, channel):
+        """
+        Stop a playing sound on a specific channel
+        
+        Args:
+            channel: The channel to stop the sound on
+        """
+        if not self._initialized or not self.audio_available or channel is None:
+            return
+            
+        try:
+            channel.stop()
+        except Exception as e:
+            print(f"Error stopping sound channel: {e}")
             self.audio_available = False
 
 # Function to get the singleton instance

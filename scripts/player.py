@@ -69,9 +69,9 @@ class Player(pygame.sprite.Sprite):
         self.bow_cooldown = 0
         self.last_attack_time = pygame.time.get_ticks()
         
-        # Walking sound cooldown
-        self.walk_sound_cooldown = 300  # milliseconds between footstep sounds
-        self.last_walk_sound_time = 0
+        # Walking sound management
+        self.last_movement_state = 'idle'  # Track the previous movement state
+        self.walk_sound_channel = None     # Track the sound channel for walking
         
         # Movement
         self.velocity_x = 0
@@ -194,10 +194,20 @@ class Player(pygame.sprite.Sprite):
             self.facing = 'down'
             
         # Update animation state based on movement
+        previous_state = self.current_state
         if self.velocity_x == 0 and self.velocity_y == 0:
             self.current_state = 'idle'
         else:
             self.current_state = 'walk'
+            
+        # Handle walk sound state transitions
+        if previous_state == 'idle' and self.current_state == 'walk':
+            # Player started walking - play sound from beginning
+            self.walk_sound_channel = self.sound_manager.play_sound("effects/walk", loop=True)
+        elif previous_state == 'walk' and self.current_state == 'idle':
+            # Player stopped walking - stop sound
+            self.sound_manager.stop_sound_channel(self.walk_sound_channel)
+            self.walk_sound_channel = None
             
         # Normalize diagonal movement
         if self.velocity_x != 0 and self.velocity_y != 0:
@@ -282,12 +292,6 @@ class Player(pygame.sprite.Sprite):
         
         # Keep player on screen
         self.rect.clamp_ip(pygame.display.get_surface().get_rect())
-        
-        # Play walking sound if player is moving
-        current_time = pygame.time.get_ticks()
-        if self.current_state == 'walk' and (current_time - self.last_walk_sound_time >= self.walk_sound_cooldown):
-            self.sound_manager.play_sound("effects/walk")
-            self.last_walk_sound_time = current_time
         
         # Update animation
         self.animation_time += self.animation_speed
