@@ -344,6 +344,13 @@ class Boss(Enemy):
         self.special_attack_cooldown = 3000  # 3 seconds
         self.last_special_attack_time = 0
         
+        # Position history for trailing effect (used by level 1 boss)
+        self.trail_enabled = level == 1  # Only enable for level 1 boss
+        self.position_history = []
+        self.max_trail_length = 5  # Store 5 previous positions
+        self.trail_update_rate = 4  # Update trail every 4 frames
+        self.trail_frame_counter = 0
+        
     def special_attack(self, player):
         current_time = pygame.time.get_ticks()
         if current_time - self.last_special_attack_time >= self.special_attack_cooldown:
@@ -360,6 +367,23 @@ class Boss(Enemy):
     def update(self, player):
         # Call the parent update method to handle basic movement and attacks
         super().update(player)
+        
+        # Update position history for trailing effect if enabled
+        if self.trail_enabled:
+            self.trail_frame_counter += 1
+            if self.trail_frame_counter >= self.trail_update_rate:
+                self.trail_frame_counter = 0
+                # Store current position and image
+                self.position_history.append({
+                    'pos': (self.rect.x, self.rect.y),
+                    'image': self.image,
+                    'frame': self.frame,
+                    'state': self.current_state,
+                    'facing': self.facing
+                })
+                # Keep only the most recent positions
+                if len(self.position_history) > self.max_trail_length:
+                    self.position_history.pop(0)
         
         # Check for special attack conditions based on health percentage
         health_percent = self.health / self.enemy_data['health']
@@ -381,4 +405,34 @@ class Boss(Enemy):
             
             # Lower chance for special attack
             if random.random() < 0.03:
-                self.special_attack(player) 
+                self.special_attack(player)
+        
+    def draw(self, surface):
+        # Draw trailing effect if enabled (for level 1 boss)
+        if self.trail_enabled and self.position_history:
+            # Draw trails from oldest to newest with increasing opacity
+            for i, pos_data in enumerate(self.position_history):
+                # Calculate alpha based on position in history (oldest = most transparent)
+                alpha = int(((i + 1) / self.max_trail_length) * 180)  # Max alpha of 180 (semi-transparent)
+                
+                # Get the image for this trail position
+                trail_image = pos_data['image']
+                
+                # Create a copy of the image with adjusted alpha
+                ghost_image = trail_image.copy()
+                ghost_image.set_alpha(alpha)
+                
+                # Draw the ghost image at the historical position
+                surface.blit(ghost_image, pos_data['pos'])
+        
+        # Draw the current image (fully opaque)
+        surface.blit(self.image, self.rect)
+        
+        # Draw health bar
+        health_bar_width = 60  # Wider than regular enemies
+        health_bar_height = 6
+        health_ratio = self.health / self.enemy_data['health']
+        pygame.draw.rect(surface, RED, (self.rect.x, self.rect.y - 12,
+                                      health_bar_width, health_bar_height))
+        pygame.draw.rect(surface, GREEN, (self.rect.x, self.rect.y - 12,
+                                        health_bar_width * health_ratio, health_bar_height)) 
