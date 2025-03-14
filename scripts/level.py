@@ -198,8 +198,8 @@ class Room:
                 elif random.random() < 0.25:  # 25% chance of wall
                     self.tiles[y][x] = 1
                     
-                    # 20% chance that a wall is destroyable
-                    if random.random() < 0.2:
+                    # 10% chance that a wall is destroyable (reduced from 20%)
+                    if random.random() < 0.1 and x > 1 and x < self.width - 2 and y > 1 and y < self.height - 2:
                         self.destroyable_walls[y][x] = True
                 else:
                     self.tiles[y][x] = 0
@@ -284,8 +284,8 @@ class Room:
                 self.tiles[py][px+1] = 1
                 self.tiles[py+1][px+1] = 1
                 
-                # 25% chance that pillars are destroyable
-                if random.random() < 0.25:
+                # 12.5% chance that pillars are destroyable (reduced from 25%)
+                if random.random() < 0.125:
                     self.destroyable_walls[py][px] = True
                     self.destroyable_walls[py+1][px] = True
                     self.destroyable_walls[py][px+1] = True
@@ -304,8 +304,8 @@ class Room:
                         if random.random() < 0.7:
                             self.tiles[corner_y + dy][corner_x + dx] = 1
                             
-                            # 30% chance that walls in treasure rooms are destroyable
-                            if random.random() < 0.3:
+                            # 15% chance that walls in treasure rooms are destroyable (reduced from 30%)
+                            if random.random() < 0.15 and corner_x > 1 and corner_x + dx < self.width - 2 and corner_y > 1 and corner_y + dy < self.height - 2:
                                 self.destroyable_walls[corner_y + dy][corner_x + dx] = True
         
     def try_destroy_wall(self, x, y):
