@@ -11,6 +11,9 @@ class Player(pygame.sprite.Sprite):
         self.asset_manager = get_asset_manager()
         self.sound_manager = get_sound_manager()
         
+        # Game instance will be set from main.py
+        self.game = None
+        
         # Load player animations from sprite sheet
         self.animations = {
             'idle': {},
@@ -276,10 +279,57 @@ class Player(pygame.sprite.Sprite):
         # Return True to indicate that the arrow was successfully shot
         return True
         
+    def set_game(self, game):
+        """Set the game instance for particle creation"""
+        self.game = game
+        
     def take_damage(self, amount):
         self.health -= amount
+        
+        # Play damage sound effect
+        self.sound_manager.play_sound("effects/player_dmg")
+        
+        # Trigger screen shake if game instance is available
+        if self.game and hasattr(self.game, 'trigger_screen_shake'):
+            # Scale shake amount based on damage
+            shake_amount = min(12, 5 + amount)
+            shake_duration = min(20, 10 + amount * 2)
+            self.game.trigger_screen_shake(amount=shake_amount, duration=shake_duration)
+        
+        # Create blood particles effect if game instance is available
+        if self.game and hasattr(self.game, 'particle_system'):
+            # Create blood splatter particles at player position
+            self.game.particle_system.create_blood_splash(
+                self.rect.centerx,
+                self.rect.centery,
+                amount=max(5, int(amount * 3))  # Scale particles by damage amount
+            )
+            
+            # Create additional directional particles based on facing direction
+            if self.facing == 'left':
+                offset_x = -10
+                offset_y = 0
+            elif self.facing == 'right':
+                offset_x = 10
+                offset_y = 0
+            elif self.facing == 'up':
+                offset_x = 0
+                offset_y = -10
+            else:  # down
+                offset_x = 0
+                offset_y = 10
+                
+            # Add some particles in the direction player is facing
+            self.game.particle_system.create_blood_splash(
+                self.rect.centerx + offset_x,
+                self.rect.centery + offset_y,
+                amount=3
+            )
+        
         if self.health <= 0:
             self.health = 0
+            # Play death sound if available
+            self.sound_manager.play_sound("effects/player_dies")
             # Stop any playing walking sounds when the player dies
             if self.walk_sound_channel is not None:
                 self.sound_manager.stop_sound_channel(self.walk_sound_channel)

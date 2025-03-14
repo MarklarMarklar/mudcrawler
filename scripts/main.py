@@ -2,6 +2,7 @@ import pygame
 import sys
 import os
 import math
+import random
 
 # Add the parent directory to the path so we can import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -13,6 +14,7 @@ from ui import Menu, HUD
 from asset_manager import get_asset_manager
 from camera import Camera  # Import our new Camera class
 from sound_manager import get_sound_manager  # Import our new sound manager
+from particle import ParticleSystem  # Import our new particle system
 
 class Game:
     def __init__(self):
@@ -24,6 +26,11 @@ class Game:
         self.torch_radius = 300
         self.torch_inner_radius = 150
         self.darkness_level = 220  # Increased from 180 to 220 to make the field darker
+        
+        # Screen shake effect
+        self.shake_amount = 0
+        self.shake_duration = 0
+        self.shake_offset = [0, 0]
         
         # Debug: Print working directory
         print(f"Current working directory: {os.getcwd()}")
@@ -72,8 +79,12 @@ class Game:
         self.menu = Menu(self.screen)
         self.hud = HUD(self.screen)
         
+        # Initialize particle system
+        self.particle_system = ParticleSystem()
+        
         # Initialize game components
         self.player = Player(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
+        self.player.set_game(self)  # Set game instance in player
         self.weapon_manager = WeaponManager(self.player)
         
         # Level is initialized only when starting the game, not at menu
@@ -124,11 +135,14 @@ class Game:
     def reset_game(self):
         print("Resetting game...")
         self.current_level = 1
+        # Reset particle system
+        self.particle_system = ParticleSystem()
         # First initialize the level
         self.level = Level(self.current_level)
         # Then get a valid position for the player
         player_x, player_y = self.level.get_valid_player_start_position()
         self.player = Player(player_x, player_y)
+        self.player.set_game(self)  # Set game instance in player
         self.player.level = self.level  # Give player a reference to the level
         self.weapon_manager = WeaponManager(self.player)
         # Ensure any existing arrows are cleared
@@ -343,6 +357,12 @@ class Game:
         # Update player movement
         keys = pygame.key.get_pressed()
         self.player.move(keys)
+        
+        # Update screen shake effect
+        self.update_screen_shake()
+        
+        # Update particle system
+        self.particle_system.update()
         
         # Check collision using separate X and Y axis checks to allow sliding
         # Store original position
@@ -642,6 +662,9 @@ class Game:
         # Draw player to room surface
         self.player.draw(room_surface)
         
+        # Draw particles
+        self.particle_system.draw(room_surface, (0, 0))
+        
         # Draw weapons (EXCEPT arrows, which we'll draw last)
         if self.weapon_manager.sword.active:
             self.weapon_manager.weapon_sprites.draw(room_surface)
@@ -685,7 +708,10 @@ class Game:
                 visible_portion, 
                 (WINDOW_WIDTH, WINDOW_HEIGHT)
             )
-            self.screen.blit(scaled_portion, (0, 0))
+            
+            # Apply screen shake offset when drawing the game world
+            shake_x, shake_y = self.shake_offset
+            self.screen.blit(scaled_portion, (shake_x, shake_y))
         except ValueError as e:
             print(f"Error creating subsurface: {e}")
             print(f"View rect: {view_rect}, Room surface: {room_surface.get_size()}")
@@ -695,7 +721,9 @@ class Game:
                     room_surface, 
                     (WINDOW_WIDTH, WINDOW_HEIGHT)
                 )
-                self.screen.blit(scaled_portion, (0, 0))
+                # Apply screen shake to fallback rendering too
+                shake_x, shake_y = self.shake_offset
+                self.screen.blit(scaled_portion, (shake_x, shake_y))
             except Exception as e2:
                 print(f"Fatal error during fallback rendering: {e2}")
                 # Last resort - just fill the screen with a solid color
@@ -953,6 +981,22 @@ class Game:
                 print(f"Critical error during recovery: {e2}")
                 
             return False
+            
+    def trigger_screen_shake(self, amount=8, duration=10):
+        """Trigger a screen shake effect"""
+        self.shake_amount = amount
+        self.shake_duration = duration
+        
+    def update_screen_shake(self):
+        """Update the screen shake effect"""
+        if self.shake_duration > 0:
+            self.shake_duration -= 1
+            self.shake_offset = [
+                random.randint(-self.shake_amount, self.shake_amount),
+                random.randint(-self.shake_amount, self.shake_amount)
+            ]
+        else:
+            self.shake_offset = [0, 0]
 
 if __name__ == "__main__":
     print("Initializing Mud Crawler game...")
