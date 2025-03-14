@@ -239,6 +239,7 @@ class Boss(Enemy):
         super().__init__(x, y, None, level, level_instance)
         self.asset_manager = get_asset_manager()
         self.enemy_data = BOSS_TYPES[f'level{level}']
+        self.level = level  # Explicitly save the level
         
         # Override stats with boss stats
         self.health = self.enemy_data['health']
@@ -413,15 +414,17 @@ class Boss(Enemy):
             # Boss has detected the player
             if not self.has_seen_player:
                 # First time seeing player, play voice sound
-                self.sound_manager.play_sound("effects/boss_1_voice")
+                voice_file = f"effects/boss_{self.level}_voice"
+                self.sound_manager.play_sound(voice_file)
                 self.has_seen_player = True
                 self.last_voice_time = current_time
-                print("Boss has seen the player! Playing voice sound.")
+                print(f"Boss has seen the player! Playing voice sound: {voice_file}")
             elif current_time - self.last_voice_time >= self.voice_cooldown:
                 # Repeat the voice sound every 4 seconds
-                self.sound_manager.play_sound("effects/boss_1_voice")
+                voice_file = f"effects/boss_{self.level}_voice"
+                self.sound_manager.play_sound(voice_file)
                 self.last_voice_time = current_time
-                print("Boss repeating voice sound.")
+                print(f"Boss repeating voice sound: {voice_file}")
         
         # Update position history for trailing effect if enabled
         if self.trail_enabled:
