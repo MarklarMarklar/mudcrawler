@@ -248,7 +248,7 @@ class Room:
                             (x == center_x and (abs(y - center_y) < 3)) or
                             (y == center_y and (abs(x - center_x) < 3))
                         ):
-                            self.tiles[y][x] = 1
+                    self.tiles[y][x] = 1
                     
                         # Add some additional symmetric walls for density
                         elif (x == center_x - 4 or x == center_x + 4) and (5 < y < self.height - 6):
@@ -436,7 +436,7 @@ class Room:
             for y in range(center_y - 2, center_y + 3):
                 for x in range(center_x - 2, center_x + 3):
                     if 0 <= y < self.height and 0 <= x < self.width:
-                        self.tiles[y][x] = 0
+                    self.tiles[y][x] = 0
             
             # Add some symmetric decorative walls near edges
             for offset in range(3, min(center_x, center_y) - 2, 4):
