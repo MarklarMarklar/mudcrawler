@@ -2,6 +2,14 @@ import pygame
 import os
 from config import *
 
+# Try to import pygame.sndarray for sound manipulation
+try:
+    import pygame.sndarray
+    sndarray_available = True
+except ImportError:
+    sndarray_available = False
+    print("WARNING: pygame.sndarray not available - falling back to full sound files.")
+
 class SoundManager:
     """Class to manage all game sounds and music"""
     _instance = None
@@ -220,6 +228,81 @@ class SoundManager:
         except Exception as e:
             print(f"Error stopping sound channel: {e}")
             self.audio_available = False
+    
+    def play_sound_portion(self, sound_name, start_ms=0, duration_ms=2000, loop=0):
+        """
+        Play a specific portion of a sound effect with optional looping
+        
+        Args:
+            sound_name (str): The name of the sound to play (without extension)
+            start_ms (int): Start time in milliseconds
+            duration_ms (int): Duration to play in milliseconds
+            loop (int): Number of times to loop the sound (-1 for infinite loop, 0 for no loop)
+            
+        Returns:
+            pygame.mixer.Channel or None: The channel the sound is playing on, or None if not available
+        """
+        if not self._initialized or not self.sfx_enabled or not self.audio_available:
+            return None
+            
+        # If sndarray is not available, fall back to playing the full sound
+        if not sndarray_available:
+            print(f"sndarray not available, playing full sound for: {sound_name}")
+            return self.play_sound(sound_name, loop)
+            
+        # Create a unique key for the portion
+        portion_key = f"{sound_name}_{start_ms}_{duration_ms}"
+            
+        # Load the sound portion if not already loaded
+        if portion_key not in self.sounds:
+            # First load the full sound
+            sound_path = os.path.join(self.sound_dir, f"{sound_name}.wav")
+            try:
+                # Load the full sound temporarily
+                full_sound = pygame.mixer.Sound(sound_path)
+                
+                # Get sound array data
+                full_array = pygame.sndarray.array(full_sound)
+                
+                # Calculate position in array based on milliseconds
+                sample_rate = pygame.mixer.get_init()[0]
+                channels = 2  # Stereo sound (most common)
+                start_pos = (start_ms * sample_rate) // 1000
+                duration_pos = (duration_ms * sample_rate) // 1000
+                
+                # Extract the desired portion
+                if start_pos + duration_pos > len(full_array):
+                    duration_pos = len(full_array) - start_pos
+                    
+                if duration_pos <= 0:
+                    print(f"Error: Invalid duration for sound portion '{portion_key}'")
+                    return None
+                    
+                try:
+                    portion_array = full_array[start_pos:start_pos + duration_pos]
+                    
+                    # Create a new sound from the portion
+                    self.sounds[portion_key] = pygame.sndarray.make_sound(portion_array)
+                    self.sounds[portion_key].set_volume(self.sfx_volume)
+                    print(f"Created sound portion: {portion_key}")
+                except Exception as e:
+                    print(f"Error creating sound portion '{portion_key}': {e}")
+                    # Fall back to using the full sound
+                    self.sounds[portion_key] = full_sound
+                    self.sounds[portion_key].set_volume(self.sfx_volume)
+                    print(f"Falling back to full sound for '{portion_key}'")
+            except Exception as e:
+                print(f"Error loading sound '{sound_name}' for portion: {e}")
+                return None
+        
+        # Play the sound portion
+        try:
+            channel = self.sounds[portion_key].play(loops=loop)
+            return channel
+        except Exception as e:
+            print(f"Error playing sound portion '{portion_key}': {e}")
+            self.audio_available = False
+            return None
 
 # Function to get the singleton instance
 def get_sound_manager():
