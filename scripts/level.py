@@ -256,15 +256,29 @@ class Room:
         elif self.room_type == 'boss':
             # Boss room - large open area with some obstacles
             center_x, center_y = self.width // 2, self.height // 2
-            # Clear center area
-            for y in range(1, self.height - 1):
-                for x in range(1, self.width - 1):
-                    self.tiles[y][x] = 0
+            # Clear center area - make it larger to ensure boss has room to move
+            clear_radius = 5  # Increase cleared area radius
+            for y in range(center_y - clear_radius, center_y + clear_radius + 1):
+                for x in range(center_x - clear_radius, center_x + clear_radius + 1):
+                    if 0 <= y < self.height and 0 <= x < self.width:
+                        self.tiles[y][x] = 0  # Set to floor
             
-            # Add some random pillars
+            # Add some random pillars, but keep them away from the center
             for _ in range(4):
-                px = random.randint(3, self.width - 4)
-                py = random.randint(3, self.height - 4)
+                # Choose positions for pillars that are not in the center area
+                valid_position = False
+                px, py = 0, 0
+                
+                while not valid_position:
+                    px = random.randint(3, self.width - 4)
+                    py = random.randint(3, self.height - 4)
+                    
+                    # Check if far enough from center
+                    dx = abs(px - center_x)
+                    dy = abs(py - center_y)
+                    if dx > clear_radius - 1 or dy > clear_radius - 1:
+                        valid_position = True
+                
                 self.tiles[py][px] = 1
                 self.tiles[py+1][px] = 1
                 self.tiles[py][px+1] = 1
@@ -382,10 +396,51 @@ class Room:
         if self.room_type != 'boss':
             return
             
-        # Boss spawns in the center of the room
+        # Try to place boss in the center first
         center_x = (self.width // 2) * TILE_SIZE
         center_y = (self.height // 2) * TILE_SIZE
-        self.boss = Boss(center_x, center_y, self.level_number, level_instance)
+        
+        # Check if center position is valid (not a wall)
+        if self.is_valid_spawn_position(center_x, center_y):
+            self.boss = Boss(center_x, center_y, self.level_number, level_instance)
+            print(f"Boss spawned at center position ({center_x}, {center_y})")
+            return
+            
+        # If center is not valid, search for a valid position
+        print("Center position is not valid for boss. Searching for valid position...")
+        
+        # Search in expanding circles around the center
+        for radius in range(1, min(self.width, self.height) // 2):
+            # Try positions in a square around the center
+            for offset_y in range(-radius, radius + 1):
+                for offset_x in range(-radius, radius + 1):
+                    # Skip positions not on the edge of the square
+                    if abs(offset_x) != radius and abs(offset_y) != radius:
+                        continue
+                        
+                    test_x = center_x + offset_x * TILE_SIZE
+                    test_y = center_y + offset_y * TILE_SIZE
+                    
+                    if self.is_valid_spawn_position(test_x, test_y):
+                        self.boss = Boss(test_x, test_y, self.level_number, level_instance)
+                        print(f"Boss spawned at alternative position ({test_x}, {test_y})")
+                        return
+        
+        # If we got here, we couldn't find a valid position
+        # As a last resort, try every floor tile in the room
+        for y in range(1, self.height - 1):
+            for x in range(1, self.width - 1):
+                if self.tiles[y][x] == 0:  # Floor tile
+                    pixel_x = x * TILE_SIZE
+                    pixel_y = y * TILE_SIZE
+                    
+                    if self.is_valid_spawn_position(pixel_x, pixel_y):
+                        self.boss = Boss(pixel_x, pixel_y, self.level_number, level_instance)
+                        print(f"Boss spawned at fallback position ({pixel_x}, {pixel_y})")
+                        return
+                        
+        # If we still can't find a position, log an error
+        print("ERROR: Could not find a valid position for boss spawn!")
         
     def near_door(self, tile_x, tile_y):
         """Check if a tile is near a door"""
