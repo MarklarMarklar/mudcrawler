@@ -113,6 +113,10 @@ class Menu:
         # Game over custom image
         self.gameover_custom_img = None
         self.use_gameover_custom_img = False
+        
+        # Custom title image from images directory
+        self.custom_title = None
+        self.use_custom_title = False
             
         # Try to load menu background textures if they exist
         try:
@@ -170,6 +174,27 @@ class Menu:
                 print(f"Custom game over image not found: {gameover_custom_path}")
         except Exception as e:
             print(f"Failed to load custom game over image: {e}")
+            
+        # Try to load custom title image
+        try:
+            custom_title_path = os.path.join(ASSET_PATH, "images/title.png")
+            if os.path.exists(custom_title_path):
+                # Calculate appropriate scaling while maintaining aspect ratio
+                img = pygame.image.load(custom_title_path)
+                original_width, original_height = img.get_size()
+                
+                # Target width is 68% of screen width (80% reduced by 15%)
+                target_width = int(WINDOW_WIDTH * 0.8 * 0.85)
+                # Scale height proportionally
+                target_height = int(original_height * (target_width / original_width))
+                
+                self.custom_title = self.asset_manager.load_image(custom_title_path, scale=(target_width, target_height))
+                self.use_custom_title = True
+                print(f"Successfully loaded custom title image: {custom_title_path}")
+            else:
+                print(f"Custom title image not found: {custom_title_path}")
+        except Exception as e:
+            print(f"Failed to load custom title image: {e}")
         
         # Create buttons with more space between them
         self.button_width = 200
@@ -242,6 +267,18 @@ class Menu:
             subtitle = pygame.font.Font(None, 36).render("8-bit Dungeon Adventure", True, (200, 200, 200))
             subtitle_rect = subtitle.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3 + 50))
             self.screen.blit(subtitle, subtitle_rect)
+        
+        # Draw the custom title image if available
+        if self.use_custom_title and self.custom_title:
+            # Position the title above the start button
+            title_y = self.buttons['start'].rect.y - self.custom_title.get_height() - 20  # 20px margin
+            
+            # Adjust y position if it's too high up on the screen 
+            if title_y < 20:
+                title_y = 20
+                
+            title_rect = self.custom_title.get_rect(centerx=WINDOW_WIDTH // 2, top=title_y)
+            self.screen.blit(self.custom_title, title_rect)
         
         # Draw buttons with enhanced visibility
         self.buttons['start'].draw(self.screen)

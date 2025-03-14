@@ -3,6 +3,7 @@ import math
 import os
 from config import *
 from asset_manager import get_asset_manager
+from sound_manager import get_sound_manager
 
 class Arrow:
     """Arrow projectile that travels in a straight line"""
@@ -408,6 +409,9 @@ class WeaponManager:
         self.weapon_sprites = pygame.sprite.Group()
         self.weapon_sprites.add(self.sword)
         
+        # Sound manager for weapon sounds
+        self.sound_manager = get_sound_manager()
+        
     def update(self):
         # Update all weapons
         self.sword.update()
@@ -446,6 +450,8 @@ class WeaponManager:
         # Activate the sword animation
         if not self.sword.active:
             self.sword.start_attack()
+            # Play sword attack sound effect
+            self.sound_manager.play_sound("sword_attack")
     def attack_bow(self, mouse_pos):
         # Check if player has arrows
 
