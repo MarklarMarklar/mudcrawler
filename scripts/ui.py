@@ -2,6 +2,7 @@ import pygame
 import os
 from config import *
 from asset_manager import get_asset_manager
+import math
 
 class Button:
     def __init__(self, x, y, width, height, text, font_size=36):
@@ -456,6 +457,7 @@ class HUD:
         self.sword_icon = None
         self.bow_icon = None
         self.sound_off_icon = None
+        self.key_icon = None
         
         # Health bar dimensions
         self.health_bar_width = 240  # Width of the health bar graphic
@@ -504,6 +506,15 @@ class HUD:
                 self.bow_icon = self.asset_manager.load_image(bow_icon_path, scale=(32, 32))
         except Exception as e:
             print(f"Failed to load bow icon: {e}")
+            
+        # Try to load key icon from UI sprites
+        try:
+            key_icon_path = os.path.join(UI_SPRITES_PATH, "key_icon.png")
+            if os.path.exists(key_icon_path):
+                self.key_icon = self.asset_manager.load_image(key_icon_path, scale=(32, 32))
+                print("Successfully loaded key icon")
+        except Exception as e:
+            print(f"Failed to load key icon: {e}")
         
         # Try to load sound off icon
         try:
@@ -796,6 +807,59 @@ class HUD:
                           (bar_x, bar_y + std_bar_height + bar_spacing, int(std_bar_width * arrow_ratio), std_bar_height))
             pygame.draw.rect(self.screen, WHITE,
                           (bar_x, bar_y + std_bar_height + bar_spacing, std_bar_width, std_bar_height), 2)
+        
+        # Draw the key icon if player has a key and we have level
+        if level and hasattr(level, 'has_key') and level.has_key:
+            # Calculate key position (right side of health bar)
+            key_size = 32
+            
+            if self.use_custom_health_bar and self.health_bar_bg and self.health_bar_rect:
+                # Position at the right of the health bar
+                key_x = bar_x + self.health_bar_width + 10
+                key_y = bar_y + (self.health_bar_height // 2) - (key_size // 2)  # Vertically center with health bar
+            else:
+                # Fallback position
+                key_x = bar_x + std_bar_width + 20
+                key_y = bar_y
+            
+            # Draw key background glow with pulsing effect
+            pulse = 0.5 + 0.5 * abs(math.sin(pygame.time.get_ticks() / 200))
+            bg_size = key_size * 1.5
+            bg_x = key_x - (bg_size - key_size) / 2
+            bg_y = key_y - (bg_size - key_size) / 2
+            
+            # Create glowing background
+            bg_color = (255, 215, 0, int(100 * pulse))  # Golden glow with alpha
+            bg_surface = pygame.Surface((bg_size, bg_size), pygame.SRCALPHA)
+            pygame.draw.circle(bg_surface, bg_color, (bg_size//2, bg_size//2), bg_size//2)
+            self.screen.blit(bg_surface, (bg_x, bg_y))
+            
+            # Draw the key icon if available
+            if self.key_icon:
+                self.screen.blit(self.key_icon, (key_x, key_y))
+            else:
+                # Draw a custom key icon if no image is available
+                key_icon = pygame.Surface((key_size, key_size), pygame.SRCALPHA)
+                key_icon.fill((0, 0, 0, 0))  # Transparent background
+                
+                # Key body (circle at top)
+                pygame.draw.circle(key_icon, (255, 215, 0), (key_size//2, key_size//4), key_size//6)
+                # Key stem
+                pygame.draw.rect(key_icon, (255, 215, 0), 
+                              (key_size//2 - key_size//10, key_size//4, key_size//5, key_size//2))
+                # Key teeth
+                pygame.draw.rect(key_icon, (255, 215, 0), 
+                              (key_size//2, key_size//2, key_size//4, key_size//8))
+                pygame.draw.rect(key_icon, (255, 215, 0),
+                              (key_size//2, key_size//2 + key_size//6, key_size//4, key_size//8))
+                
+                self.screen.blit(key_icon, (key_x, key_y))
+            
+            # Add key label
+            small_font = pygame.font.Font(None, 18)
+            key_text = small_font.render("KEY", True, (255, 255, 255))
+            key_text_rect = key_text.get_rect(center=(key_x + key_size//2, key_y + key_size + 8))
+            self.screen.blit(key_text, key_text_rect)
         
         # Draw minimap if level is provided
         if level:

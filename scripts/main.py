@@ -1,6 +1,7 @@
 import pygame
 import sys
 import os
+import math
 
 # Add the parent directory to the path so we can import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -565,15 +566,28 @@ class Game:
         room_surface = pygame.Surface((room_width, room_height))
         room_surface.fill(BLACK)
         
-        # Draw level to room surface (except exit confirmation dialog)
+        # Draw level to room surface (except exit confirmation dialog and key notification)
         if self.level:
             # Store the current state of the exit confirmation
             show_confirmation = self.level.show_exit_confirmation
             # Temporarily disable exit confirmation to avoid drawing it on the room surface
             self.level.show_exit_confirmation = False
+            
+            # Store if we have a key pickup notification
+            has_key_notification = hasattr(self.level, 'key_pickup_time')
+            key_pickup_time = getattr(self.level, 'key_pickup_time', 0)
+            
+            # Temporarily remove key pickup notification if it exists
+            if has_key_notification:
+                delattr(self.level, 'key_pickup_time')
+                
+            # Draw level (without confirmation dialog or key notification)
             self.level.draw(room_surface)
-            # Restore the original state
+            
+            # Restore the original states
             self.level.show_exit_confirmation = show_confirmation
+            if has_key_notification:
+                self.level.key_pickup_time = key_pickup_time
         
         # Draw player to room surface
         self.player.draw(room_surface)
@@ -679,6 +693,46 @@ class Game:
         # Draw HUD - pass audio availability to draw sound icon if needed
         # Also pass the level object to enable minimap drawing in the HUD
         self.hud.draw(self.player, self.current_level, self.sound_manager.audio_available, self.level)
+        
+        # Draw key pickup notification directly on the screen
+        if self.level and hasattr(self.level, 'key_pickup_time'):
+            time_since_pickup = pygame.time.get_ticks() - self.level.key_pickup_time
+            if time_since_pickup < 3000:  # Show for 3 seconds
+                try:
+                    font_path = os.path.join(ASSET_PATH, "fonts/PixelatedEleganceRegular-ovyAA.ttf")
+                    font = pygame.font.Font(font_path, 22)  # Smaller font for better visibility
+                except:
+                    font = pygame.font.Font(None, 24)  # Fallback to system font
+                
+                # Create a notification with smaller text
+                notification = font.render("KEY COLLECTED! Find the exit.", True, (255, 255, 0))
+                
+                # Create a background for better visibility
+                padding = 10
+                bg_rect = notification.get_rect()
+                bg_rect.width += padding * 2
+                bg_rect.height += padding * 2
+                
+                # Position at the top of the screen
+                bg_rect.centerx = WINDOW_WIDTH // 2
+                bg_rect.top = 20
+                
+                # Draw semi-transparent dark background with rounded corners
+                bg_surface = pygame.Surface((bg_rect.width, bg_rect.height), pygame.SRCALPHA)
+                pygame.draw.rect(bg_surface, (0, 0, 0, 180), pygame.Rect(0, 0, bg_rect.width, bg_rect.height), 0, 8)
+                # Add a subtle border
+                pygame.draw.rect(bg_surface, (255, 215, 0, 150), pygame.Rect(0, 0, bg_rect.width, bg_rect.height), 2, 8)
+                self.screen.blit(bg_surface, bg_rect)
+                
+                # Apply pulsing effect
+                pulse = abs(math.sin(time_since_pickup / 300))
+                # Vary the color slightly for the pulse effect
+                color = (255, 255, 0) if pulse > 0.5 else (255, 215, 0)
+                notification = font.render("KEY COLLECTED! Find the exit.", True, color)
+                
+                # Draw text centered on the background
+                notification_rect = notification.get_rect(center=bg_rect.center)
+                self.screen.blit(notification, notification_rect)
         
         # Draw exit confirmation dialog last, directly on the screen (not affected by camera)
         if self.level and self.level.show_exit_confirmation:

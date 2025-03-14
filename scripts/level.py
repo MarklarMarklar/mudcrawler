@@ -1301,45 +1301,6 @@ class Level:
         current_room = self.rooms[self.current_room_coords]
         current_room.draw(surface, self.tiles, self)
         
-        # Draw key pickup notification
-        if hasattr(self, 'key_pickup_time'):
-            time_since_pickup = pygame.time.get_ticks() - self.key_pickup_time
-            if time_since_pickup < 3000:  # Show for 3 seconds
-                # Create a notification
-                font = pygame.font.Font(None, 36)
-                notification = font.render("KEY COLLECTED! Find the exit.", True, (255, 255, 0))
-                # Make it pulse
-                alpha = int(255 * abs(math.sin(time_since_pickup / 300)))
-                notification.set_alpha(alpha)
-                notification_rect = notification.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 100))
-                surface.blit(notification, notification_rect)
-        
-        # Draw key indicator if we have the key
-        if self.has_key:
-            # Draw key icon with animation
-            key_icon_size = TILE_SIZE
-            key_bg = pygame.Surface((key_icon_size, key_icon_size), pygame.SRCALPHA)
-            # Animate the background glow
-            pulse = 0.5 + 0.5 * abs(math.sin(pygame.time.get_ticks() / 200))
-            bg_color = (255, 215, 0, int(100 * pulse))
-            pygame.draw.circle(key_bg, bg_color, (key_icon_size//2, key_icon_size//2), key_icon_size//2)
-            surface.blit(key_bg, (WINDOW_WIDTH - key_icon_size - 5, 5))
-            
-            # Draw the key icon
-            key_icon = pygame.Surface((key_icon_size, key_icon_size), pygame.SRCALPHA)
-            # Key body
-            pygame.draw.rect(key_icon, (255, 215, 0), (key_icon_size//4, key_icon_size//8, key_icon_size//2, key_icon_size//4))
-            # Key stem
-            pygame.draw.rect(key_icon, (255, 215, 0), (key_icon_size//3, key_icon_size//3, key_icon_size//3, key_icon_size//2))
-            # Key teeth
-            pygame.draw.rect(key_icon, (255, 215, 0), (key_icon_size//6, key_icon_size//2, key_icon_size*2//3, key_icon_size//4))
-            surface.blit(key_icon, (WINDOW_WIDTH - key_icon_size - 5, 5))
-            
-            # Add text label
-            font = pygame.font.Font(None, 20)
-            key_text = font.render("KEY", True, (255, 255, 255))
-            surface.blit(key_text, (WINDOW_WIDTH - key_icon_size - 5, key_icon_size + 10))
-            
         # Draw exit confirmation if needed
         if self.show_exit_confirmation:
             self.draw_exit_confirmation(surface)
