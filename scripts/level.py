@@ -218,7 +218,7 @@ class Room:
                             (y == center_y and (abs(x - center_x) < 3))
                         ):
                             self.tiles[y][x] = 1
-                            
+                        
                         # Add some additional symmetric walls for density
                         elif (x == center_x - 4 or x == center_x + 4) and (5 < y < self.height - 6):
                             self.tiles[y][x] = 1
@@ -422,7 +422,7 @@ class Room:
                         y = center_y + y_offset
                         self.tiles[y][center_x - offset] = 1
                         self.tiles[y][center_x + offset] = 1
-                
+        
         elif self.room_type == 'boss':
             # Boss room with symmetric design
             # Clear center area - make it larger to ensure boss has room to move
@@ -540,7 +540,7 @@ class Room:
                 for x in range(1, 4):  # 3 tiles deep
                     if 0 <= y < self.height and 0 <= x < self.width:
                         self.tiles[y][x] = 0  # Floor tile
-                        
+            
         # ADD DESTROYABLE WALLS (TREASURE CHESTS) SEPARATELY
         self._place_destroyable_walls()
         
@@ -737,7 +737,7 @@ class Room:
                     self.tiles[check_y][check_x] == 2):  # Door tile
                     return True
         return False
-    
+        
     def try_destroy_wall(self, x, y):
         """Try to destroy a wall at the given tile position"""
         # Check if position is within bounds
@@ -1017,6 +1017,9 @@ class Room:
 
     def draw(self, surface, tile_images, level):
         """Draw the room and its contents"""
+        # Store exit door positions for later glow drawing
+        exit_door_positions = []
+        
         # Draw tiles
         for y in range(self.height):
             for x in range(self.width):
@@ -1048,7 +1051,14 @@ class Room:
                 elif self.tiles[y][x] == 2:  # Door
                     surface.blit(tile_images['door'], (tile_x, tile_y))
                 elif self.tiles[y][x] == EXIT_DOOR_TILE:  # Exit door
-                    surface.blit(tile_images['exit'], (tile_x, tile_y))
+                    # Store position to draw glow later on top of everything
+                    exit_door_positions.append((x, y))
+                    
+                    # Determine which exit door sprite to use based on whether player has the key
+                    exit_key = 'exit_open' if level.has_key else 'exit'
+                    
+                    # Draw only the door now, glow will be added later
+                    surface.blit(tile_images[exit_key], (tile_x, tile_y))
                 else:  # Floor
                     surface.blit(tile_images['floor'], (tile_x, tile_y))
                     
@@ -1117,6 +1127,46 @@ class Room:
         # Draw boss if present
         if self.boss and self.boss.health > 0:
             self.boss.draw(surface)
+        
+        # Finally, draw exit door glows on top of everything else
+        for x, y in exit_door_positions:
+            tile_x = x * TILE_SIZE
+            tile_y = y * TILE_SIZE
+            
+            # Only draw the glow if the player has the key
+            if level.has_key:
+                # Use the open door glow
+                exit_glow_key = 'exit_open_glow'
+                
+                if exit_glow_key in tile_images:
+                    # Create pulsating effect using sine wave
+                    pulse = abs(math.sin(pygame.time.get_ticks() / 400))  # Slightly faster pulsing
+                    
+                    # Make the glow larger and more intense for better visibility
+                    glow_size_modifier = 1.2 + pulse * 0.3  # Varies between 1.2x and 1.5x
+                    
+                    # Original glow surface
+                    original_glow = tile_images[exit_glow_key]
+                    glow_width = int(original_glow.get_width() * glow_size_modifier)
+                    glow_height = int(original_glow.get_height() * glow_size_modifier)
+                    
+                    # Scale the glow based on pulse
+                    try:
+                        glow_surface = pygame.transform.scale(original_glow, (glow_width, glow_height))
+                    except Exception:
+                        # Fallback if scaling fails
+                        glow_surface = original_glow.copy()
+                    
+                    # Adjust alpha based on pulse for pulsating effect
+                    alpha_min = 150
+                    alpha_range = 105
+                    glow_surface.set_alpha(int(alpha_min + alpha_range * pulse))
+                    
+                    # Center the glow on the exit door
+                    glow_x = tile_x + TILE_SIZE // 2 - glow_surface.get_width() // 2
+                    glow_y = tile_y + TILE_SIZE // 2 - glow_surface.get_height() // 2
+                    
+                    surface.blit(glow_surface, (glow_x, glow_y))
 
     def add_exit_door(self):
         """Add an exit door to the room at a random location along a wall"""
@@ -1347,9 +1397,9 @@ class Level:
         pygame.draw.circle(door_tile, (100, 80, 30), (TILE_SIZE//4, TILE_SIZE//2), TILE_SIZE//8)
         tiles['door'] = door_tile
         
-        # Exit door tile placeholder
+        # Exit door tile placeholder - this will be overridden by custom sprite
         exit_door = pygame.Surface((TILE_SIZE, TILE_SIZE))
-        exit_door.fill((50, 150, 50))  # Green color
+        exit_door.fill((50, 150, 50))
         # Add exit symbol
         pygame.draw.polygon(exit_door, (255, 255, 255), 
             [(TILE_SIZE//4, TILE_SIZE//4), 
@@ -1360,6 +1410,16 @@ class Level:
              (TILE_SIZE//2, TILE_SIZE//2),
              (TILE_SIZE//4, TILE_SIZE//2)])
         tiles['exit'] = exit_door
+        
+        # Exit door open placeholder (for when player has key)
+        exit_door_open = exit_door.copy()
+        exit_door_open.fill((50, 200, 50))  # Brighter green
+        # Add different exit symbol
+        pygame.draw.polygon(exit_door_open, (255, 255, 255), 
+            [(TILE_SIZE//4, TILE_SIZE//4), 
+             (3*TILE_SIZE//4, TILE_SIZE//4),
+             (TILE_SIZE//2, 3*TILE_SIZE//4)])
+        tiles['exit_open'] = exit_door_open
         
         # Load the selected textures for this level
         try:
@@ -1377,6 +1437,38 @@ class Level:
             if self.selected_door_texture and os.path.exists(self.selected_door_texture):
                 tiles['door'] = self.asset_manager.load_image(self.selected_door_texture, scale=(TILE_SIZE, TILE_SIZE))
                 print(f"Loaded door texture: {os.path.basename(self.selected_door_texture)}")
+            
+            # Load custom exit door texture
+            exit_door_path = os.path.join(TILE_SPRITES_PATH, "doors/exit/exit_door.png")
+            if os.path.exists(exit_door_path):
+                tiles['exit'] = self.asset_manager.load_image(exit_door_path, scale=(TILE_SIZE, TILE_SIZE))
+                print(f"Loaded exit door texture: exit_door.png")
+            
+            # Load open exit door texture
+            exit_door_open_path = os.path.join(TILE_SPRITES_PATH, "doors/exit/exit_door_open.png")
+            if os.path.exists(exit_door_open_path):
+                tiles['exit_open'] = self.asset_manager.load_image(exit_door_open_path, scale=(TILE_SIZE, TILE_SIZE))
+                print(f"Loaded open exit door texture: exit_door_open.png")
+                
+            # Create glowing version of the exit door
+            if "exit" in tiles:
+                # Create a copy of the exit door with a glow effect
+                exit_glow = tiles['exit'].copy()
+                # Yellow/white glow surface
+                glow_surf = pygame.Surface((TILE_SIZE + 8, TILE_SIZE + 8), pygame.SRCALPHA)
+                pygame.draw.circle(glow_surf, (255, 255, 100, 128), (TILE_SIZE // 2 + 4, TILE_SIZE // 2 + 4), TILE_SIZE // 2 + 4)
+                # Store the glowing version
+                tiles['exit_glow'] = glow_surf
+            
+            # Create glowing version of the open exit door
+            if "exit_open" in tiles:
+                # Create a copy of the open exit door with a glow effect
+                exit_open_glow = tiles['exit_open'].copy()
+                # Brighter glow for open door
+                glow_surf = pygame.Surface((TILE_SIZE + 12, TILE_SIZE + 12), pygame.SRCALPHA)
+                pygame.draw.circle(glow_surf, (255, 255, 0, 150), (TILE_SIZE // 2 + 6, TILE_SIZE // 2 + 6), TILE_SIZE // 2 + 6)
+                # Store the glowing version
+                tiles['exit_open_glow'] = glow_surf
                 
             # We'll load destroyable wall textures on-the-fly during rendering
                 
