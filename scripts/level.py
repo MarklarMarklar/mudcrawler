@@ -1291,25 +1291,47 @@ class Level:
         
     def draw_exit_confirmation(self, surface):
         """Draw confirmation dialog when trying to exit level"""
+        # This dialog should be drawn directly on the screen, not affected by camera zoom
+        
         # Darken the screen
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 180))  # Semi-transparent black
         surface.blit(overlay, (0, 0))
         
-        # Create the dialog box
+        # Create the dialog box with rounded corners
         dialog_width = 400
         dialog_height = 200
         dialog_x = (WINDOW_WIDTH - dialog_width) // 2
         dialog_y = (WINDOW_HEIGHT - dialog_height) // 2
         
         dialog_rect = pygame.Rect(dialog_x, dialog_y, dialog_width, dialog_height)
-        pygame.draw.rect(surface, (50, 50, 50), dialog_rect)
-        pygame.draw.rect(surface, (200, 200, 200), dialog_rect, 3)
         
-        # Dialog text
-        font = pygame.font.Font(None, 36)
-        text = font.render("Exit to next level?", True, (255, 255, 255))
-        text_rect = text.get_rect(center=(WINDOW_WIDTH // 2, dialog_y + 50))
+        # Draw a rounded rectangle for the dialog
+        dialog_surface = pygame.Surface((dialog_width, dialog_height), pygame.SRCALPHA)
+        dialog_surface.fill((0, 0, 0, 0))  # Transparent
+        
+        # Dialog background color
+        dialog_bg_color = (80, 50, 30, 230)  # Dark brown with transparency
+        dialog_border_color = (255, 255, 0)  # Yellow border to match menu buttons
+        
+        # Draw dialog with rounded corners (similar to button style)
+        pygame.draw.rect(dialog_surface, dialog_bg_color, pygame.Rect(0, 0, dialog_width, dialog_height), 0, 15)
+        pygame.draw.rect(dialog_surface, dialog_border_color, pygame.Rect(0, 0, dialog_width, dialog_height), 3, 15)
+        
+        surface.blit(dialog_surface, dialog_rect)
+        
+        # Load the pixelated font
+        font_path = os.path.join(ASSET_PATH, "fonts/PixelatedEleganceRegular-ovyAA.ttf")
+        if os.path.exists(font_path):
+            font = pygame.font.Font(font_path, 30)  # Reduced from 36 to 30
+            small_font = pygame.font.Font(font_path, 28)  # Reduced from 30 to 28
+        else:
+            font = pygame.font.Font(None, 30)  # Reduced from 36 to 30
+            small_font = pygame.font.Font(None, 28)  # Reduced from 30 to 28
+        
+        # Dialog text with pixelated font
+        text = font.render("Exit to next level?", True, (255, 245, 225))
+        text_rect = text.get_rect(center=(WINDOW_WIDTH // 2, dialog_y + 65))  # Adjusted from 60 to 65
         surface.blit(text, text_rect)
         
         # Buttons
@@ -1317,30 +1339,72 @@ class Level:
         button_height = 50
         button_spacing = 40
         
-        # Yes button
+        # Yes button with rounded corners
         yes_rect = pygame.Rect(
             dialog_x + (dialog_width // 2) - button_width - (button_spacing // 2),
             dialog_y + dialog_height - 70,
             button_width,
             button_height
         )
-        pygame.draw.rect(surface, (0, 128, 0), yes_rect)
-        pygame.draw.rect(surface, (200, 200, 200), yes_rect, 2)
-        yes_text = font.render("YES", True, (255, 255, 255))
+        
+        # Create button surfaces with rounded corners
+        yes_surface = pygame.Surface((button_width, button_height), pygame.SRCALPHA)
+        yes_surface.fill((0, 0, 0, 0))  # Transparent
+        
+        # Button colors - matching menu buttons
+        yes_color = (80, 50, 30, 230)  # Dark background
+        yes_border = (255, 255, 0)     # Yellow border
+        
+        # Draw rounded rectangle for YES button
+        pygame.draw.rect(yes_surface, yes_color, pygame.Rect(0, 0, button_width, button_height), 0, 10)
+        pygame.draw.rect(yes_surface, yes_border, pygame.Rect(0, 0, button_width, button_height), 3, 10)
+        
+        surface.blit(yes_surface, yes_rect)
+        
+        # Text with slight shadow for better readability
+        yes_text_shadow = small_font.render("YES", True, (0, 0, 0, 180))
+        yes_text = small_font.render("YES", True, (255, 245, 225))  # Same color as menu buttons
+        
         yes_text_rect = yes_text.get_rect(center=yes_rect.center)
+        yes_shadow_rect = yes_text_rect.copy()
+        yes_shadow_rect.x += 2
+        yes_shadow_rect.y += 2
+        
+        surface.blit(yes_text_shadow, yes_shadow_rect)
         surface.blit(yes_text, yes_text_rect)
         
-        # No button
+        # No button with rounded corners
         no_rect = pygame.Rect(
             dialog_x + (dialog_width // 2) + (button_spacing // 2),
             dialog_y + dialog_height - 70,
             button_width,
             button_height
         )
-        pygame.draw.rect(surface, (128, 0, 0), no_rect)
-        pygame.draw.rect(surface, (200, 200, 200), no_rect, 2)
-        no_text = font.render("NO", True, (255, 255, 255))
+        
+        # Create no button surface
+        no_surface = pygame.Surface((button_width, button_height), pygame.SRCALPHA)
+        no_surface.fill((0, 0, 0, 0))  # Transparent
+        
+        # Button colors
+        no_color = (80, 50, 30, 230)  # Dark background
+        no_border = (255, 255, 0)     # Yellow border
+        
+        # Draw rounded rectangle for NO button
+        pygame.draw.rect(no_surface, no_color, pygame.Rect(0, 0, button_width, button_height), 0, 10)
+        pygame.draw.rect(no_surface, no_border, pygame.Rect(0, 0, button_width, button_height), 3, 10)
+        
+        surface.blit(no_surface, no_rect)
+        
+        # Text with slight shadow
+        no_text_shadow = small_font.render("NO", True, (0, 0, 0, 180))
+        no_text = small_font.render("NO", True, (255, 245, 225))  # Same color as menu buttons
+        
         no_text_rect = no_text.get_rect(center=no_rect.center)
+        no_shadow_rect = no_text_rect.copy()
+        no_shadow_rect.x += 2
+        no_shadow_rect.y += 2
+        
+        surface.blit(no_text_shadow, no_shadow_rect)
         surface.blit(no_text, no_text_rect)
         
         # Return button rects for click handling

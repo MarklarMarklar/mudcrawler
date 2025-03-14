@@ -8,20 +8,43 @@ class Button:
         self.asset_manager = get_asset_manager()
         self.rect = pygame.Rect(x, y, width, height)
         self.text = text
-        self.font = pygame.font.Font(None, font_size)
         
-        # Create default button textures
-        self.normal_image = pygame.Surface((width, height))
-        self.normal_image.fill((100, 100, 100))
-        pygame.draw.rect(self.normal_image, WHITE, pygame.Rect(0, 0, width, height), 2)
+        # Create a path to the pixelated font
+        font_path = os.path.join(ASSET_PATH, "fonts/PixelatedEleganceRegular-ovyAA.ttf")
+        if os.path.exists(font_path):
+            self.font = pygame.font.Font(font_path, font_size)
+            print(f"Successfully loaded pixelated font for buttons")
+        else:
+            # Fallback to default font if the pixelated font is not available
+            self.font = pygame.font.Font(None, font_size)
+            print(f"Pixelated font not found, using default font: {font_path}")
         
-        self.hover_image = pygame.Surface((width, height))
-        self.hover_image.fill((150, 150, 150))
-        pygame.draw.rect(self.hover_image, WHITE, pygame.Rect(0, 0, width, height), 2)
+        # Create default button textures with rounded corners
+        self.normal_image = pygame.Surface((width, height), pygame.SRCALPHA)
+        self.normal_image.fill((0, 0, 0, 0))  # Transparent background
+        
+        # Dark background with yellow border to match the screenshot
+        button_color = (80, 50, 30, 230)  # Dark background
+        border_color = (255, 255, 0)  # Yellow border (matches the screenshot)
+        
+        # Draw rounded rectangle for normal state
+        self._draw_rounded_rect(self.normal_image, button_color, pygame.Rect(0, 0, width, height), 10)
+        self._draw_rounded_rect(self.normal_image, border_color, pygame.Rect(0, 0, width, height), 10, 3)  # Increased border width
+        
+        # Hover image - lighter with brighter border
+        self.hover_image = pygame.Surface((width, height), pygame.SRCALPHA)
+        self.hover_image.fill((0, 0, 0, 0))  # Transparent background
+        
+        hover_color = (120, 70, 40, 230)  # Lighter background
+        hover_border = (255, 255, 100)  # Brighter yellow
+        
+        # Draw rounded rectangle for hover state
+        self._draw_rounded_rect(self.hover_image, hover_color, pygame.Rect(0, 0, width, height), 10)
+        self._draw_rounded_rect(self.hover_image, hover_border, pygame.Rect(0, 0, width, height), 10, 3)  # Increased border width
         
         self.use_images = True
         
-        # Try to load button textures if they exist
+        # Try to load button textures if they exist (keeping original texture loading as fallback)
         try:
             normal_path = os.path.join(UI_SPRITES_PATH, "button_normal.png")
             hover_path = os.path.join(UI_SPRITES_PATH, "button_hover.png")
@@ -32,18 +55,54 @@ class Button:
         except Exception as e:
             print(f"Failed to load button textures: {e}")
             
-        self.text_color = WHITE
+        self.text_color = (255, 245, 225)  # Slightly off-white for better readability
         self.is_hovered = False
         print(f"Button created: {text} at position {x}, {y} with size {width}x{height}")
+    
+    def _draw_rounded_rect(self, surface, color, rect, radius, border_width=0):
+        """Draw a rounded rectangle on the given surface"""
+        if border_width > 0:
+            # This is a border, draw a slightly larger rect behind it
+            rect_for_border = pygame.Rect(rect.left, rect.top, rect.width, rect.height)
+            self._draw_rounded_rect(surface, color, rect_for_border, radius)
+            # Now draw the inner rect with transparency to create border effect
+            inner_rect = pygame.Rect(rect.left + border_width, rect.top + border_width, 
+                                    rect.width - (2 * border_width), rect.height - (2 * border_width))
+            self._draw_rounded_rect(surface, (0, 0, 0, 0), inner_rect, radius - border_width)
+            return
+            
+        # Draw the main rounded rectangle
+        ellipse_rect = pygame.Rect(rect.left, rect.top, radius*2, radius*2)
+        pygame.draw.ellipse(surface, color, ellipse_rect)
+        
+        ellipse_rect.top = rect.bottom - radius*2
+        pygame.draw.ellipse(surface, color, ellipse_rect)
+        
+        ellipse_rect.left = rect.right - radius*2
+        pygame.draw.ellipse(surface, color, ellipse_rect)
+        
+        ellipse_rect.top = rect.top
+        pygame.draw.ellipse(surface, color, ellipse_rect)
+        
+        # Draw the connecting rectangles
+        pygame.draw.rect(surface, color, pygame.Rect(rect.left + radius, rect.top, rect.width - radius*2, rect.height))
+        pygame.draw.rect(surface, color, pygame.Rect(rect.left, rect.top + radius, rect.width, rect.height - radius*2))
         
     def draw(self, surface):
         # Draw button background
         image = self.hover_image if self.is_hovered else self.normal_image
         surface.blit(image, self.rect)
         
-        # Draw button text
+        # Draw button text with small shadow for better readability
+        text_shadow = self.font.render(self.text, True, (0, 0, 0, 180))
         text_surface = self.font.render(self.text, True, self.text_color)
+        
         text_rect = text_surface.get_rect(center=self.rect.center)
+        shadow_rect = text_rect.copy()
+        shadow_rect.x += 2
+        shadow_rect.y += 2
+        
+        surface.blit(text_shadow, shadow_rect)
         surface.blit(text_surface, text_rect)
         
         # Draw debug outline if DEBUG_MODE is enabled
@@ -78,7 +137,21 @@ class Button:
 class Menu:
     def __init__(self, screen):
         self.screen = screen
-        self.font = pygame.font.Font(None, 48)
+        
+        # Create a path to the pixelated font
+        font_path = os.path.join(ASSET_PATH, "fonts/PixelatedEleganceRegular-ovyAA.ttf")
+        if os.path.exists(font_path):
+            self.font = pygame.font.Font(font_path, 48)
+            self.subtitle_font = pygame.font.Font(font_path, 32)
+            self.instruction_font = pygame.font.Font(font_path, 24)
+            print(f"Successfully loaded pixelated font for menu")
+        else:
+            # Fallback to default font if the pixelated font is not available
+            self.font = pygame.font.Font(None, 48)
+            self.subtitle_font = pygame.font.Font(None, 32)
+            self.instruction_font = pygame.font.Font(None, 24)
+            print(f"Pixelated font not found, using default font: {font_path}")
+            
         self.asset_manager = get_asset_manager()
         
         # Create default backgrounds
@@ -197,16 +270,16 @@ class Menu:
             print(f"Failed to load custom title image: {e}")
         
         # Create buttons with more space between them
-        self.button_width = 200
+        self.button_width = 280
         self.button_height = 50
         self.center_x = WINDOW_WIDTH // 2 - self.button_width // 2
         
         # Create buttons but don't position them yet
         self.buttons = {
-            'start': Button(0, 0, self.button_width, self.button_height, "Start Game"),
-            'resume': Button(0, 0, self.button_width, self.button_height, "Resume"),
-            'restart': Button(0, 0, self.button_width, self.button_height, "Restart"),
-            'quit': Button(0, 0, self.button_width, self.button_height, "Quit")
+            'start': Button(0, 0, self.button_width, self.button_height, "Start Game", font_size=32),
+            'resume': Button(0, 0, self.button_width, self.button_height, "Resume", font_size=32),
+            'restart': Button(0, 0, self.button_width, self.button_height, "Restart", font_size=32),
+            'quit': Button(0, 0, self.button_width, self.button_height, "Quit", font_size=32)
         }
         
         # Set initial positions
@@ -263,8 +336,8 @@ class Menu:
                 title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3))
                 self.screen.blit(title, title_rect)
             
-            # Draw subtitle
-            subtitle = pygame.font.Font(None, 36).render("8-bit Dungeon Adventure", True, (200, 200, 200))
+            # Draw subtitle with pixelated font
+            subtitle = self.subtitle_font.render("8-bit Dungeon Adventure", True, (200, 200, 200))
             subtitle_rect = subtitle.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3 + 50))
             self.screen.blit(subtitle, subtitle_rect)
         
@@ -284,8 +357,8 @@ class Menu:
         self.buttons['start'].draw(self.screen)
         self.buttons['quit'].draw(self.screen)
         
-        # Draw instructions
-        inst_text = pygame.font.Font(None, 24).render("Click START GAME or press ENTER to play", True, (255, 255, 0))
+        # Draw instructions with pixelated font
+        inst_text = self.instruction_font.render("Click START GAME or press ENTER to play", True, (255, 255, 0))
         inst_rect = inst_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 100))
         self.screen.blit(inst_text, inst_rect)
         
@@ -299,7 +372,7 @@ class Menu:
         overlay.set_alpha(128)
         self.screen.blit(overlay, (0, 0))
         
-        # Draw title
+        # Draw title with pixelated font
         title = self.font.render("PAUSED", True, WHITE)
         title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3))
         self.screen.blit(title, title_rect)
@@ -319,7 +392,7 @@ class Menu:
         else:
             self.screen.blit(self.gameover_bg, (0, 0))
         
-        # Draw title (only if not using custom image, or make it more visible)
+        # Draw title with pixelated font
         if not self.use_gameover_custom_img or self.gameover_custom_img is None:
             title = self.font.render("GAME OVER", True, RED)
         else:
@@ -340,12 +413,12 @@ class Menu:
         # Draw background
         self.screen.blit(self.victory_bg, (0, 0))
         
-        # Draw title
+        # Draw title with pixelated font
         title = self.font.render("VICTORY!", True, GREEN)
         title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3))
         self.screen.blit(title, title_rect)
         
-        # Draw message
+        # Draw message with pixelated font
         msg = self.font.render("Congratulations!", True, WHITE)
         msg_rect = msg.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
         self.screen.blit(msg, msg_rect)
@@ -363,7 +436,17 @@ class Menu:
 class HUD:
     def __init__(self, screen):
         self.screen = screen
-        self.font = pygame.font.Font(None, 24)
+        
+        # Create a path to the pixelated font
+        font_path = os.path.join(ASSET_PATH, "fonts/PixelatedEleganceRegular-ovyAA.ttf")
+        if os.path.exists(font_path):
+            self.font = pygame.font.Font(font_path, 24)
+            print(f"Successfully loaded pixelated font for HUD")
+        else:
+            # Fallback to default font if the pixelated font is not available
+            self.font = pygame.font.Font(None, 24)
+            print(f"Pixelated font not found for HUD, using default font: {font_path}")
+            
         self.asset_manager = get_asset_manager()
         
         # UI images

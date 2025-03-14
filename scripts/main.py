@@ -149,7 +149,11 @@ class Game:
             # Handle exit confirmation dialog if it's showing
             if self.level and self.level.show_exit_confirmation and event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
+                    # Get dialog yes/no button rects
                     yes_rect, no_rect = self.level.draw_exit_confirmation(self.screen)
+                    
+                    # Check for clicks on the dialog buttons
+                    # No need to convert coordinates since the dialog is drawn directly on screen
                     if yes_rect.collidepoint(event.pos):
                         print("Exit confirmed, proceeding to next level")
                         self.level.confirm_exit()
@@ -561,9 +565,15 @@ class Game:
         room_surface = pygame.Surface((room_width, room_height))
         room_surface.fill(BLACK)
         
-        # Draw level to room surface
+        # Draw level to room surface (except exit confirmation dialog)
         if self.level:
+            # Store the current state of the exit confirmation
+            show_confirmation = self.level.show_exit_confirmation
+            # Temporarily disable exit confirmation to avoid drawing it on the room surface
+            self.level.show_exit_confirmation = False
             self.level.draw(room_surface)
+            # Restore the original state
+            self.level.show_exit_confirmation = show_confirmation
         
         # Draw player to room surface
         self.player.draw(room_surface)
@@ -609,9 +619,6 @@ class Game:
             # Ensure coordinates are integers for drawing
             player_screen_x = int(player_screen_x)
             player_screen_y = int(player_screen_y)
-            
-            # Create a completely smooth gradient with no visible rings
-            # Use a single loop with a continuous function for alpha calculation
             
             # Inner fully lit area (radius where light is 100%)
             fully_lit_radius = 80
@@ -672,6 +679,10 @@ class Game:
         # Draw HUD - pass audio availability to draw sound icon if needed
         # Also pass the level object to enable minimap drawing in the HUD
         self.hud.draw(self.player, self.current_level, self.sound_manager.audio_available, self.level)
+        
+        # Draw exit confirmation dialog last, directly on the screen (not affected by camera)
+        if self.level and self.level.show_exit_confirmation:
+            self.level.draw_exit_confirmation(self.screen)
         
     def run(self):
         print("Starting game loop")
