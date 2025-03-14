@@ -296,6 +296,26 @@ class Boss(Enemy):
                     print(f"Failed to load boss_1.png for level 1 boss: {e}")
                     # Continue with the normal animation loading
             
+            # Check for level 2 boss to use boss_2.png
+            elif level == 2:
+                try:
+                    # Try to load the new boss_2.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_2.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2, TILE_SIZE*2))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_2.png for level 2 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
+                except Exception as e:
+                    print(f"Failed to load boss_2.png for level 2 boss: {e}")
+                    # Continue with the normal animation loading
+            
             # Now try to load actual animations but don't crash if they're missing
             try:
                 if os.path.exists(base_path):
@@ -346,11 +366,14 @@ class Boss(Enemy):
         self.last_special_attack_time = 0
         
         # Position history for trailing effect (used by level 1 boss)
-        self.trail_enabled = level == 1  # Only enable for level 1 boss
+        self.trail_enabled = level == 1 or level == 2  # Enable for level 1 and 2 bosses
         self.position_history = []
         self.max_trail_length = 5  # Store 5 previous positions
         self.trail_update_rate = 4  # Update trail every 4 frames
         self.trail_frame_counter = 0
+        
+        # Set trail color based on level
+        self.trail_color = (150, 0, 0) if level == 1 else (0, 150, 150)  # Red for level 1, Cyan for level 2
         
         # Sound manager for boss voice
         self.sound_manager = get_sound_manager()
@@ -453,6 +476,15 @@ class Boss(Enemy):
                 # Create a copy of the image with adjusted alpha
                 ghost_image = trail_image.copy()
                 ghost_image.set_alpha(alpha)
+                
+                # Create a colored trail effect
+                if hasattr(self, 'trail_color'):
+                    # Create a surface the same size as the trail image
+                    colored_surface = pygame.Surface(ghost_image.get_size(), pygame.SRCALPHA)
+                    # Fill with the trail color
+                    colored_surface.fill((*self.trail_color, alpha))
+                    # Apply the colored surface using a mask of the ghost image
+                    ghost_image.blit(colored_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
                 
                 # Draw the ghost image at the historical position
                 surface.blit(ghost_image, pos_data['pos'])
