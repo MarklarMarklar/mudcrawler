@@ -1,6 +1,6 @@
 # Mud Crawler
 
-A dungeon crawler game created with Python and Pygame. Explore procedurally generated dungeons, battle enemies, and collect items as you progress through increasingly challenging levels.
+A dungeon crawler game created in Cursor with Python and Pygame. Explore procedurally generated dungeons, battle enemies, and collect items as you progress through increasingly challenging levels.
 
 ## Features
 
@@ -42,7 +42,10 @@ python scripts/main.py
 
 ## Screenshots
 
-(Add screenshots here)
+![image](https://github.com/user-attachments/assets/72bb3fde-d0e8-47de-a25b-91e8fe50395b)
+![image](https://github.com/user-attachments/assets/28e3f38c-7692-4c95-b978-ef3732e3112d)
+
+
 
 ## Development
 
