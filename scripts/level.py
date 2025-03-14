@@ -48,25 +48,25 @@ class ArrowPickup:
             if self.arrow_texture:
                 # Scale the texture based on pulse
                 scaled_texture = pygame.transform.scale(self.arrow_texture, (size, size))
-                surface.blit(scaled_texture, (self.x - size//2, self.y - size//2))
+                # Draw centered at pickup position
+                rect = scaled_texture.get_rect(center=(self.x, self.y))
+                surface.blit(scaled_texture, rect)
             else:
-                # Draw a simple arrow shape as fallback
-                arrow_surf = pygame.Surface((size, size), pygame.SRCALPHA)
+                # Draw a fallback arrow shape if texture isn't available
+                pygame.draw.circle(surface, BLUE, (self.x, self.y), size // 2)
+                pygame.draw.polygon(surface, WHITE, [
+                    (self.x, self.y - size // 2),
+                    (self.x - size // 4, self.y + size // 4),
+                    (self.x + size // 4, self.y + size // 4)
+                ])
                 
-                # Arrow body (brown with yellowish tip)
-                pygame.draw.rect(arrow_surf, (150, 100, 50), (size//4, size//2-2, size//2, 4))
-                pygame.draw.polygon(arrow_surf, (255, 215, 0), 
-                                  [(size*3//4, size//2-4), (size, size//2), (size*3//4, size//2+4)])
-                
-                # Add a glow
-                glow_surf = pygame.Surface((size*1.5, size*1.5), pygame.SRCALPHA)
-                pygame.draw.circle(glow_surf, (255, 255, 150, 50), (size*1.5//2, size*1.5//2), size*1.5//2)
-                surface.blit(glow_surf, (self.x - size*1.5//2, self.y - size*1.5//2))
-                
-                # Draw the arrow
-                surface.blit(arrow_surf, (self.x - size//2, self.y - size//2))
+            # Add a glow effect
+            glow_surf = pygame.Surface((size * 3, size * 3), pygame.SRCALPHA)
+            pygame.draw.circle(glow_surf, (*BLUE[:3], 70), (size * 1.5, size * 1.5), size * pulse)
+            glow_rect = glow_surf.get_rect(center=(self.x, self.y))
+            surface.blit(glow_surf, glow_rect)
         except Exception as e:
-            print(f"Error drawing arrow pickup: {e}")
+            print(f"Error rendering arrow pickup: {e}")
 
 class HealthPickup:
     """Health pickup item that restores player health"""
@@ -105,44 +105,38 @@ class HealthPickup:
             pulse = math.sin(self.pulse_timer) * 0.2 + 0.8
             size = int(self.size * pulse)
             
-            # Draw health pickup
-            if hasattr(self, 'health_texture') and self.health_texture:
-                # Scale the texture based on pulse
-                scaled_texture = pygame.transform.scale(self.health_texture, (size, size))
-                surface.blit(scaled_texture, (self.x - size//2, self.y - size//2))
-                
-                # Add a glow effect
-                glow_surf = pygame.Surface((size*1.5, size*1.5), pygame.SRCALPHA)
-                pygame.draw.circle(glow_surf, (255, 100, 100, 50), (size*1.5//2, size*1.5//2), size*1.5//2)
-                surface.blit(glow_surf, (self.x - size*1.5//2, self.y - size*1.5//2))
-            else:
-                # Fallback to drawing the heart shape
-                heart_surf = pygame.Surface((size, size), pygame.SRCALPHA)
-                
-                # Brighter red in the center fading to darker red
-                inner_color = (255, 50, 50)
-                outer_color = (180, 0, 0)
-                
-                # Draw the heart shape
-                heart_points = [
-                    (size//2, size//5),
-                    (size*4//5, size//3),
-                    (size*4//5, size*2//3),
-                    (size//2, size*4//5),
-                    (size//5, size*2//3),
-                    (size//5, size//3),
-                ]
-                pygame.draw.polygon(heart_surf, outer_color, heart_points)
-                
-                # Add a glow
-                glow_surf = pygame.Surface((size*1.5, size*1.5), pygame.SRCALPHA)
-                pygame.draw.circle(glow_surf, (255, 100, 100, 50), (size*1.5//2, size*1.5//2), size*1.5//2)
-                surface.blit(glow_surf, (self.x - size*1.5//2, self.y - size*1.5//2))
-                
-                # Draw the heart
-                surface.blit(heart_surf, (self.x - size//2, self.y - size//2))
+            # Create a surface for the heart shape
+            heart_surf = pygame.Surface((size, size), pygame.SRCALPHA)
+            
+            # Draw a red heart shape
+            heart_color = (255, 0, 0, 200)  # Semi-transparent red
+            
+            # Draw heart using 2 circles and a triangle
+            radius = size // 4
+            x_offset = size // 4
+            pygame.draw.circle(heart_surf, heart_color, (x_offset, radius), radius)  # Left circle
+            pygame.draw.circle(heart_surf, heart_color, (size - x_offset, radius), radius)  # Right circle
+            
+            # Triangle for bottom of heart
+            pygame.draw.polygon(heart_surf, heart_color, [
+                (0, radius),
+                (size // 2, size),
+                (size, radius)
+            ])
+            
+            # Add a glow effect
+            glow_surf = pygame.Surface((size * 3, size * 3), pygame.SRCALPHA)
+            glow_color = (255, 100, 100, 100)
+            pygame.draw.circle(glow_surf, glow_color, (size * 1.5, size * 1.5), size * pulse)
+            
+            # Blit heart and glow to main surface
+            heart_rect = heart_surf.get_rect(center=(self.x, self.y))
+            glow_rect = glow_surf.get_rect(center=(self.x, self.y))
+            
+            surface.blit(glow_surf, glow_rect)
+            surface.blit(heart_surf, heart_rect)
         except Exception as e:
-            print(f"Error drawing health pickup: {e}")
+            print(f"Error rendering health pickup: {e}")
 
 class Room:
     """Represents a single room in a dungeon level"""
@@ -304,10 +298,15 @@ class Room:
         """Try to destroy a wall at the given tile position"""
         # Check if position is within bounds
         if not (0 <= y < self.height and 0 <= x < self.width):
+            print(f"Room: Wall position {x},{y} is out of bounds")
             return False
+        
+        # Add debug output
+        print(f"Room: Checking wall at {x},{y}: tile={self.tiles[y][x]}, destroyable={self.destroyable_walls[y][x] if self.tiles[y][x] == 1 else 'N/A'}")
         
         # Check if there's a destroyable wall at this position
         if self.tiles[y][x] == 1 and self.destroyable_walls[y][x]:
+            print(f"Room: Found destroyable wall at {x},{y}")
             # Destroy the wall
             self.tiles[y][x] = 0
             self.destroyable_walls[y][x] = False
@@ -320,16 +319,18 @@ class Room:
             # 30% chance to spawn a health pickup
             if pickup_roll < 0.3:
                 self.health_pickups.append(HealthPickup(center_x, center_y))
-                print(f"Health pickup spawned at {center_x}, {center_y} from destroyed wall")
+                print(f"Room: Health pickup spawned at {center_x}, {center_y} from destroyed wall")
             # 20% chance to spawn an arrow pickup
             elif pickup_roll < 0.5:
                 self.arrow_pickups.append(ArrowPickup(center_x, center_y))
-                print(f"Arrow pickup spawned at {center_x}, {center_y} from destroyed wall")
-                
+                print(f"Room: Arrow pickup spawned at {center_x}, {center_y} from destroyed wall")
+            
+            print(f"Room: Successfully destroyed wall at {x},{y}")
             return True
-        
-        # Wall was not destroyed
-        return False
+        else:
+            print(f"Room: No destroyable wall at {x},{y}")
+            # Only return true if we actually destroyed a wall
+            return False
         
     def try_pickup_health(self, player_rect):
         """Check if player is touching a health pickup"""
@@ -1220,8 +1221,11 @@ class Level:
         
     def try_destroy_wall(self, x, y):
         """Try to destroy a wall at the given tile coordinates"""
+        print(f"Level: Trying to destroy wall at {x},{y} in room {self.current_room_coords}")
         current_room = self.rooms[self.current_room_coords]
-        return current_room.try_destroy_wall(x, y)
+        result = current_room.try_destroy_wall(x, y)
+        print(f"Result of wall destruction: {result}")
+        return result
         
     def check_health_pickup(self, player_rect):
         """Check if player is picking up a health item"""

@@ -271,34 +271,43 @@ class Menu:
 class HUD:
     def __init__(self, screen):
         self.screen = screen
-        self.font = pygame.font.Font(None, 36)
+        self.font = pygame.font.Font(None, 24)
         self.asset_manager = get_asset_manager()
         
-        # Create default health bar background
-        self.health_bar_bg = pygame.Surface((200, 20))
-        self.health_bar_bg.fill((100, 0, 0))
-        pygame.draw.rect(self.health_bar_bg, WHITE, pygame.Rect(0, 0, 200, 20), 2)
+        # UI images
+        self.health_bar_bg = None
+        self.health_bar_alpha = None  # Alpha image for reference
         self.use_custom_health_bar = False
+        self.sword_icon = None
+        self.bow_icon = None
+        self.sound_off_icon = None
         
-        # Create default weapon icons
-        self.sword_icon = pygame.Surface((32, 32))
-        self.sword_icon.fill((50, 50, 50))
-        pygame.draw.rect(self.sword_icon, (200, 200, 200), pygame.Rect(8, 8, 16, 16))
-        pygame.draw.line(self.sword_icon, (200, 200, 200), (16, 8), (16, 24), 2)
+        # Health bar dimensions
+        self.health_bar_width = 240  # Width of the health bar graphic
+        self.health_bar_height = 80  # Height of the health bar graphic
         
-        self.bow_icon = pygame.Surface((32, 32))
-        self.bow_icon.fill((50, 50, 50))
-        pygame.draw.arc(self.bow_icon, (200, 200, 200), pygame.Rect(8, 4, 16, 24), 0.5, 5.8, 2)
-        pygame.draw.line(self.bow_icon, (200, 200, 200), (16, 16), (24, 16), 2)
+        # Health and arrow bar positions and dimensions from the alpha reference
+        self.health_bar_rect = None
+        self.arrow_bar_rect = None
         
-        self.use_weapon_icons = True
-        
-        # Try to load HUD elements if they exist
+        # Try to load health bar texture
         try:
             health_bar_path = os.path.join(UI_SPRITES_PATH, "health_bar.png")
             if os.path.exists(health_bar_path):
-                self.health_bar_bg = self.asset_manager.load_image(health_bar_path)
+                # Scale the health bar to an appropriate size
+                self.health_bar_bg = self.asset_manager.load_image(health_bar_path, scale=(self.health_bar_width, self.health_bar_height))
                 self.use_custom_health_bar = True
+                print("Successfully loaded health bar image")
+                
+                # Try to load the alpha reference image for precise positioning
+                alpha_path = os.path.join(UI_SPRITES_PATH, "health_bar_alpha.png")
+                if os.path.exists(alpha_path):
+                    self.health_bar_alpha = self.asset_manager.load_image(alpha_path, scale=(self.health_bar_width, self.health_bar_height))
+                    print("Successfully loaded health bar alpha reference")
+                    
+                    # Parse the alpha reference to get exact positions
+                    # The alpha image should have black areas where the bars should be placed
+                    self._parse_alpha_reference()
         except Exception as e:
             print(f"Failed to load health bar texture: {e}")
             
@@ -316,42 +325,209 @@ class HUD:
                 self.bow_icon = self.asset_manager.load_image(bow_icon_path, scale=(32, 32))
         except Exception as e:
             print(f"Failed to load bow icon: {e}")
+            
+        # Try to load sound off icon
+        try:
+            sound_off_path = os.path.join(UI_SPRITES_PATH, "sound_off.png")
+            if os.path.exists(sound_off_path):
+                self.sound_off_icon = self.asset_manager.load_image(sound_off_path, scale=(24, 24))
+            else:
+                # Create a simple sound-off icon if not available
+                self.sound_off_icon = pygame.Surface((24, 24), pygame.SRCALPHA)
+                self.sound_off_icon.fill((0, 0, 0, 0))  # Transparent background
+                pygame.draw.circle(self.sound_off_icon, (200, 200, 200), (12, 12), 10, 2)  # Circle
+                pygame.draw.line(self.sound_off_icon, (200, 50, 50), (5, 5), (19, 19), 2)  # Red line across
+        except Exception as e:
+            print(f"Failed to load sound off icon: {e}")
+            # Create a simple sound-off icon as fallback
+            self.sound_off_icon = pygame.Surface((24, 24), pygame.SRCALPHA)
+            self.sound_off_icon.fill((0, 0, 0, 0))  # Transparent background
+            pygame.draw.circle(self.sound_off_icon, (200, 200, 200), (12, 12), 10, 2)  # Circle
+            pygame.draw.line(self.sound_off_icon, (200, 50, 50), (5, 5), (19, 19), 2)  # Red line across
+            
+    def _parse_alpha_reference(self):
+        """Parse the alpha reference image to find exact health and arrow bar positions"""
+        if not self.health_bar_alpha:
+            return
+            
+        # In health_bar_alpha.png, black areas (RGB: 0,0,0) represent where bars should be placed
+        # We'll look for areas of consecutive black pixels for each row
         
-    def draw(self, player, level_number):
-        # Draw health bar
-        health_width = 200
-        health_height = 20
-        health_x = 10
-        health_y = 10
+        # Find areas for health bar (top section) and arrow bar (bottom section)
+        health_row_detected = False
+        arrow_row_detected = False
         
+        health_y = None
+        arrow_y = None
+        
+        # First pass: identify the y-positions of the health and arrow rows
+        # Assuming the top black row is health, bottom black row is arrows
+        for y in range(self.health_bar_height):
+            black_count = 0
+            for x in range(self.health_bar_width):
+                color = self.health_bar_alpha.get_at((x, y))
+                # Check for black (0,0,0)
+                if color[0] == 0 and color[1] == 0 and color[2] == 0:
+                    black_count += 1
+            
+            # If we have a substantial number of black pixels in this row,
+            # it's likely part of a bar area
+            if black_count > 30:  # Threshold to detect a bar row
+                if not health_row_detected:
+                    health_y = y
+                    health_row_detected = True
+                elif health_row_detected and not arrow_row_detected and y > health_y + 10:
+                    # Found the second bar area (assume it's for arrows)
+                    arrow_y = y
+                    arrow_row_detected = True
+        
+        # If we found both rows, now find the horizontal extents and heights
+        if health_y is not None and arrow_y is not None:
+            # For health bar
+            health_x_start = None
+            health_width = 0
+            health_height = 0
+            
+            # Scan health bar rows to find leftmost black pixel
+            for y in range(health_y, min(health_y + 20, arrow_y if arrow_y else self.health_bar_height)):
+                row_has_black = False
+                for x in range(self.health_bar_width):
+                    color = self.health_bar_alpha.get_at((x, y))
+                    if color[0] == 0 and color[1] == 0 and color[2] == 0:
+                        row_has_black = True
+                        if health_x_start is None or x < health_x_start:
+                            health_x_start = x
+                        break
+                if row_has_black:
+                    health_height += 1
+            
+            # Find health bar width (rightmost black pixel minus leftmost)
+            for x in range(self.health_bar_width - 1, health_x_start or 0, -1):
+                for y in range(health_y, health_y + health_height):
+                    if y < self.health_bar_height:
+                        color = self.health_bar_alpha.get_at((x, y))
+                        if color[0] == 0 and color[1] == 0 and color[2] == 0:
+                            health_width = x - health_x_start + 1
+                            break
+                if health_width > 0:
+                    break
+            
+            # For arrow bar
+            arrow_x_start = None
+            arrow_width = 0
+            arrow_height = 0
+            
+            # Scan arrow bar rows to find leftmost black pixel
+            for y in range(arrow_y, min(arrow_y + 20, self.health_bar_height)):
+                row_has_black = False
+                for x in range(self.health_bar_width):
+                    color = self.health_bar_alpha.get_at((x, y))
+                    if color[0] == 0 and color[1] == 0 and color[2] == 0:
+                        row_has_black = True
+                        if arrow_x_start is None or x < arrow_x_start:
+                            arrow_x_start = x
+                        break
+                if row_has_black:
+                    arrow_height += 1
+            
+            # Find arrow bar width (rightmost black pixel minus leftmost)
+            for x in range(self.health_bar_width - 1, arrow_x_start or 0, -1):
+                for y in range(arrow_y, arrow_y + arrow_height):
+                    if y < self.health_bar_height:
+                        color = self.health_bar_alpha.get_at((x, y))
+                        if color[0] == 0 and color[1] == 0 and color[2] == 0:
+                            arrow_width = x - arrow_x_start + 1
+                            break
+                if arrow_width > 0:
+                    break
+            
+            # Store the detected rectangles
+            if health_x_start is not None and health_height > 0 and health_width > 0:
+                self.health_bar_rect = pygame.Rect(health_x_start, health_y, health_width, health_height)
+                print(f"Found health bar rectangle: {self.health_bar_rect}")
+            
+            if arrow_x_start is not None and arrow_height > 0 and arrow_width > 0:
+                self.arrow_bar_rect = pygame.Rect(arrow_x_start, arrow_y, arrow_width, arrow_height)
+                print(f"Found arrow bar rectangle: {self.arrow_bar_rect}")
+        
+    def draw(self, player, level_number, audio_available=True):
+        # Position the health bar in the top-left corner with some margin
+        bar_x = 10
+        bar_y = 10
+        
+        # Standard bar dimensions for fallback mode
+        std_bar_width = 200
+        std_bar_height = 20
+        bar_spacing = 10  # Space between health and arrow bars
+        
+        # Calculate ratios
         health_ratio = max(0, min(1, player.health / PLAYER_START_HEALTH))
+        arrow_ratio = max(0, min(1, player.arrow_count / player.max_arrows))
         
-        if self.use_custom_health_bar:
-            # Custom health bar implementation - depends on the image format
-            # Assuming the image has a background and foreground layer
-            self.screen.blit(self.health_bar_bg, (health_x, health_y))
-            # Draw the foreground health portion based on current health
-            health_rect = pygame.Rect(health_x + 4, health_y + 4, int((health_width - 8) * health_ratio), health_height - 8)
-            pygame.draw.rect(self.screen, (0, 255, 0), health_rect)
+        if self.use_custom_health_bar and self.health_bar_bg:
+            # Draw the health bar background
+            self.screen.blit(self.health_bar_bg, (bar_x, bar_y))
+            
+            # Draw the health and arrow bars based on the alpha reference if available
+            if self.health_bar_rect:
+                # Health bar (green)
+                health_fill_rect = pygame.Rect(
+                    bar_x + self.health_bar_rect.x,
+                    bar_y + self.health_bar_rect.y,
+                    int(self.health_bar_rect.width * health_ratio),
+                    self.health_bar_rect.height
+                )
+                pygame.draw.rect(self.screen, (0, 255, 0), health_fill_rect)
+            else:
+                # Fallback to estimated position
+                health_bar_x = bar_x + 85
+                health_bar_y = bar_y + 22
+                health_bar_width = int(120 * health_ratio)
+                health_bar_height = 16
+                pygame.draw.rect(self.screen, (0, 255, 0), 
+                              (health_bar_x, health_bar_y, health_bar_width, health_bar_height))
+            
+            if self.arrow_bar_rect:
+                # Arrow bar (yellow)
+                arrow_fill_rect = pygame.Rect(
+                    bar_x + self.arrow_bar_rect.x,
+                    bar_y + self.arrow_bar_rect.y,
+                    int(self.arrow_bar_rect.width * arrow_ratio),
+                    self.arrow_bar_rect.height
+                )
+                pygame.draw.rect(self.screen, (255, 255, 0), arrow_fill_rect)
+            else:
+                # Fallback to estimated position
+                arrow_bar_x = bar_x + 85
+                arrow_bar_y = bar_y + 46
+                arrow_bar_width = int(120 * arrow_ratio)
+                arrow_bar_height = 16
+                pygame.draw.rect(self.screen, (255, 255, 0), 
+                              (arrow_bar_x, arrow_bar_y, arrow_bar_width, arrow_bar_height))
         else:
-            # Background
+            # Fallback to default drawing if custom health bar not available
+            # Health bar
             pygame.draw.rect(self.screen, (100, 0, 0),
-                          (health_x, health_y, health_width, health_height))
-            # Health
+                          (bar_x, bar_y, std_bar_width, std_bar_height))
             pygame.draw.rect(self.screen, (0, 255, 0),
-                          (health_x, health_y, int(health_width * health_ratio), health_height))
-            # Border
+                          (bar_x, bar_y, int(std_bar_width * health_ratio), std_bar_height))
             pygame.draw.rect(self.screen, WHITE,
-                          (health_x, health_y, health_width, health_height), 2)
+                          (bar_x, bar_y, std_bar_width, std_bar_height), 2)
+            
+            # Arrow bar
+            pygame.draw.rect(self.screen, (100, 100, 0),
+                          (bar_x, bar_y + std_bar_height + bar_spacing, std_bar_width, std_bar_height))
+            pygame.draw.rect(self.screen, (255, 255, 0),
+                          (bar_x, bar_y + std_bar_height + bar_spacing, int(std_bar_width * arrow_ratio), std_bar_height))
+            pygame.draw.rect(self.screen, WHITE,
+                          (bar_x, bar_y + std_bar_height + bar_spacing, std_bar_width, std_bar_height), 2)
         
-        # Draw health text
-        health_text = self.font.render(f"HP: {player.health}/{PLAYER_START_HEALTH}", True, WHITE)
-        self.screen.blit(health_text, (health_x + health_width + 10, health_y))
-        
-        # Draw arrow count text next to the health text
-        arrow_text = self.font.render(f"Arrows: {player.arrow_count}/{player.max_arrows}", True, WHITE)
-        self.screen.blit(arrow_text, (health_x + health_width + 10, health_y + health_height + 10))
-        
-        # Draw level number
+        # Draw level number in upper right corner
         level_text = self.font.render(f"Level: {level_number}", True, WHITE)
-        self.screen.blit(level_text, (10, health_y + health_height + 10)) 
+        level_text_rect = level_text.get_rect()
+        level_text_rect.topright = (WINDOW_WIDTH - 10, 10)
+        self.screen.blit(level_text, level_text_rect)
+        
+        # Draw sound off icon in bottom left if audio is unavailable
+        if not audio_available and self.sound_off_icon:
+            self.screen.blit(self.sound_off_icon, (10, WINDOW_HEIGHT - 34)) 

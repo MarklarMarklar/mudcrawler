@@ -32,6 +32,7 @@ BOSS_SPRITES_PATH = os.path.join(ASSET_PATH, "characters/bosses")
 WEAPON_SPRITES_PATH = os.path.join(ASSET_PATH, "weapons")
 TILE_SPRITES_PATH = os.path.join(ASSET_PATH, "tiles")
 UI_SPRITES_PATH = os.path.join(ASSET_PATH, "ui")
+SOUNDS_PATH = os.path.join(ASSET_PATH, "sounds")
 
 # Player Settings
 PLAYER_SPEED = 5

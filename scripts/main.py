@@ -10,11 +10,19 @@ from level import Level
 from weapons import WeaponManager
 from ui import Menu, HUD
 from asset_manager import get_asset_manager
+from camera import Camera  # Import our new Camera class
+from sound_manager import get_sound_manager  # Import our new sound manager
 
 class Game:
     def __init__(self):
         pygame.init()
         pygame.display.set_caption("Mud Crawler")
+        
+        # Torch lighting settings
+        self.torch_enabled = True
+        self.torch_radius = 300
+        self.torch_inner_radius = 150
+        self.darkness_level = 220  # Increased from 180 to 220 to make the field darker
         
         # Debug: Print working directory
         print(f"Current working directory: {os.getcwd()}")
@@ -25,6 +33,12 @@ class Game:
         # Set up display
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.clock = pygame.time.Clock()
+        
+        # Initialize camera with screen dimensions
+        self.camera = Camera(WINDOW_WIDTH, WINDOW_HEIGHT)
+        
+        # Initialize sound manager
+        self.sound_manager = get_sound_manager()
         
         # Initialize asset manager first
         self.asset_manager = get_asset_manager()
@@ -57,9 +71,13 @@ class Game:
         # Level is initialized only when starting the game, not at menu
         self.level = None
         
+        # Start playing menu music
+        self.sound_manager.play_music('menu')
+        
         # Print debug info
         print(f"Game initialized. State: {self.state}")
         print(f"Screen size: {WINDOW_WIDTH}x{WINDOW_HEIGHT}")
+        print(f"Camera zoom: {self.camera.zoom}x")
         
     def ensure_asset_directories(self):
         """Make sure all the asset directories exist"""
@@ -75,7 +93,8 @@ class Game:
             BOSS_SPRITES_PATH,
             WEAPON_SPRITES_PATH,
             TILE_SPRITES_PATH,
-            UI_SPRITES_PATH
+            UI_SPRITES_PATH,
+            SOUNDS_PATH
         ]:
             if not os.path.exists(path):
                 print(f"Creating directory: {path}")
@@ -91,6 +110,7 @@ class Game:
         print(f"- Weapon textures: {WEAPON_SPRITES_PATH}")
         print(f"- Tile textures: {TILE_SPRITES_PATH}")
         print(f"- UI textures: {UI_SPRITES_PATH}")
+        print(f"- Sound files: {SOUNDS_PATH}")
         print("-" * 50)
         
     def reset_game(self):
@@ -115,6 +135,12 @@ class Game:
         self.player.rect.centery = player_y
         self.player.level = self.level  # Give player a reference to the level
         
+    def screen_to_world_coords(self, screen_x, screen_y):
+        """Convert screen coordinates to world coordinates accounting for camera"""
+        world_x = screen_x / self.camera.zoom + self.camera.x
+        world_y = screen_y / self.camera.zoom + self.camera.y
+        return (world_x, world_y)
+
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -132,30 +158,37 @@ class Game:
                         self.level.cancel_exit()
                 continue  # Don't process other events while dialog is open
                 
-            # Handle menu button clicks
-            button_clicked = self.menu.handle_event(event)
-            if button_clicked:
-                if button_clicked == 'start':
-                    print("Start button clicked")
-                    if self.level is None:
-                        self.initialize_level()
-                    self.state = PLAYING
-                    # Set transition time to prevent immediate bow attack
-                    self.state_transition_time = pygame.time.get_ticks()
-                elif button_clicked == 'resume':
-                    print("Resume button clicked")
-                    self.state = PLAYING
-                    # Set transition time to prevent immediate bow attack
-                    self.state_transition_time = pygame.time.get_ticks()
-                elif button_clicked == 'restart':
-                    print("Restart button clicked")
-                    self.reset_game()
-                    self.state = PLAYING
-                    # Set transition time to prevent immediate bow attack
-                    self.state_transition_time = pygame.time.get_ticks()
-                elif button_clicked == 'quit':
-                    print("Quit button clicked")
-                    self.running = False
+            # Handle menu button clicks - ONLY when in appropriate states (not during gameplay)
+            if self.state in [MENU, PAUSED, GAME_OVER, VICTORY]:
+                button_clicked = self.menu.handle_event(event)
+                if button_clicked:
+                    if button_clicked == 'start':
+                        print("Start button clicked")
+                        if self.level is None:
+                            self.initialize_level()
+                        self.state = PLAYING
+                        # Set transition time to prevent immediate bow attack
+                        self.state_transition_time = pygame.time.get_ticks()
+                        # Switch to game music
+                        self.sound_manager.play_music('game')
+                    elif button_clicked == 'resume':
+                        print("Resume button clicked")
+                        self.state = PLAYING
+                        # Set transition time to prevent immediate bow attack
+                        self.state_transition_time = pygame.time.get_ticks()
+                        # Unpause music if it was paused
+                        self.sound_manager.unpause_music()
+                    elif button_clicked == 'restart':
+                        print("Restart button clicked")
+                        self.reset_game()
+                        self.state = PLAYING
+                        # Set transition time to prevent immediate bow attack
+                        self.state_transition_time = pygame.time.get_ticks()
+                        # Switch to game music
+                        self.sound_manager.play_music('game')
+                    elif button_clicked == 'quit':
+                        print("Quit button clicked")
+                        self.running = False
                     
             if event.type == pygame.KEYDOWN:
                 # Print debug info on key press
@@ -165,11 +198,15 @@ class Game:
                     if self.state == PLAYING:
                         print("Pausing game")
                         self.state = PAUSED
+                        # Pause music
+                        self.sound_manager.pause_music()
                     elif self.state == PAUSED:
                         print("Resuming game")
                         self.state = PLAYING
                         # Set transition time to prevent immediate bow attack
                         self.state_transition_time = pygame.time.get_ticks()
+                        # Unpause music
+                        self.sound_manager.unpause_music()
                 elif event.key == pygame.K_RETURN:
                     if self.state == MENU:
                         print("Enter key pressed at menu")
@@ -178,16 +215,22 @@ class Game:
                         self.state = PLAYING
                         # Set transition time to prevent immediate bow attack
                         self.state_transition_time = pygame.time.get_ticks()
+                        # Switch to game music
+                        self.sound_manager.play_music('game')
                     elif self.state == GAME_OVER:
                         print("Enter key pressed at game over")
                         self.reset_game()
                         self.state = PLAYING
                         # Set transition time to prevent immediate bow attack
                         self.state_transition_time = pygame.time.get_ticks()
+                        # Switch to game music
+                        self.sound_manager.play_music('game')
                 # Debug key - force state change
                 elif event.key == pygame.K_m:
                     self.state = MENU
                     print("Forced state change to MENU")
+                    # Switch to menu music
+                    self.sound_manager.play_music('menu')
                 elif event.key == pygame.K_p:
                     self.state = PLAYING
                     if self.level is None:
@@ -195,9 +238,41 @@ class Game:
                     print("Forced state change to PLAYING")
                     # Set transition time to prevent immediate bow attack
                     self.state_transition_time = pygame.time.get_ticks()
+                    # Switch to game music
+                    self.sound_manager.play_music('game')
+                # Zoom control keys
+                elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
+                    self.camera.zoom = min(self.camera.zoom + 0.1, 3.0)
+                    self.camera.view_width = self.camera.width / self.camera.zoom
+                    self.camera.view_height = self.camera.height / self.camera.zoom
+                    print(f"Zoom in: {self.camera.zoom:.1f}x")
+                elif event.key == pygame.K_MINUS:
+                    self.camera.zoom = max(self.camera.zoom - 0.1, 1.0)
+                    self.camera.view_width = self.camera.width / self.camera.zoom
+                    self.camera.view_height = self.camera.height / self.camera.zoom
+                    print(f"Zoom out: {self.camera.zoom:.1f}x")
+                # Sound controls
+                elif event.key == pygame.K_m and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                    enabled = self.sound_manager.toggle_music()
+                    print(f"Music {'enabled' if enabled else 'disabled'}")
+                elif event.key == pygame.K_s and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                    enabled = self.sound_manager.toggle_sfx()
+                    print(f"Sound effects {'enabled' if enabled else 'disabled'}")
+                # Volume controls
+                elif event.key == pygame.K_UP and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                    new_volume = min(1.0, self.sound_manager.music_volume + 0.1)
+                    self.sound_manager.set_music_volume(new_volume)
+                    print(f"Music volume: {int(new_volume * 100)}%")
+                elif event.key == pygame.K_DOWN and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                    new_volume = max(0.0, self.sound_manager.music_volume - 0.1)
+                    self.sound_manager.set_music_volume(new_volume)
+                    print(f"Music volume: {int(new_volume * 100)}%")
                 # Exit key
                 elif event.key == pygame.K_q:
                     self.running = False
+                # Toggle torch lighting with 'L' key
+                elif event.key == pygame.K_l:
+                    self.torch_enabled = not self.torch_enabled
                     
             if self.state == PLAYING:
                 # Check if we're within the state transition cooldown period
@@ -211,7 +286,13 @@ class Game:
                         self.weapon_manager.attack_sword()
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
-                        self.weapon_manager.attack_bow(pygame.mouse.get_pos())
+                        # Get screen mouse position
+                        screen_mouse_pos = pygame.mouse.get_pos()
+                        # Convert to world coordinates 
+                        world_mouse_pos = self.screen_to_world_coords(*screen_mouse_pos)
+                        # Attack with bow using world coordinates
+                        self.weapon_manager.attack_bow(world_mouse_pos)
+                        print(f"Mouse click at screen: {screen_mouse_pos}, world: {world_mouse_pos}")
                         
     def update(self):
         if self.state != PLAYING:
@@ -235,6 +316,9 @@ class Game:
             self.player.rect = old_rect
             self.player.hitbox = old_hitbox
             
+        # Update camera to follow player
+        self.camera.update(self.player.rect.centerx, self.player.rect.centery)
+        
         # Check for door transitions
         try:
             door_direction, new_position = self.level.check_door_transition(self.player.hitbox)
@@ -322,12 +406,25 @@ class Game:
         # Check for arrow collisions with destroyable walls
         arrows_to_remove = []
         try:
-            print(f"DEBUG: Checking wall collisions for {len(self.weapon_manager.bow.arrows)} arrows")
             for arrow in self.weapon_manager.bow.arrows:
                 try:
+                    # Only check collision after arrow has traveled for at least 5 frames
+                    # This allows the arrow to be rendered for longer before being removed
+                    if hasattr(arrow, 'frames_alive'):
+                        arrow.frames_alive += 1
+                    else:
+                        arrow.frames_alive = 1
+                    
+                    # Skip collision check for the first 5 frames to allow the arrow to be visible
+                    if arrow.frames_alive <= 5:
+                        continue
+                        
                     # Get the tile at the arrow's position
                     arrow_tile_x = arrow.rect.centerx // TILE_SIZE
                     arrow_tile_y = arrow.rect.centery // TILE_SIZE
+                    
+                    # Debug the exact position
+                    print(f"Arrow check at: screen ({arrow.x}, {arrow.y}), tile ({arrow_tile_x}, {arrow_tile_y})")
                     
                     # Try to destroy the wall
                     if self.level.try_destroy_wall(arrow_tile_x, arrow_tile_y):
@@ -342,12 +439,11 @@ class Game:
             
         # Remove arrows that hit walls
         if arrows_to_remove:
-            print(f"DEBUG: Removing {len(arrows_to_remove)} arrows that hit walls")
-        for arrow in arrows_to_remove:
-            try:
-                self.weapon_manager.bow.remove_arrow(arrow)
-            except Exception as e:
-                print(f"Error removing arrow after wall collision: {e}")
+            for arrow in arrows_to_remove:
+                try:
+                    self.weapon_manager.bow.remove_arrow(arrow)
+                except Exception as e:
+                    print(f"Error removing arrow after wall collision: {e}")
                 
         # Check enemy collisions with weapons
         try:
@@ -424,14 +520,12 @@ class Game:
         # Check if player died
         if self.player.health <= 0:
             self.state = GAME_OVER
+            # When game over track is added, uncomment this
+            # self.sound_manager.play_music('game_over')
             
     def render(self):
         # Clear screen first
         self.screen.fill(BLACK)
-        
-        # Draw debug info
-        state_text = self.debug_font.render(f"Game State: {self.state}", True, (255, 0, 0))
-        self.screen.blit(state_text, (10, WINDOW_HEIGHT - 30))
         
         # Render based on game state
         if self.state == MENU:
@@ -450,39 +544,122 @@ class Game:
         pygame.display.flip()
         
     def render_game(self):
-        # Draw level
-        if self.level:
-            self.level.draw(self.screen)
+        # Create a temporary surface for the zoomed room rendering
+        room_width = ROOM_WIDTH * TILE_SIZE
+        room_height = ROOM_HEIGHT * TILE_SIZE
+        room_surface = pygame.Surface((room_width, room_height))
+        room_surface.fill(BLACK)
         
-        # Draw player
-        self.player.draw(self.screen)
+        # Draw level to room surface
+        if self.level:
+            self.level.draw(room_surface)
+        
+        # Draw player to room surface
+        self.player.draw(room_surface)
         
         # Draw weapons (EXCEPT arrows, which we'll draw last)
         if self.weapon_manager.sword.active:
-            self.weapon_manager.weapon_sprites.draw(self.screen)
+            self.weapon_manager.weapon_sprites.draw(room_surface)
+
+        # Get the visible portion of the room based on camera position
+        view_rect = pygame.Rect(
+            self.camera.x, self.camera.y,
+            self.camera.view_width, self.camera.view_height
+        )
         
-        # Draw HUD
-        self.hud.draw(self.player, self.current_level)
+        # Scale and blit the visible portion to the screen
+        visible_portion = room_surface.subsurface(view_rect)
+        scaled_portion = pygame.transform.scale(
+            visible_portion, 
+            (WINDOW_WIDTH, WINDOW_HEIGHT)
+        )
+        self.screen.blit(scaled_portion, (0, 0))
         
-        # Draw arrows LAST to ensure they're on top
+        # Create lighting effect - dark overlay with circular light around player
+        if self.torch_enabled:
+            light_effect = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            light_effect.fill((0, 0, 0, self.darkness_level))  # Semi-transparent black overlay
+            
+            # Calculate the player's actual position on screen by getting their relative position to camera
+            # This works even at screen edges
+            
+            # Get player's world position
+            player_world_x = self.player.rect.centerx
+            player_world_y = self.player.rect.centery
+            
+            # Calculate relative position to camera
+            rel_x = player_world_x - self.camera.x
+            rel_y = player_world_y - self.camera.y
+            
+            # Scale by zoom factor
+            player_screen_x = rel_x * self.camera.zoom
+            player_screen_y = rel_y * self.camera.zoom
+            
+            # Ensure coordinates are integers for drawing
+            player_screen_x = int(player_screen_x)
+            player_screen_y = int(player_screen_y)
+            
+            # Create a completely smooth gradient with no visible rings
+            # Use a single loop with a continuous function for alpha calculation
+            
+            # Inner fully lit area (radius where light is 100%)
+            fully_lit_radius = 80
+            
+            # Maximum radius of the torch light
+            max_radius = self.torch_radius
+            
+            # Very small step size for smoother gradient
+            step_size = 2
+            
+            # Draw from maximum radius inward
+            for radius in range(max_radius, 0, -step_size):
+                # Calculate normalized distance (0.0 at center, 1.0 at max radius)
+                normalized_distance = radius / max_radius
+                
+                # Use a smooth curve for alpha (darkness) calculation
+                # This is a sigmoidal-like curve that creates a more natural falloff
+                if radius <= fully_lit_radius:
+                    # Inside fully lit radius - completely transparent
+                    alpha = 0
+                else:
+                    # Calculate how far we are from fully lit radius (as a percentage from 0.0 to 1.0)
+                    t = (radius - fully_lit_radius) / (max_radius - fully_lit_radius)
+                    
+                    # Apply a cubic ease-in function for natural light falloff
+                    # This creates a very smooth transition that starts slow and accelerates
+                    falloff = t * t * t
+                    
+                    # Apply falloff to darkness level
+                    alpha = int(self.darkness_level * falloff)
+                
+                # Draw the circle with calculated alpha
+                pygame.draw.circle(light_effect, (0, 0, 0, alpha), (player_screen_x, player_screen_y), radius)
+            
+            # Apply the lighting effect
+            self.screen.blit(light_effect, (0, 0))
+        
+        # Draw arrows LAST to ensure they're on top - draw directly to screen with camera transformation
         arrow_count = len(self.weapon_manager.bow.arrows)
-        print(f"DEBUG: Rendering {arrow_count} arrows")
-        if arrow_count > 0:
-            for arrow in self.weapon_manager.bow.arrows:
-                print(f"DEBUG: Arrow position: ({arrow.x}, {arrow.y}), rect: {arrow.rect}")
-        self.weapon_manager.bow.draw(self.screen)
         
-        # Draw a debug message showing arrow count
-        if self.player.arrow_count > 0:
-            debug_font = pygame.font.Font(None, 24)
-            debug_text = debug_font.render(f"Left-click to shoot ({self.player.arrow_count} arrows)", True, (255, 255, 0))
-            self.screen.blit(debug_text, (10, 10))
+        # Instead of just drawing all arrows, we'll manually draw each one with camera transformation
+        for arrow in self.weapon_manager.bow.arrows:
+            # Convert arrow position to screen coordinates
+            screen_x, screen_y = self.camera.apply_pos(arrow.x, arrow.y)
+            # Store original position
+            orig_x, orig_y = arrow.x, arrow.y
+            # Temporarily update arrow position for drawing
+            arrow.x, arrow.y = screen_x, screen_y
+            # Scale up the arrow size for drawing
+            orig_size = arrow.size
+            arrow.size = arrow.size * self.camera.zoom
+            # Draw the arrow
+            arrow.draw(self.screen)
+            # Restore original position and size
+            arrow.x, arrow.y = orig_x, orig_y
+            arrow.size = orig_size
         
-        # Draw active arrow count on screen
-        if arrow_count > 0:
-            debug_font = pygame.font.Font(None, 24)
-            debug_text = debug_font.render(f"Active arrows: {arrow_count}", True, (255, 0, 255))
-            self.screen.blit(debug_text, (10, 40))
+        # Draw HUD - pass audio availability to draw sound icon if needed
+        self.hud.draw(self.player, self.current_level, self.sound_manager.audio_available)
         
     def run(self):
         print("Starting game loop")

@@ -222,36 +222,38 @@ class Player(pygame.sprite.Sprite):
     def attack_bow(self, mouse_pos):
         # Check if player has arrows available
         if self.arrow_count <= 0:
-            print("Out of arrows!")
-            return None
+            return False
             
+        # Check attack cooldown
         current_time = pygame.time.get_ticks()
-        if current_time - self.last_attack_time >= BOW_COOLDOWN:
-            self.last_attack_time = current_time
-            self.current_state = 'attack'
-            self.frame = 0  # Reset animation frame
-            self.animation_time = 0  # Reset animation time
+        if current_time - self.last_attack_time < self.bow_cooldown:
+            return False
             
-            # Decrement arrow count when shooting
-            self.arrow_count -= 1
-            print(f"DEBUG: Player.attack_bow called - Arrow count decremented to {self.arrow_count}")
+        # Update attack time and state
+        self.last_attack_time = current_time
+        self.current_state = 'attack'
+        self.frame = 0  # Reset animation frame
+        self.animation_time = 0  # Reset animation time
+        
+        # Decrement arrow count when shooting
+        self.arrow_count -= 1
+        
+        # Calculate direction vector to mouse position (for animation only)
+        dx = mouse_pos[0] - self.rect.centerx
+        dy = mouse_pos[1] - self.rect.centery
+        distance = math.sqrt(dx * dx + dy * dy)
+        if distance > 0:
+            dx = dx / distance
+            dy = dy / distance
             
-            # Calculate direction vector to mouse position
-            dx = mouse_pos[0] - self.rect.centerx
-            dy = mouse_pos[1] - self.rect.centery
-            distance = math.sqrt(dx * dx + dy * dy)
-            if distance > 0:
-                dx = dx / distance
-                dy = dy / distance
-                
-                # Update facing direction based on mouse position
-                if abs(dx) > abs(dy):
-                    self.facing = 'right' if dx > 0 else 'left'
-                else:
-                    self.facing = 'down' if dy > 0 else 'up'
-                    
-                return (dx, dy)
-        return None
+            # Update facing direction based on mouse position
+            if abs(dx) > abs(dy):
+                self.facing = 'right' if dx > 0 else 'left'
+            else:
+                self.facing = 'down' if dy > 0 else 'up'
+        
+        # Return True to indicate that the arrow was successfully shot
+        return True
         
     def take_damage(self, amount):
         self.health -= amount

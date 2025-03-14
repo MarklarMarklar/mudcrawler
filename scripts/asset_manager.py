@@ -14,7 +14,6 @@ class AssetManager:
         
     def load_image(self, path, scale=None, convert_alpha=True):
         """Load an image, cache it, and return it."""
-        print(f"Attempting to load image: {path}")
         if path in self.images:
             return self.images[path]
             
@@ -28,7 +27,6 @@ class AssetManager:
                 image = pygame.transform.scale(image, scale)
                 
             self.images[path] = image
-            print(f"Successfully loaded image: {path}")
             return image
         except pygame.error as e:
             print(f"Error loading image {path}: {e}")
@@ -49,7 +47,6 @@ class AssetManager:
             
     def load_animation(self, folder_path, prefix, num_frames, extension=".png", scale=None):
         """Load a series of images for an animation, cache it, and return it."""
-        print(f"Attempting to load animation from folder: {folder_path}")
         if folder_path in self.animations:
             return self.animations[folder_path]
             
@@ -57,7 +54,6 @@ class AssetManager:
         for i in range(num_frames):
             filename = f"{prefix}{i}{extension}"
             filepath = os.path.join(folder_path, filename)
-            print(f"Loading animation frame: {filepath}")
             frames.append(self.load_image(filepath, scale=scale))
             
         self.animations[folder_path] = frames
