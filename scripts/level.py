@@ -188,21 +188,317 @@ class Room:
         self.tiles = [[1 for x in range(self.width)] for y in range(self.height)]
         self.destroyable_walls = [[False for x in range(self.width)] for y in range(self.height)]
         
-        # Create open area with some random walls
+        # Room center for symmetry
+        center_x, center_y = self.width // 2, self.height // 2
+        
+        # Create open area
         for y in range(1, self.height - 1):
             for x in range(1, self.width - 1):
                 # Edges of the room are always floor
                 if (x == 1 or x == self.width - 2 or y == 1 or y == self.height - 2):
                     self.tiles[y][x] = 0
-                # Inner part has random walls (less chance of walls than before)
-                elif random.random() < 0.25:  # 25% chance of wall
-                    self.tiles[y][x] = 1
-                    
-                    # 10% chance that a wall is destroyable (reduced from 20%)
-                    if random.random() < 0.1 and x > 1 and x < self.width - 2 and y > 1 and y < self.height - 2:
-                        self.destroyable_walls[y][x] = True
                 else:
+                    # Default to floor
                     self.tiles[y][x] = 0
+        
+        # Apply symmetric wall patterns based on room type
+        if self.room_type == 'normal':
+            # Pick a symmetric pattern for the room based on grid coordinates
+            # Use both coordinates to create more variety
+            pattern_seed = (abs(self.grid_x) * 3 + abs(self.grid_y) * 7) % 9
+            
+            if pattern_seed == 0:
+                # Cross pattern with openings
+                for y in range(2, self.height - 2):
+                    for x in range(2, self.width - 2):
+                        # Create a cross pattern in the middle
+                        if (x == center_x or y == center_y) and not (
+                            # Leave openings at the cardinal directions for passage
+                            (x == center_x and (abs(y - center_y) < 3)) or
+                            (y == center_y and (abs(x - center_x) < 3))
+                        ):
+                            self.tiles[y][x] = 1
+                            
+                        # Add some additional symmetric walls for density
+                        elif (x == center_x - 4 or x == center_x + 4) and (5 < y < self.height - 6):
+                            self.tiles[y][x] = 1
+                        elif (y == center_y - 4 or y == center_y + 4) and (5 < x < self.width - 6):
+                            self.tiles[y][x] = 1
+                
+            elif pattern_seed == 1:
+                # Four symmetric corner rooms with central chamber
+                # Define the corner rooms
+                room_width = (self.width - 6) // 2
+                room_height = (self.height - 6) // 2
+                
+                # Create walls to separate rooms
+                for x in range(2, self.width - 2):
+                    if abs(x - center_x) > 2:  # Leave opening in center
+                        self.tiles[center_y][x] = 1  # Horizontal wall
+                
+                for y in range(2, self.height - 2):
+                    if abs(y - center_y) > 2:  # Leave opening in center
+                        self.tiles[y][center_x] = 1  # Vertical wall
+                
+                # Add some decorative walls in corner rooms (reflective symmetry)
+                for corner_offset_y in [-1, 1]:
+                    for corner_offset_x in [-1, 1]:
+                        offset_y = center_y + corner_offset_y * (room_height // 2 + 2)
+                        offset_x = center_x + corner_offset_x * (room_width // 2 + 2)
+                        
+                        # Add a 3x3 pattern in each corner room
+                        for y_rel in range(-1, 2):
+                            for x_rel in range(-1, 2):
+                                # Skip center to allow passage
+                                if not (x_rel == 0 and y_rel == 0):
+                                    self.tiles[offset_y + y_rel][offset_x + x_rel] = 1
+                
+            elif pattern_seed == 2:
+                # Diamond pattern
+                # Make diamond pattern with clear center
+                diamond_radius = min(center_x, center_y) - 3
+                for y in range(2, self.height - 2):
+                    for x in range(2, self.width - 2):
+                        # Manhattan distance for diamond shape
+                        distance = abs(x - center_x) + abs(y - center_y)
+                        # Create diamond outline
+                        if distance == diamond_radius:
+                            self.tiles[y][x] = 1
+                        # Add smaller inner diamond for more walls
+                        elif distance == diamond_radius // 2 and diamond_radius > 6:
+                            self.tiles[y][x] = 1
+                
+            elif pattern_seed == 3:
+                # Pillar pattern with symmetrical pillars
+                pillar_offsets = [
+                    (center_x // 2, center_y // 2),
+                    (center_x + center_x // 2, center_y // 2),
+                    (center_x // 2, center_y + center_y // 2),
+                    (center_x + center_x // 2, center_y + center_y // 2)
+                ]
+                
+                # Add pillars
+                for px, py in pillar_offsets:
+                    self.tiles[py][px] = 1
+                    self.tiles[py+1][px] = 1
+                    self.tiles[py][px+1] = 1
+                    self.tiles[py+1][px+1] = 1
+                    
+                # Add centered walls between pillars
+                if center_x > 5 and center_y > 5:
+                    # Horizontal connecting walls
+                    for x in range(pillar_offsets[0][0] + 2, pillar_offsets[1][0]):
+                        if (x - pillar_offsets[0][0]) % 3 != 0:  # Leave gaps for passage
+                            self.tiles[pillar_offsets[0][1]][x] = 1
+                            self.tiles[pillar_offsets[2][1]][x] = 1
+                    
+                    # Vertical connecting walls
+                    for y in range(pillar_offsets[0][1] + 2, pillar_offsets[2][1]):
+                        if (y - pillar_offsets[0][1]) % 3 != 0:  # Leave gaps for passage
+                            self.tiles[y][pillar_offsets[0][0]] = 1
+                            self.tiles[y][pillar_offsets[1][0]] = 1
+                
+            elif pattern_seed == 4:
+                # Maze-like symmetric pattern
+                for offset_y in range(3, center_y, 3):
+                    # Horizontal walls with gaps
+                    for x in range(3, self.width - 3):
+                        # Skip position if it would block a passage
+                        if (x - 3) % 6 != 0:
+                            # Apply to both sides symmetrically
+                            self.tiles[center_y - offset_y][x] = 1
+                            self.tiles[center_y + offset_y][x] = 1
+                
+                for offset_x in range(3, center_x, 3):
+                    # Vertical walls with gaps
+                    for y in range(3, self.height - 3):
+                        # Skip position if it would block a passage
+                        if (y - 3) % 6 != 0:
+                            # Apply to both sides symmetrically
+                            self.tiles[y][center_x - offset_x] = 1
+                            self.tiles[y][center_x + offset_x] = 1
+            
+            elif pattern_seed == 5:
+                # Concentric circles pattern
+                for y in range(2, self.height - 2):
+                    for x in range(2, self.width - 2):
+                        # Euclidean distance for circle shape
+                        distance = math.sqrt((x - center_x)**2 + (y - center_y)**2)
+                        # Create walls at specific radii
+                        if int(distance) % 5 == 0 and distance > 3:
+                            self.tiles[y][x] = 1
+            
+            elif pattern_seed == 6:
+                # Checkerboard pattern with symmetric larger squares
+                square_size = 3
+                for y in range(3, self.height - 3, square_size):
+                    for x in range(3, self.width - 3, square_size):
+                        # Create symmetric pattern relative to center
+                        if ((x // square_size) + (y // square_size)) % 2 == 0:
+                            # Create a square of walls
+                            for dy in range(square_size - 1):
+                                for dx in range(square_size - 1):
+                                    if 0 <= y + dy < self.height and 0 <= x + dx < self.width:
+                                        self.tiles[y + dy][x + dx] = 1
+            
+            elif pattern_seed == 7:
+                # Spiral pattern
+                max_radius = min(center_x, center_y) - 3
+                angles = [0, 90, 180, 270]  # Four arms for symmetry
+                
+                for radius in range(3, max_radius, 2):
+                    for angle in angles:
+                        # Convert polar coordinates to cartesian
+                        rad_angle = math.radians(angle)
+                        x = int(center_x + radius * math.cos(rad_angle))
+                        y = int(center_y + radius * math.sin(rad_angle))
+                        
+                        # Make sure we're in bounds
+                        if (2 <= x < self.width - 2 and 2 <= y < self.height - 2):
+                            # Create a 2x2 wall segment
+                            self.tiles[y][x] = 1
+                            if y+1 < self.height - 2:
+                                self.tiles[y+1][x] = 1
+                            if x+1 < self.width - 2:
+                                self.tiles[y][x+1] = 1
+                            if y+1 < self.height - 2 and x+1 < self.width - 2:
+                                self.tiles[y+1][x+1] = 1
+            
+            else:  # pattern_seed == 8
+                # Symmetric "rooms connected by hallways"
+                # Create four symmetrically placed rooms
+                room_positions = [
+                    (center_x - center_x//2, center_y - center_y//2),
+                    (center_x + center_x//2, center_y - center_y//2),
+                    (center_x - center_x//2, center_y + center_y//2),
+                    (center_x + center_x//2, center_y + center_y//2)
+                ]
+                
+                room_size = 5
+                
+                # Create room boundaries
+                for room_x, room_y in room_positions:
+                    for y in range(room_y - room_size//2, room_y + room_size//2 + 1):
+                        for x in range(room_x - room_size//2, room_x + room_size//2 + 1):
+                            if (x == room_x - room_size//2 or x == room_x + room_size//2 or
+                                y == room_y - room_size//2 or y == room_y + room_size//2):
+                                if 0 <= y < self.height and 0 <= x < self.width:
+                                    self.tiles[y][x] = 1
+                
+                # Connect rooms with hallways (leaving openings in room walls)
+                # Horizontal hallways
+                for x in range(room_positions[0][0] + room_size//2 + 1, room_positions[1][0] - room_size//2):
+                    self.tiles[center_y - center_y//2 - 1][x] = 1
+                    self.tiles[center_y - center_y//2 + 1][x] = 1
+                    self.tiles[center_y + center_y//2 - 1][x] = 1
+                    self.tiles[center_y + center_y//2 + 1][x] = 1
+                
+                # Vertical hallways
+                for y in range(room_positions[0][1] + room_size//2 + 1, room_positions[2][1] - room_size//2):
+                    self.tiles[y][center_x - center_x//2 - 1] = 1
+                    self.tiles[y][center_x - center_x//2 + 1] = 1
+                    self.tiles[y][center_x + center_x//2 - 1] = 1
+                    self.tiles[y][center_x + center_x//2 + 1] = 1
+        
+        elif self.room_type == 'start':
+            # Start room - make sure center area is clear
+            for y in range(center_y - 2, center_y + 3):
+                for x in range(center_x - 2, center_x + 3):
+                    if 0 <= y < self.height and 0 <= x < self.width:
+                        self.tiles[y][x] = 0
+            
+            # Add some symmetric decorative walls near edges
+            for offset in range(3, min(center_x, center_y) - 2, 4):
+                # Top and bottom walls
+                for x_offset in range(-2, 3):
+                    if x_offset != 0:  # Skip the center for passage
+                        x = center_x + x_offset
+                        self.tiles[center_y - offset][x] = 1
+                        self.tiles[center_y + offset][x] = 1
+                
+                # Left and right walls
+                for y_offset in range(-2, 3):
+                    if y_offset != 0:  # Skip the center for passage
+                        y = center_y + y_offset
+                        self.tiles[y][center_x - offset] = 1
+                        self.tiles[y][center_x + offset] = 1
+                
+        elif self.room_type == 'boss':
+            # Boss room with symmetric design
+            # Clear center area - make it larger to ensure boss has room to move
+            clear_radius = 5
+            for y in range(center_y - clear_radius, center_y + clear_radius + 1):
+                for x in range(center_x - clear_radius, center_x + clear_radius + 1):
+                    if 0 <= y < self.height and 0 <= x < self.width:
+                        self.tiles[y][x] = 0  # Set to floor
+            
+            # Add symmetric pillars at the corners
+            pillar_distance = clear_radius + 1
+            pillar_positions = [
+                (center_x - pillar_distance, center_y - pillar_distance),
+                (center_x + pillar_distance, center_y - pillar_distance),
+                (center_x - pillar_distance, center_y + pillar_distance),
+                (center_x + pillar_distance, center_y + pillar_distance)
+            ]
+            
+            for px, py in pillar_positions:
+                if (0 < px < self.width - 1 and 0 < py < self.height - 1 and
+                    px + 1 < self.width - 1 and py + 1 < self.height - 1):
+                    # Create 2x2 pillar
+                    self.tiles[py][px] = 1
+                    self.tiles[py+1][px] = 1
+                    self.tiles[py][px+1] = 1
+                    self.tiles[py+1][px+1] = 1
+            
+            # Add some additional decorative walls along edges of the boss arena
+            edge_distance = clear_radius + 2
+            for offset in range(-edge_distance, edge_distance + 1, 4):
+                # Only place at specific intervals (skip some positions)
+                if offset != 0 and abs(offset) != edge_distance:
+                    # Top and bottom edges
+                    if 3 <= center_y + offset < self.height - 3:
+                        self.tiles[center_y + offset][center_x - edge_distance] = 1
+                        self.tiles[center_y + offset][center_x + edge_distance] = 1
+                    
+                    # Left and right edges
+                    if 3 <= center_x + offset < self.width - 3:
+                        self.tiles[center_y - edge_distance][center_x + offset] = 1
+                        self.tiles[center_y + edge_distance][center_x + offset] = 1
+        
+        elif self.room_type == 'treasure':
+            # Treasure room - symmetric layout
+            # Clear most areas first
+            for y in range(1, self.height - 1):
+                for x in range(1, self.width - 1):
+                    self.tiles[y][x] = 0
+            
+            # Add symmetric corner structures
+            corner_positions = [
+                (2, 2),                       # Top-left
+                (2, self.height - 5),         # Bottom-left
+                (self.width - 5, 2),          # Top-right
+                (self.width - 5, self.height - 5)  # Bottom-right
+            ]
+            
+            for corner_x, corner_y in corner_positions:
+                # Create L-shaped corner structures
+                for i in range(3):
+                    # Horizontal walls
+                    self.tiles[corner_y][corner_x + i] = 1
+                    # Vertical walls
+                    self.tiles[corner_y + i][corner_x] = 1
+            
+            # Add a symmetric central structure - like a small room with openings
+            central_room_size = 5
+            for y in range(center_y - central_room_size//2, center_y + central_room_size//2 + 1):
+                for x in range(center_x - central_room_size//2, center_x + central_room_size//2 + 1):
+                    # Only create walls at the edges of this central structure
+                    if (x == center_x - central_room_size//2 or x == center_x + central_room_size//2 or
+                        y == center_y - central_room_size//2 or y == center_y + central_room_size//2):
+                        # But leave openings at the cardinal directions
+                        if not ((x == center_x and (y == center_y - central_room_size//2 or y == center_y + central_room_size//2)) or
+                                (y == center_y and (x == center_x - central_room_size//2 or x == center_x + central_room_size//2))):
+                            self.tiles[y][x] = 1
                     
         # Add doors based on door configuration
         if self.doors['north']:
@@ -244,70 +540,204 @@ class Room:
                 for x in range(1, 4):  # 3 tiles deep
                     if 0 <= y < self.height and 0 <= x < self.width:
                         self.tiles[y][x] = 0  # Floor tile
-            
-        # Special handling for room types
-        if self.room_type == 'start':
-            # Start room - make sure center area is clear
-            center_x, center_y = self.width // 2, self.height // 2
-            for y in range(center_y - 2, center_y + 3):
-                for x in range(center_x - 2, center_x + 3):
-                    if 0 <= y < self.height and 0 <= x < self.width:
-                        self.tiles[y][x] = 0
-        elif self.room_type == 'boss':
-            # Boss room - large open area with some obstacles
-            center_x, center_y = self.width // 2, self.height // 2
-            # Clear center area - make it larger to ensure boss has room to move
-            clear_radius = 5  # Increase cleared area radius
-            for y in range(center_y - clear_radius, center_y + clear_radius + 1):
-                for x in range(center_x - clear_radius, center_x + clear_radius + 1):
-                    if 0 <= y < self.height and 0 <= x < self.width:
-                        self.tiles[y][x] = 0  # Set to floor
-            
-            # Add some random pillars, but keep them away from the center
-            for _ in range(4):
-                # Choose positions for pillars that are not in the center area
-                valid_position = False
-                px, py = 0, 0
-                
-                while not valid_position:
-                    px = random.randint(3, self.width - 4)
-                    py = random.randint(3, self.height - 4)
-                    
-                    # Check if far enough from center
-                    dx = abs(px - center_x)
-                    dy = abs(py - center_y)
-                    if dx > clear_radius - 1 or dy > clear_radius - 1:
-                        valid_position = True
-                
-                self.tiles[py][px] = 1
-                self.tiles[py+1][px] = 1
-                self.tiles[py][px+1] = 1
-                self.tiles[py+1][px+1] = 1
-                
-                # 12.5% chance that pillars are destroyable (reduced from 25%)
-                if random.random() < 0.125:
-                    self.destroyable_walls[py][px] = True
-                    self.destroyable_walls[py+1][px] = True
-                    self.destroyable_walls[py][px+1] = True
-                    self.destroyable_walls[py+1][px+1] = True
-        elif self.room_type == 'treasure':
-            # Treasure room - some obstacles with treasure in the middle
-            # Clear most areas
-            for y in range(1, self.height - 1):
-                for x in range(1, self.width - 1):
-                    self.tiles[y][x] = 0
-                    
-            # Add a few walls in corners
-            for corner_x, corner_y in [(2, 2), (2, self.height-3), (self.width-3, 2), (self.width-3, self.height-3)]:
-                for dy in range(3):
-                    for dx in range(3):
-                        if random.random() < 0.7:
-                            self.tiles[corner_y + dy][corner_x + dx] = 1
-                            
-                            # 15% chance that walls in treasure rooms are destroyable (reduced from 30%)
-                            if random.random() < 0.15 and corner_x > 1 and corner_x + dx < self.width - 2 and corner_y > 1 and corner_y + dy < self.height - 2:
-                                self.destroyable_walls[corner_y + dy][corner_x + dx] = True
+                        
+        # ADD DESTROYABLE WALLS (TREASURE CHESTS) SEPARATELY
+        self._place_destroyable_walls()
         
+    def _place_destroyable_walls(self):
+        """Place destroyable walls (treasure chests) in the room"""
+        # Destroyable walls should be separate from normal walls
+        # They represent actual treasure chests placed in the environment
+        
+        max_chests = 0
+        
+        if self.room_type == 'normal':
+            # Normal rooms have few treasure chests
+            max_chests = 2
+        elif self.room_type == 'boss':
+            # Boss rooms have a medium number of chests
+            max_chests = 3
+        elif self.room_type == 'treasure':
+            # Treasure rooms have more chests
+            max_chests = 4
+        elif self.room_type == 'start':
+            # Start rooms have very few chests
+            max_chests = 1
+        
+        # Adjust based on level number (higher levels have slightly more chests)
+        level_bonus = min(1, self.level_number // 4)  # Capped at 1 extra chest
+        max_chests += level_bonus
+        
+        # Find valid floor positions for placing chests
+        valid_positions = []
+        for y in range(2, self.height - 2):
+            for x in range(2, self.width - 2):
+                # Only consider floor tiles that aren't near doors
+                if self.tiles[y][x] == 0 and not self._is_near_door(x, y):
+                    # Make sure the position doesn't block critical paths
+                    if not self._blocks_path(x, y):
+                        valid_positions.append((x, y))
+        
+        # If no valid positions, we can't place any chests
+        if not valid_positions:
+            return
+        
+        # Place chests based on room type
+        chests_placed = 0
+        
+        if self.room_type == 'boss':
+            # Place chests near the boss arena perimeter
+            center_x, center_y = self.width // 2, self.height // 2
+            arena_radius = 6  # Slightly larger than clear_radius from boss room generation
+            
+            # Filter positions that are at the perimeter of the boss arena
+            perimeter_positions = [
+                pos for pos in valid_positions 
+                if abs(math.sqrt((pos[0] - center_x)**2 + (pos[1] - center_y)**2) - arena_radius) < 2
+            ]
+            
+            # Try to place in symmetric positions
+            if perimeter_positions:
+                # Sort by angle from center for symmetric placement
+                perimeter_positions.sort(key=lambda pos: math.atan2(pos[1] - center_y, pos[0] - center_x))
+                
+                # Take evenly spaced positions for symmetry
+                if len(perimeter_positions) >= max_chests:
+                    step = len(perimeter_positions) // max_chests
+                    for i in range(0, min(max_chests, len(perimeter_positions)), 1):
+                        index = (i * step) % len(perimeter_positions)
+                        x, y = perimeter_positions[index]
+                        self._place_chest(x, y)
+                        chests_placed += 1
+                else:
+                    # Not enough positions for perfect symmetry, place what we can
+                    for pos in perimeter_positions[:max_chests]:
+                        x, y = pos
+                        self._place_chest(x, y)
+                        chests_placed += 1
+        
+        elif self.room_type == 'treasure':
+            # For treasure rooms, place chests in strategic locations
+            center_x, center_y = self.width // 2, self.height // 2
+            
+            # Potential chest locations in a treasure room
+            # Try central area first (but not the exact center)
+            central_positions = [
+                pos for pos in valid_positions
+                if 2 < abs(pos[0] - center_x) + abs(pos[1] - center_y) < 6
+            ]
+            
+            # Place symmetrically in central area
+            if central_positions and chests_placed < max_chests:
+                # Try to get pairs of symmetric positions
+                symmetric_pairs = []
+                for i, pos1 in enumerate(central_positions):
+                    for pos2 in central_positions[i+1:]:
+                        # Check if points are symmetric about the center
+                        if (abs((pos1[0] - center_x) + (pos2[0] - center_x)) < 2 and
+                            abs((pos1[1] - center_y) + (pos2[1] - center_y)) < 2):
+                            symmetric_pairs.append((pos1, pos2))
+                
+                # Place symmetric pairs first
+                for pair in symmetric_pairs:
+                    if chests_placed + 2 <= max_chests:
+                        for pos in pair:
+                            x, y = pos
+                            self._place_chest(x, y)
+                            chests_placed += 1
+                    else:
+                        break
+            
+            # If we still need more, place in corners
+            if chests_placed < max_chests:
+                corner_zones = [
+                    # Top-left
+                    [(x, y) for x, y in valid_positions if x < center_x - 4 and y < center_y - 4],
+                    # Top-right
+                    [(x, y) for x, y in valid_positions if x > center_x + 4 and y < center_y - 4],
+                    # Bottom-left
+                    [(x, y) for x, y in valid_positions if x < center_x - 4 and y > center_y + 4],
+                    # Bottom-right
+                    [(x, y) for x, y in valid_positions if x > center_x + 4 and y > center_y + 4]
+                ]
+                
+                # Try to place one chest in each corner if possible
+                for corner in corner_zones:
+                    if corner and chests_placed < max_chests:
+                        pos = random.choice(corner)
+                        self._place_chest(pos[0], pos[1])
+                        chests_placed += 1
+        
+        else:  # 'normal' and 'start' rooms
+            # For normal and start rooms, place chests in interesting locations
+            
+            # Find positions along walls but not next to doors
+            wall_adjacent_positions = [
+                pos for pos in valid_positions
+                if self._is_adjacent_to_wall(pos[0], pos[1]) and not self._is_near_door(pos[0], pos[1])
+            ]
+            
+            # If we found good wall-adjacent positions, use those
+            if wall_adjacent_positions and len(wall_adjacent_positions) >= max_chests:
+                random.shuffle(wall_adjacent_positions)
+                for i in range(max_chests):
+                    x, y = wall_adjacent_positions[i]
+                    self._place_chest(x, y)
+                    chests_placed += 1
+            else:
+                # Otherwise fall back to any valid position
+                random.shuffle(valid_positions)
+                for i in range(min(max_chests, len(valid_positions))):
+                    x, y = valid_positions[i]
+                    self._place_chest(x, y)
+                    chests_placed += 1
+    
+    def _place_chest(self, x, y):
+        """Place a chest at the specified position"""
+        # Convert the floor tile to a wall
+        self.tiles[y][x] = 1
+        # Mark it as destroyable
+        self.destroyable_walls[y][x] = True
+        
+    def _is_adjacent_to_wall(self, x, y):
+        """Check if a position is adjacent to a wall but not a door"""
+        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+            check_x, check_y = x + dx, y + dy
+            if (0 <= check_y < self.height and 0 <= check_x < self.width and
+                self.tiles[check_y][check_x] == 1):  # Wall tile
+                return True
+        return False
+    
+    def _blocks_path(self, x, y):
+        """Check if placing a chest at this position would block an important path"""
+        # Count floor tiles around this position
+        floor_count = 0
+        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)]:
+            check_x, check_y = x + dx, y + dy
+            if (0 <= check_y < self.height and 0 <= check_x < self.width and
+                self.tiles[check_y][check_x] == 0):  # Floor tile
+                floor_count += 1
+        
+        # Check if this position is in a narrow corridor (has few adjacent floor tiles)
+        # or if it's near the center of the room
+        center_x, center_y = self.width // 2, self.height // 2
+        near_center = abs(x - center_x) < 3 and abs(y - center_y) < 3
+        
+        # Blocking a path if it's in a narrow corridor (2-3 floor tiles around) 
+        # or very near the center
+        return (2 <= floor_count <= 3) or near_center
+    
+    def _is_near_door(self, x, y):
+        """Check if a position is near a door"""
+        # Check surrounding 5x5 area for door tiles
+        for dy in range(-2, 3):
+            for dx in range(-2, 3):
+                check_x, check_y = x + dx, y + dy
+                if (0 <= check_y < self.height and 0 <= check_x < self.width and
+                    self.tiles[check_y][check_x] == 2):  # Door tile
+                    return True
+        return False
+    
     def try_destroy_wall(self, x, y):
         """Try to destroy a wall at the given tile position"""
         # Check if position is within bounds
