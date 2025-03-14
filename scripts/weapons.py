@@ -450,8 +450,8 @@ class WeaponManager:
         # Activate the sword animation
         if not self.sword.active:
             self.sword.start_attack()
-            # Play sword attack sound effect
-            self.sound_manager.play_sound("sword_attack")
+            # Play sword attack sound effect from effects subdirectory
+            self.sound_manager.play_sound("effects/sword_attack")
     def attack_bow(self, mouse_pos):
         # Check if player has arrows
 
