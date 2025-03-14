@@ -32,6 +32,10 @@ class Game:
         self.shake_duration = 0
         self.shake_offset = [0, 0]
         
+        # Death sequence flag
+        self.death_sequence_active = False
+        self.death_message_shown = False
+        
         # Debug: Print working directory
         print(f"Current working directory: {os.getcwd()}")
         print(f"Asset path: {ASSET_PATH}")
@@ -135,6 +139,9 @@ class Game:
     def reset_game(self):
         print("Resetting game...")
         self.current_level = 1
+        # Reset death sequence flags
+        self.death_sequence_active = False
+        self.death_message_shown = False
         # Reset particle system
         self.particle_system = ParticleSystem()
         # First initialize the level
@@ -167,6 +174,15 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+                
+            # Check for any key press during death sequence 
+            if self.state == PLAYING and self.death_sequence_active and self.player.death_animation_complete:
+                if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                    print("Player pressed a button after death - showing game over screen")
+                    self.state = GAME_OVER
+                    # When game over track is added, uncomment this
+                    # self.sound_manager.play_music('game_over')
+                    continue  # Skip other event handling
                 
             # Handle exit confirmation dialog if it's showing
             if self.level and self.level.show_exit_confirmation and event.type == pygame.MOUSEBUTTONDOWN:
@@ -354,15 +370,29 @@ class Game:
         if self.level is None:
             self.initialize_level()
             
-        # Update player movement
-        keys = pygame.key.get_pressed()
-        self.player.move(keys)
-        
         # Update screen shake effect
         self.update_screen_shake()
         
         # Update particle system
         self.particle_system.update()
+        
+        # Check if death sequence is active
+        if self.death_sequence_active:
+            # Update the player still to advance death animation
+            self.player.update()
+            
+            # Check if death animation is complete and waiting for input
+            if self.player.death_animation_complete:
+                # Keep showing the death scene until any button is pressed
+                return
+            
+            # Continue updating camera and particles during death
+            self.camera.update(self.player.rect.centerx, self.player.rect.centery)
+            return
+        
+        # Update player movement
+        keys = pygame.key.get_pressed()
+        self.player.move(keys)
         
         # Check collision using separate X and Y axis checks to allow sliding
         # Store original position
@@ -587,11 +617,12 @@ class Game:
                 self.player.rect.centery = player_y
                 
         # Check if player died
-        if self.player.health <= 0:
-            self.state = GAME_OVER
-            # When game over track is added, uncomment this
-            # self.sound_manager.play_music('game_over')
-            
+        if self.player.is_dead and not self.death_sequence_active:
+            # Start death sequence instead of immediately showing game over
+            self.death_sequence_active = True
+            print("Player died - starting death sequence")
+            # We'll show the game over screen after death animation completes
+        
     def render(self):
         # Clear screen first
         self.screen.fill(BLACK)
@@ -816,6 +847,47 @@ class Game:
         # Draw HUD - pass audio availability to draw sound icon if needed
         # Also pass the level object to enable minimap drawing in the HUD
         self.hud.draw(self.player, self.current_level, self.sound_manager.audio_available, self.level)
+        
+        # Draw "Press any button to continue" message when death animation is complete
+        if self.death_sequence_active and self.player.death_animation_complete:
+            # Only show the message after a brief delay
+            current_time = pygame.time.get_ticks()
+            if current_time - self.player.death_time > 2500:  # 2.5 seconds
+                # Create a message with a pulsing effect
+                try:
+                    # Try to use the pixelated font
+                    font_path = os.path.join(ASSET_PATH, "fonts/PixelatedEleganceRegular-ovyAA.ttf")
+                    font = pygame.font.Font(font_path, 32)
+                except:
+                    # Fall back to default font
+                    font = pygame.font.Font(None, 36)
+                    
+                # Create pulsing effect
+                pulse = 0.5 + 0.5 * abs(math.sin(pygame.time.get_ticks() / 500))
+                
+                # Create a semi-transparent background for better readability
+                overlay = pygame.Surface((WINDOW_WIDTH, 80), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 180))  # Semi-transparent black
+                self.screen.blit(overlay, (0, WINDOW_HEIGHT // 2 - 40))
+                
+                # Draw the message
+                text_color = (255, 255, 255)
+                message = font.render("Press any button to continue", True, text_color)
+                rect = message.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
+                
+                # Add shadow for better readability
+                shadow = font.render("Press any button to continue", True, (0, 0, 0))
+                shadow_rect = rect.copy()
+                shadow_rect.x += 2
+                shadow_rect.y += 2
+                self.screen.blit(shadow, shadow_rect)
+                
+                # Apply pulse effect by scaling alpha
+                alpha_surface = pygame.Surface(message.get_size(), pygame.SRCALPHA)
+                alpha_surface.fill((255, 255, 255, int(255 * pulse)))
+                message.blit(alpha_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                
+                self.screen.blit(message, rect)
         
         # Draw key pickup notification directly on the screen
         if self.level and hasattr(self.level, 'key_pickup_time'):

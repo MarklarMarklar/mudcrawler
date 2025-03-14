@@ -18,8 +18,14 @@ class Player(pygame.sprite.Sprite):
         self.animations = {
             'idle': {},
             'walk': {},
-            'attack': {}
+            'attack': {},
+            'dead': {}  # Add dead animation state
         }
+        
+        # Death animation variables
+        self.is_dead = False
+        self.death_animation_complete = False
+        self.death_time = 0
         
         # Load the sprite sheet
         sprite_sheet_path = os.path.join(PLAYER_SPRITES_PATH, "my_character_guides.png")
@@ -39,6 +45,30 @@ class Player(pygame.sprite.Sprite):
             print(f"Sprite sheet does not exist: {sprite_sheet_path}")
             # Initialize with placeholders if sprite sheet doesn't exist
             self.init_placeholders()
+            
+        # Load death animation from separate image
+        try:
+            death_image_path = os.path.join(PLAYER_SPRITES_PATH, "player_dies.png")
+            if os.path.exists(death_image_path):
+                death_image = self.asset_manager.load_image(death_image_path, scale=(TILE_SIZE, TILE_SIZE))
+                # Add death image to all directions for simplicity
+                for direction in ['down', 'up', 'left', 'right']:
+                    self.animations['dead'][direction] = [death_image]
+                print(f"Successfully loaded death animation: {death_image_path}")
+            else:
+                print(f"Death animation not found: {death_image_path}")
+                # Use placeholder for death animation
+                placeholder = pygame.Surface((TILE_SIZE, TILE_SIZE))
+                placeholder.fill((200, 0, 0))  # Red placeholder
+                for direction in ['down', 'up', 'left', 'right']:
+                    self.animations['dead'][direction] = [placeholder]
+        except Exception as e:
+            print(f"Error loading death animation: {e}")
+            # Use placeholder for death animation if loading fails
+            placeholder = pygame.Surface((TILE_SIZE, TILE_SIZE))
+            placeholder.fill((200, 0, 0))  # Red placeholder
+            for direction in ['down', 'up', 'left', 'right']:
+                self.animations['dead'][direction] = [placeholder]
         
         # Animation state
         self.current_state = 'idle'
@@ -284,6 +314,10 @@ class Player(pygame.sprite.Sprite):
         self.game = game
         
     def take_damage(self, amount):
+        # Don't take damage if already dead
+        if self.is_dead:
+            return False
+            
         self.health -= amount
         
         # Play damage sound effect
@@ -328,30 +362,66 @@ class Player(pygame.sprite.Sprite):
         
         if self.health <= 0:
             self.health = 0
+            self._die()
+            return True  # Player died
+        return False
+        
+    def _die(self):
+        """Handle player death sequence"""
+        if not self.is_dead:  # Only do this once
+            self.is_dead = True
+            self.death_time = pygame.time.get_ticks()
+            self.current_state = 'dead'
+            self.animation_time = 0
+            self.frame = 0
+            
             # Play death sound if available
             self.sound_manager.play_sound("effects/player_dies")
+            
+            # Create a big blood splatter
+            if self.game and hasattr(self.game, 'particle_system'):
+                # Create a large blood splash centered on the player
+                self.game.particle_system.create_blood_splash(
+                    self.rect.centerx, 
+                    self.rect.centery,
+                    amount=30  # Large number of particles
+                )
+                
+                # Create directional blood splashes in all 4 directions
+                offsets = [(20, 0), (-20, 0), (0, 20), (0, -20)]
+                for offset_x, offset_y in offsets:
+                    self.game.particle_system.create_blood_splash(
+                        self.rect.centerx + offset_x,
+                        self.rect.centery + offset_y,
+                        amount=5
+                    )
+            
             # Stop any playing walking sounds when the player dies
             if self.walk_sound_channel is not None:
                 self.sound_manager.stop_sound_channel(self.walk_sound_channel)
                 self.walk_sound_channel = None
-            return True  # Player died
-        return False
         
     def heal(self, amount):
         self.health = min(self.health + amount, PLAYER_START_HEALTH)
         
     def update(self):
-        # Update position
-        self.rect.x += self.velocity_x
-        self.rect.y += self.velocity_y
-        
-        # Update hitbox position to follow the sprite
-        self.hitbox.centerx = self.rect.centerx
-        self.hitbox.centery = self.rect.centery
-        
-        # Keep player on screen
-        self.rect.clamp_ip(pygame.display.get_surface().get_rect())
-        
+        # Update position if not dead
+        if not self.is_dead:
+            self.rect.x += self.velocity_x
+            self.rect.y += self.velocity_y
+            
+            # Update hitbox position to follow the sprite
+            self.hitbox.centerx = self.rect.centerx
+            self.hitbox.centery = self.rect.centery
+            
+            # Keep player on screen
+            self.rect.clamp_ip(pygame.display.get_surface().get_rect())
+        elif not self.death_animation_complete:
+            # Check if death animation should be complete (after 2 seconds)
+            current_time = pygame.time.get_ticks()
+            if current_time - self.death_time > 2000:  # 2 seconds
+                self.death_animation_complete = True
+                
         # Update animation
         self._update_animation()
     
