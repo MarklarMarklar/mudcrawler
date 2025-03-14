@@ -200,12 +200,17 @@ class Player(pygame.sprite.Sprite):
         else:
             self.current_state = 'walk'
             
-        # Handle walk sound state transitions
-        if previous_state == 'idle' and self.current_state == 'walk':
-            # Player started walking - play sound from beginning
-            self.walk_sound_channel = self.sound_manager.play_sound("effects/walk", loop=True)
-        elif previous_state == 'walk' and self.current_state == 'idle':
-            # Player stopped walking - stop sound
+        # Handle walk sound state transitions - only play sounds if player is alive
+        if self.health > 0:
+            if previous_state == 'idle' and self.current_state == 'walk':
+                # Player started walking - play sound from beginning
+                self.walk_sound_channel = self.sound_manager.play_sound("effects/walk", loop=True)
+            elif previous_state == 'walk' and self.current_state == 'idle':
+                # Player stopped walking - stop sound
+                self.sound_manager.stop_sound_channel(self.walk_sound_channel)
+                self.walk_sound_channel = None
+        elif self.walk_sound_channel is not None:
+            # Player is dead but sound is still playing - stop it
             self.sound_manager.stop_sound_channel(self.walk_sound_channel)
             self.walk_sound_channel = None
             
@@ -275,6 +280,10 @@ class Player(pygame.sprite.Sprite):
         self.health -= amount
         if self.health <= 0:
             self.health = 0
+            # Stop any playing walking sounds when the player dies
+            if self.walk_sound_channel is not None:
+                self.sound_manager.stop_sound_channel(self.walk_sound_channel)
+                self.walk_sound_channel = None
             return True  # Player died
         return False
         
