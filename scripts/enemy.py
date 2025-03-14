@@ -4,6 +4,7 @@ import random
 import os
 from config import *
 from asset_manager import get_asset_manager
+from sound_manager import get_sound_manager
 
 class Enemy(pygame.sprite.Sprite):
     def __init__(self, x, y, enemy_type, level, level_instance=None):
@@ -351,6 +352,14 @@ class Boss(Enemy):
         self.trail_update_rate = 4  # Update trail every 4 frames
         self.trail_frame_counter = 0
         
+        # Sound manager for boss voice
+        self.sound_manager = get_sound_manager()
+        
+        # Boss voice related attributes
+        self.has_seen_player = False
+        self.last_voice_time = 0
+        self.voice_cooldown = 4000  # 4 seconds (in milliseconds)
+        
     def special_attack(self, player):
         current_time = pygame.time.get_ticks()
         if current_time - self.last_special_attack_time >= self.special_attack_cooldown:
@@ -367,6 +376,29 @@ class Boss(Enemy):
     def update(self, player):
         # Call the parent update method to handle basic movement and attacks
         super().update(player)
+        
+        # Calculate distance to player (needed for voice effect)
+        dx = player.rect.centerx - self.rect.centerx
+        dy = player.rect.centery - self.rect.centery
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        # Current time for cooldown calculations
+        current_time = pygame.time.get_ticks()
+        
+        # Handle boss voice sound effect
+        if distance <= self.detection_range:
+            # Boss has detected the player
+            if not self.has_seen_player:
+                # First time seeing player, play voice sound
+                self.sound_manager.play_sound("effects/boss_1_voice")
+                self.has_seen_player = True
+                self.last_voice_time = current_time
+                print("Boss has seen the player! Playing voice sound.")
+            elif current_time - self.last_voice_time >= self.voice_cooldown:
+                # Repeat the voice sound every 4 seconds
+                self.sound_manager.play_sound("effects/boss_1_voice")
+                self.last_voice_time = current_time
+                print("Boss repeating voice sound.")
         
         # Update position history for trailing effect if enabled
         if self.trail_enabled:
