@@ -46,6 +46,12 @@ class Button:
         text_rect = text_surface.get_rect(center=self.rect.center)
         surface.blit(text_surface, text_rect)
         
+        # Draw debug outline if DEBUG_MODE is enabled
+        if DEBUG_MODE:
+            # Draw a highlighted border to show the clickable area
+            debug_color = (255, 255, 0) if self.is_hovered else (255, 0, 0)
+            pygame.draw.rect(surface, debug_color, self.rect, 2)
+        
     def handle_event(self, event):
         if event.type == pygame.MOUSEMOTION:
             mouse_pos = pygame.mouse.get_pos()
@@ -60,9 +66,13 @@ class Button:
                     print(f"Mouse left {self.text} button")
                     
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1 and self.rect.collidepoint(event.pos):  # Left click
-                print(f"Button clicked: {self.text}")
-                return True
+            if event.button == 1:  # Left click
+                mouse_pos = event.pos
+                is_clicked = self.rect.collidepoint(mouse_pos)
+                print(f"Click at {mouse_pos}. Button {self.text} rect: {self.rect}. Click hit: {is_clicked}")
+                if is_clicked:
+                    print(f"Button clicked: {self.text}")
+                    return True
         return False
 
 class Menu:
@@ -162,21 +172,56 @@ class Menu:
             print(f"Failed to load custom game over image: {e}")
         
         # Create buttons with more space between them
-        button_width = 200
-        button_height = 50
-        center_x = WINDOW_WIDTH // 2 - button_width // 2
+        self.button_width = 200
+        self.button_height = 50
+        self.center_x = WINDOW_WIDTH // 2 - self.button_width // 2
         
-        # Position buttons more spread out
+        # Create buttons but don't position them yet
         self.buttons = {
-            'start': Button(center_x, WINDOW_HEIGHT // 2, button_width, button_height, "Start Game"),
-            'resume': Button(center_x, WINDOW_HEIGHT // 2, button_width, button_height, "Resume"),
-            'restart': Button(center_x, WINDOW_HEIGHT // 2, button_width, button_height, "Restart"),
-            'quit': Button(center_x, WINDOW_HEIGHT // 2 + 70, button_width, button_height, "Quit")
+            'start': Button(0, 0, self.button_width, self.button_height, "Start Game"),
+            'resume': Button(0, 0, self.button_width, self.button_height, "Resume"),
+            'restart': Button(0, 0, self.button_width, self.button_height, "Restart"),
+            'quit': Button(0, 0, self.button_width, self.button_height, "Quit")
         }
+        
+        # Set initial positions
+        self._update_button_positions('main_menu')
         
         print("Menu initialized with buttons")
         
+    def _update_button_positions(self, menu_type):
+        """Update button positions based on the menu type being displayed"""
+        if menu_type == 'main_menu':
+            # Position buttons for main menu
+            self.buttons['start'].rect.x = self.center_x
+            self.buttons['start'].rect.y = WINDOW_HEIGHT // 2
+            
+            self.buttons['quit'].rect.x = self.center_x
+            self.buttons['quit'].rect.y = WINDOW_HEIGHT // 2 + 70
+            
+        elif menu_type == 'pause_menu':
+            # Position buttons for pause menu
+            self.buttons['resume'].rect.x = self.center_x
+            self.buttons['resume'].rect.y = WINDOW_HEIGHT // 2
+            
+            self.buttons['restart'].rect.x = self.center_x
+            self.buttons['restart'].rect.y = WINDOW_HEIGHT // 2 + 70
+            
+            self.buttons['quit'].rect.x = self.center_x
+            self.buttons['quit'].rect.y = WINDOW_HEIGHT // 2 + 140
+            
+        elif menu_type == 'game_over' or menu_type == 'victory':
+            # Position buttons for game over and victory screens
+            self.buttons['restart'].rect.x = self.center_x
+            self.buttons['restart'].rect.y = WINDOW_HEIGHT // 2 + 60
+            
+            self.buttons['quit'].rect.x = self.center_x
+            self.buttons['quit'].rect.y = WINDOW_HEIGHT // 2 + 130
+    
     def draw_main_menu(self):
+        # Update button positions first
+        self._update_button_positions('main_menu')
+        
         # Draw welcome screen if available, otherwise fallback to default background
         if self.use_welcome_screen and self.welcome_screen:
             self.screen.blit(self.welcome_screen, (0, 0))
@@ -208,6 +253,9 @@ class Menu:
         self.screen.blit(inst_text, inst_rect)
         
     def draw_pause_menu(self):
+        # Update button positions first
+        self._update_button_positions('pause_menu')
+        
         # Semi-transparent overlay
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
         overlay.fill((0, 0, 0))
@@ -221,9 +269,13 @@ class Menu:
         
         # Draw buttons
         self.buttons['resume'].draw(self.screen)
+        self.buttons['restart'].draw(self.screen)
         self.buttons['quit'].draw(self.screen)
         
     def draw_game_over(self):
+        # Update button positions first
+        self._update_button_positions('game_over')
+        
         # Draw background
         if self.use_gameover_custom_img and self.gameover_custom_img:
             self.screen.blit(self.gameover_custom_img, (0, 0))
@@ -245,6 +297,9 @@ class Menu:
         self.buttons['quit'].draw(self.screen)
         
     def draw_victory(self):
+        # Update button positions first
+        self._update_button_positions('victory')
+        
         # Draw background
         self.screen.blit(self.victory_bg, (0, 0))
         

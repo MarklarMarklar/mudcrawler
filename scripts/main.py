@@ -540,6 +540,17 @@ class Game:
         elif self.state == VICTORY:
             self.menu.draw_victory()
             
+        # Draw some debug info in development
+        if DEBUG_MODE:
+            font = pygame.font.Font(None, 24)
+            state_text = font.render(f"Game State: {self.state}", True, WHITE)
+            self.screen.blit(state_text, (10, 10))
+            
+            # Show mouse position for debugging
+            mouse_pos = pygame.mouse.get_pos()
+            mouse_text = font.render(f"Mouse: {mouse_pos}", True, WHITE)
+            self.screen.blit(mouse_text, (10, 30))
+            
         # Actually update the display
         pygame.display.flip()
         

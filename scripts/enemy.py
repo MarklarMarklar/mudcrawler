@@ -275,6 +275,26 @@ class Boss(Enemy):
             # Set up base path for this boss
             base_path = os.path.join(BOSS_SPRITES_PATH, boss_name)
             
+            # First, check for level 1 boss to use boss_1.png
+            if level == 1:
+                try:
+                    # Try to load the new boss_1.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_1.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2, TILE_SIZE*2))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_1.png for level 1 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
+                except Exception as e:
+                    print(f"Failed to load boss_1.png for level 1 boss: {e}")
+                    # Continue with the normal animation loading
+            
             # Now try to load actual animations but don't crash if they're missing
             try:
                 if os.path.exists(base_path):

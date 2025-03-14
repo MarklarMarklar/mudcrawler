@@ -87,4 +87,7 @@ CONTROLS = {
     'attack_bow': ['MOUSEBUTTONDOWN'],
     'interact': ['K_e'],
     'pause': ['K_ESCAPE']
-} 
+}
+
+# Debug Settings
+DEBUG_MODE = True  # Set to False for production 
