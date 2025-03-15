@@ -371,7 +371,13 @@ class Game:
                         # Attack with bow using world coordinates
                         self.weapon_manager.attack_bow(world_mouse_pos)
                         print(f"Mouse click at screen: {screen_mouse_pos}, world: {world_mouse_pos}")
-                        
+                    elif event.button == 3:  # Right click
+                        # Trigger dodge in the facing direction
+                        if self.player.dodge():
+                            print(f"Player dodged in direction: {self.player.facing}")
+                            # Apply a small screen shake for feedback
+                            self.trigger_screen_shake(amount=3, duration=5)
+                
     def update(self):
         if self.state != PLAYING:
             return

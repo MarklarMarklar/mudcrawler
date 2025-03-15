@@ -113,6 +113,7 @@ class Button:
             pygame.draw.rect(surface, debug_color, self.rect, 2)
         
     def handle_event(self, event):
+        # Update hover state for mouse motion events
         if event.type == pygame.MOUSEMOTION:
             mouse_pos = pygame.mouse.get_pos()
             previous_hover = self.is_hovered
@@ -125,6 +126,7 @@ class Button:
                 else:
                     print(f"Mouse left {self.text} button")
                     
+        # Handle mouse button clicks
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:  # Left click
                 mouse_pos = event.pos
@@ -275,15 +277,16 @@ class Menu:
         self.button_height = 50
         self.center_x = WINDOW_WIDTH // 2 - self.button_width // 2
         
-        # Create buttons but don't position them yet
+        # Create buttons but don't position them yet - use placeholder positions
+        # We'll set proper positions in _update_button_positions
         self.buttons = {
-            'start': Button(0, 0, self.button_width, self.button_height, "Start Game", font_size=32),
-            'resume': Button(0, 0, self.button_width, self.button_height, "Resume", font_size=32),
-            'restart': Button(0, 0, self.button_width, self.button_height, "Restart", font_size=32),
-            'options': Button(0, 0, self.button_width, self.button_height, "Options", font_size=32),
-            'quit': Button(0, 0, self.button_width, self.button_height, "Quit", font_size=32),
-            'back': Button(0, 0, self.button_width, self.button_height, "Back", font_size=32),
-            'fullscreen': Button(0, 0, self.button_width, self.button_height, "Fullscreen: Off", font_size=28)
+            'start': Button(self.center_x, 0, self.button_width, self.button_height, "Start Game", font_size=32),
+            'resume': Button(self.center_x, 0, self.button_width, self.button_height, "Resume", font_size=32),
+            'restart': Button(self.center_x, 0, self.button_width, self.button_height, "Restart", font_size=32),
+            'options': Button(self.center_x, 0, self.button_width, self.button_height, "Options", font_size=32),
+            'quit': Button(self.center_x, 0, self.button_width, self.button_height, "Quit", font_size=32),
+            'back': Button(self.center_x, 0, self.button_width, self.button_height, "Back", font_size=32),
+            'fullscreen': Button(self.center_x, 0, self.button_width, self.button_height, "Fullscreen: Off", font_size=28)
         }
         
         # Track menu states
@@ -525,8 +528,32 @@ class Menu:
         else:
             # Default to main menu buttons
             active_buttons = ['start', 'options', 'quit']
+        
+        # If it's a mouse move or click event, update hover states and check clicks for all active buttons
+        if event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN):
+            # Get current mouse position
+            mouse_pos = pygame.mouse.get_pos()
             
-        # Only check active buttons
+            # Update hover states for all buttons (even on click events)
+            # This ensures hover states are updated before processing clicks
+            if event.type == pygame.MOUSEMOTION:
+                for button_name in active_buttons:
+                    if button_name in self.buttons:
+                        self.buttons[button_name].is_hovered = self.buttons[button_name].rect.collidepoint(mouse_pos)
+            
+            # Check for clicks (even without prior mouse movement)
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click
+                print(f"Menu received click at {mouse_pos}")
+                # Check all active buttons for click collision
+                for button_name in active_buttons:
+                    if button_name in self.buttons:
+                        button = self.buttons[button_name]
+                        if button.rect.collidepoint(mouse_pos):
+                            print(f"Menu detected click on button: {button_name}")
+                            return button_name
+                return None
+                
+        # Handle all other events through normal button processing
         for button_name in active_buttons:
             if button_name in self.buttons and self.buttons[button_name].handle_event(event):
                 return button_name

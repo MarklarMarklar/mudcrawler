@@ -252,6 +252,114 @@ class Player(pygame.sprite.Sprite):
             self.velocity_x /= math.sqrt(2)
             self.velocity_y /= math.sqrt(2)
             
+    def dodge(self):
+        """Perform a quick dodge (jump) in the direction the player is facing"""
+        # Check if player is dead
+        if self.is_dead:
+            return False
+            
+        # Get the current time for cooldown checks
+        current_time = pygame.time.get_ticks()
+        
+        # Add cooldown to prevent dodge spam
+        if hasattr(self, 'last_dodge_time') and current_time - self.last_dodge_time < 500:  # 500ms cooldown
+            return False
+            
+        # Set the last dodge time
+        self.last_dodge_time = current_time
+        
+        # Calculate dodge distance (1 tile)
+        dodge_distance = TILE_SIZE
+        
+        # Calculate target position based on facing direction
+        target_x = self.rect.x
+        target_y = self.rect.y
+        
+        if self.facing == 'right':
+            target_x += dodge_distance
+        elif self.facing == 'left':
+            target_x -= dodge_distance
+        elif self.facing == 'down':
+            target_y += dodge_distance
+        elif self.facing == 'up':
+            target_y -= dodge_distance
+            
+        # Store original position
+        original_x = self.rect.x
+        original_y = self.rect.y
+        original_hitbox_x = self.hitbox.x
+        original_hitbox_y = self.hitbox.y
+        
+        # Move to target position
+        self.rect.x = target_x
+        self.rect.y = target_y
+        
+        # Update hitbox position
+        self.hitbox.centerx = self.rect.centerx
+        self.hitbox.centery = self.rect.centery
+        
+        # Check for collision
+        if self.game and hasattr(self.game, 'level') and self.game.level:
+            if self.game.level.check_collision(self.hitbox):
+                # Collision detected, revert to original position
+                self.rect.x = original_x
+                self.rect.y = original_y
+                self.hitbox.x = original_hitbox_x
+                self.hitbox.y = original_hitbox_y
+                
+                # Try to dodge only up to the wall
+                if self.facing == 'right':
+                    # Find the closest wall on the right
+                    for test_x in range(original_x + 1, target_x + 1):
+                        self.rect.x = test_x
+                        self.hitbox.centerx = self.rect.centerx
+                        if self.game.level.check_collision(self.hitbox):
+                            # Go back one pixel to be just before the wall
+                            self.rect.x = test_x - 1
+                            self.hitbox.centerx = self.rect.centerx
+                            break
+                elif self.facing == 'left':
+                    # Find the closest wall on the left
+                    for test_x in range(original_x - 1, target_x - 1, -1):
+                        self.rect.x = test_x
+                        self.hitbox.centerx = self.rect.centerx
+                        if self.game.level.check_collision(self.hitbox):
+                            # Go back one pixel to be just before the wall
+                            self.rect.x = test_x + 1
+                            self.hitbox.centerx = self.rect.centerx
+                            break
+                elif self.facing == 'down':
+                    # Find the closest wall below
+                    for test_y in range(original_y + 1, target_y + 1):
+                        self.rect.y = test_y
+                        self.hitbox.centery = self.rect.centery
+                        if self.game.level.check_collision(self.hitbox):
+                            # Go back one pixel to be just before the wall
+                            self.rect.y = test_y - 1
+                            self.hitbox.centery = self.rect.centery
+                            break
+                elif self.facing == 'up':
+                    # Find the closest wall above
+                    for test_y in range(original_y - 1, target_y - 1, -1):
+                        self.rect.y = test_y
+                        self.hitbox.centery = self.rect.centery
+                        if self.game.level.check_collision(self.hitbox):
+                            # Go back one pixel to be just before the wall
+                            self.rect.y = test_y + 1
+                            self.hitbox.centery = self.rect.centery
+                            break
+        
+        # Play dodge sound if available
+        self.sound_manager.play_sound("effects/dodge")
+        
+        # Keep player on screen
+        screen_rect = pygame.display.get_surface().get_rect()
+        self.rect.clamp_ip(screen_rect)
+        self.hitbox.centerx = self.rect.centerx
+        self.hitbox.centery = self.rect.centery
+        
+        return True
+        
     def attack_sword(self):
         current_time = pygame.time.get_ticks()
         if current_time - self.last_attack_time >= SWORD_COOLDOWN:
