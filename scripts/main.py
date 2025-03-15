@@ -152,6 +152,13 @@ class Game:
         self.death_zoom_duration = 3000  # 3 seconds for zoom effect
         self.death_original_zoom = 2.0  # Store original zoom level
         self.death_target_zoom = 4.0  # Target zoom level for death sequence
+        
+        # Reset camera zoom to default value
+        self.camera.zoom = 2.0  # Reset to default zoom
+        self.camera.view_width = self.camera.width / self.camera.zoom
+        self.camera.view_height = self.camera.height / self.camera.zoom
+        print(f"Camera zoom reset to default: {self.camera.zoom}x")
+        
         # Reset particle system
         self.particle_system = ParticleSystem()
         # First initialize the level
@@ -165,6 +172,9 @@ class Game:
         # Ensure any existing arrows are cleared
         self.weapon_manager.clear_arrows()
         
+        # Play level-appropriate music
+        self.play_level_appropriate_music()
+        
     def initialize_level(self):
         print(f"Initializing level {self.current_level}")
         self.level = Level(self.current_level)
@@ -173,6 +183,9 @@ class Game:
         self.player.rect.centerx = player_x
         self.player.rect.centery = player_y
         self.player.level = self.level  # Give player a reference to the level
+        
+        # Play level-appropriate music
+        self.play_level_appropriate_music()
         
     def screen_to_world_coords(self, screen_x, screen_y):
         """Convert screen coordinates to world coordinates accounting for camera"""
@@ -221,8 +234,8 @@ class Game:
                         self.state = PLAYING
                         # Set transition time to prevent immediate bow attack
                         self.state_transition_time = pygame.time.get_ticks()
-                        # Switch to game music
-                        self.sound_manager.play_music('game')
+                        # Switch to appropriate music based on level
+                        self.play_level_appropriate_music()
                     elif button_clicked == 'resume':
                         print("Resume button clicked")
                         self.state = PLAYING
@@ -236,8 +249,6 @@ class Game:
                         self.state = PLAYING
                         # Set transition time to prevent immediate bow attack
                         self.state_transition_time = pygame.time.get_ticks()
-                        # Switch to game music
-                        self.sound_manager.play_music('game')
                     elif button_clicked == 'options':
                         print("Options button clicked")
                         # Update button positions before showing options
@@ -293,70 +304,72 @@ class Game:
                         self.state = PLAYING
                         # Set transition time to prevent immediate bow attack
                         self.state_transition_time = pygame.time.get_ticks()
-                        # Switch to game music
-                        self.sound_manager.play_music('game')
+                        # Switch to appropriate music based on level
+                        self.play_level_appropriate_music()
                     elif self.state == GAME_OVER:
                         print("Enter key pressed at game over")
                         self.reset_game()
                         self.state = PLAYING
                         # Set transition time to prevent immediate bow attack
                         self.state_transition_time = pygame.time.get_ticks()
-                        # Switch to game music
-                        self.sound_manager.play_music('game')
-                # Debug key - force state change
-                elif event.key == pygame.K_m:
-                    self.state = MENU
-                    print("Forced state change to MENU")
-                    # Switch to menu music
-                    self.sound_manager.play_music('menu')
-                elif event.key == pygame.K_p:
-                    self.state = PLAYING
-                    if self.level is None:
-                        self.initialize_level()
-                    print("Forced state change to PLAYING")
-                    # Set transition time to prevent immediate bow attack
-                    self.state_transition_time = pygame.time.get_ticks()
-                    # Switch to game music
-                    self.sound_manager.play_music('game')
-                # Zoom control keys
-                elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
-                    self.camera.zoom = min(self.camera.zoom + 0.1, 3.0)
-                    self.camera.view_width = self.camera.width / self.camera.zoom
-                    self.camera.view_height = self.camera.height / self.camera.zoom
-                    print(f"Zoom in: {self.camera.zoom:.1f}x")
-                elif event.key == pygame.K_MINUS:
-                    self.camera.zoom = max(self.camera.zoom - 0.1, 1.0)
-                    self.camera.view_width = self.camera.width / self.camera.zoom
-                    self.camera.view_height = self.camera.height / self.camera.zoom
-                    print(f"Zoom out: {self.camera.zoom:.1f}x")
-                # Sound controls
-                elif event.key == pygame.K_m and pygame.key.get_mods() & pygame.KMOD_CTRL:
-                    enabled = self.sound_manager.toggle_music()
-                    print(f"Music {'enabled' if enabled else 'disabled'}")
-                elif event.key == pygame.K_s and pygame.key.get_mods() & pygame.KMOD_CTRL:
-                    enabled = self.sound_manager.toggle_sfx()
-                    print(f"Sound effects {'enabled' if enabled else 'disabled'}")
-                # Volume controls
-                elif event.key == pygame.K_UP and pygame.key.get_mods() & pygame.KMOD_CTRL:
-                    new_volume = min(1.0, self.sound_manager.music_volume + 0.1)
-                    self.sound_manager.set_music_volume(new_volume)
-                    print(f"Music volume: {int(new_volume * 100)}%")
-                elif event.key == pygame.K_DOWN and pygame.key.get_mods() & pygame.KMOD_CTRL:
-                    new_volume = max(0.0, self.sound_manager.music_volume - 0.1)
-                    self.sound_manager.set_music_volume(new_volume)
-                    print(f"Music volume: {int(new_volume * 100)}%")
-                # Exit key
-                elif event.key == pygame.K_q:
-                    self.running = False
-                # Toggle torch lighting with 'L' key
-                elif event.key == pygame.K_l:
-                    self.torch_enabled = not self.torch_enabled
+                    # Debug key - force state change
+                    elif event.key == pygame.K_m:
+                        self.state = MENU
+                        print("Forced state change to MENU")
+                        # Switch to menu music
+                        self.sound_manager.play_music('menu')
+                    elif event.key == pygame.K_p:
+                        self.state = PLAYING
+                        if self.level is None:
+                            self.initialize_level()
+                        print("Forced state change to PLAYING")
+                        # Set transition time to prevent immediate bow attack
+                        self.state_transition_time = pygame.time.get_ticks()
+                        # Switch to appropriate music based on level
+                        self.play_level_appropriate_music()
+                    # Zoom control keys
+                    elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
+                        self.camera.zoom = min(self.camera.zoom + 0.1, 3.0)
+                        self.camera.view_width = self.camera.width / self.camera.zoom
+                        self.camera.view_height = self.camera.height / self.camera.zoom
+                        print(f"Zoom in: {self.camera.zoom:.1f}x")
+                    elif event.key == pygame.K_MINUS:
+                        self.camera.zoom = max(self.camera.zoom - 0.1, 1.0)
+                        self.camera.view_width = self.camera.width / self.camera.zoom
+                        self.camera.view_height = self.camera.height / self.camera.zoom
+                        print(f"Zoom out: {self.camera.zoom:.1f}x")
+                    # Sound controls
+                    elif event.key == pygame.K_m and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                        enabled = self.sound_manager.toggle_music()
+                        print(f"Music {'enabled' if enabled else 'disabled'}")
+                    elif event.key == pygame.K_s and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                        enabled = self.sound_manager.toggle_sfx()
+                        print(f"Sound effects {'enabled' if enabled else 'disabled'}")
+                    # Volume controls
+                    elif event.key == pygame.K_UP and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                        new_volume = min(1.0, self.sound_manager.music_volume + 0.1)
+                        self.sound_manager.set_music_volume(new_volume)
+                        print(f"Music volume: {int(new_volume * 100)}%")
+                    elif event.key == pygame.K_DOWN and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                        new_volume = max(0.0, self.sound_manager.music_volume - 0.1)
+                        self.sound_manager.set_music_volume(new_volume)
+                        print(f"Music volume: {int(new_volume * 100)}%")
+                    # Exit key
+                    elif event.key == pygame.K_q:
+                        self.running = False
+                    # Toggle torch lighting with 'L' key
+                    elif event.key == pygame.K_l:
+                        self.torch_enabled = not self.torch_enabled
                     
             if self.state == PLAYING:
                 # Check if we're within the state transition cooldown period
                 current_time = pygame.time.get_ticks()
                 if current_time - self.state_transition_time < self.state_transition_cooldown:
                     # Skip weapon events during cooldown
+                    continue
+                    
+                # Skip weapon inputs if death sequence is active
+                if self.death_sequence_active:
                     continue
                     
                 if event.type == pygame.KEYDOWN:
@@ -732,6 +745,9 @@ class Game:
             else:
                 # Clear any existing arrows before changing levels
                 self.weapon_manager.clear_arrows()
+                
+                # Change music based on level
+                self.play_level_appropriate_music()
                 
                 self.level = Level(self.current_level)
                 # Place player on a valid floor tile in the new level
@@ -1206,6 +1222,15 @@ class Game:
             ]
         else:
             self.shake_offset = [0, 0]
+
+    def play_level_appropriate_music(self):
+        """Helper method to play the appropriate music for the current level"""
+        if self.current_level >= 3 and self.current_level <= 4:
+            self.sound_manager.play_music('level3')
+            print(f"Playing level 3 music for level {self.current_level}")
+        else:
+            self.sound_manager.play_music('game')
+            print(f"Playing standard game music for level {self.current_level}")
 
 if __name__ == "__main__":
     print("Initializing Mud Crawler game...")
