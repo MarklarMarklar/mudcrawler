@@ -1,6 +1,7 @@
 import pygame
 import math
 import os
+import random
 from config import *
 from asset_manager import get_asset_manager
 from sound_manager import get_sound_manager
@@ -122,11 +123,17 @@ class Sword(pygame.sprite.Sprite):
     def __init__(self, player):
         super().__init__()
         self.asset_manager = get_asset_manager()
+        self.sound_manager = get_sound_manager()
         self.player = player
         
         # Create default sword images as placeholders
         self.sword_images = {}
         self.animation_frames = {}  # Store animation frames for each direction
+        
+        # Track if this is a fire sword
+        self.is_fire_sword = False
+        self.flame_particles = []
+        
         for direction in ['down', 'up', 'left', 'right']:
             # Create a simple sword shape
             sword_img = pygame.Surface([TILE_SIZE, TILE_SIZE // 2], pygame.SRCALPHA)
@@ -289,16 +296,119 @@ class Sword(pygame.sprite.Sprite):
         self.start_time = pygame.time.get_ticks()
         self.current_frame = 0
         
+    def set_fire_sword(self, enabled=True):
+        """Enable or disable fire sword effect"""
+        self.is_fire_sword = enabled
+        print(f"Fire sword {'enabled' if enabled else 'disabled'}")
+        
+        # Play sound effect when fire sword is activated
+        if enabled:
+            self.sound_manager.play_sound("effects/power_up")
+            
+    def update_flame_particles(self):
+        """Update flame particles for fire sword effect"""
+        if not self.is_fire_sword:
+            self.flame_particles = []
+            return
+            
+        # Remove old particles
+        self.flame_particles = [p for p in self.flame_particles if p['lifetime'] > 0]
+        
+        # Add new particles if active
+        if self.active:
+            # Add 1-3 new particles each frame when sword is active
+            for _ in range(random.randint(1, 3)):
+                # Get sword position based on player position and facing
+                if self.player.facing == 'right':
+                    x = self.rect.right - random.randint(0, self.rect.width//2)
+                    y = self.rect.centery + random.randint(-self.rect.height//3, self.rect.height//3)
+                elif self.player.facing == 'left':
+                    x = self.rect.left + random.randint(0, self.rect.width//2)
+                    y = self.rect.centery + random.randint(-self.rect.height//3, self.rect.height//3)
+                elif self.player.facing == 'up':
+                    x = self.rect.centerx + random.randint(-self.rect.width//3, self.rect.width//3)
+                    y = self.rect.top + random.randint(0, self.rect.height//2)
+                else:  # down
+                    x = self.rect.centerx + random.randint(-self.rect.width//3, self.rect.width//3)
+                    y = self.rect.bottom - random.randint(0, self.rect.height//2)
+                
+                # Create new particle
+                particle = {
+                    'x': x,
+                    'y': y,
+                    'vx': random.uniform(-0.5, 0.5),
+                    'vy': random.uniform(-1.5, -0.5),  # Flames always rise
+                    'size': random.randint(3, 8),
+                    'color': random.choice([(255, 100, 0), (255, 50, 0), (255, 200, 0)]),
+                    'lifetime': random.randint(15, 30)  # frames
+                }
+                self.flame_particles.append(particle)
+        
+        # Update existing particles
+        for particle in self.flame_particles:
+            particle['x'] += particle['vx']
+            particle['y'] += particle['vy']
+            particle['size'] -= 0.1
+            particle['lifetime'] -= 1
+        
+    def draw_flame_particles(self, surface):
+        """Draw flame particles for fire sword effect"""
+        if not self.is_fire_sword:
+            return
+            
+        for particle in self.flame_particles:
+            size = int(particle['size'])
+            if size <= 0:
+                continue
+                
+            # Add glow effect
+            glow_size = size * 3
+            glow_surf = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
+            glow_color = (*particle['color'][:3], 50)  # Semi-transparent
+            pygame.draw.circle(glow_surf, glow_color, (glow_size//2, glow_size//2), glow_size//2)
+            surface.blit(glow_surf, (particle['x'] - glow_size//2, particle['y'] - glow_size//2))
+            
+            # Draw actual particle
+            pygame.draw.circle(surface, particle['color'], (int(particle['x']), int(particle['y'])), size)
+        
     def update(self):
+        """Update the sword state"""
         if not self.active:
             return
         
+        current_time = pygame.time.get_ticks()
         # Calculate frame based on elapsed time
-        elapsed_time = pygame.time.get_ticks() - self.start_time
-        frame_duration = self.animation_time / self.total_frames
-        self.current_frame = min(int(elapsed_time / frame_duration), self.total_frames - 1)
+        elapsed = current_time - self.start_time
         
-        # Update sword position and animation frame based on player facing direction
+        if elapsed > self.animation_time:
+            # Animation complete
+            self.active = False
+            return
+            
+        # Calculate current frame number (0-3) based on elapsed time
+        frame_progress = elapsed / self.animation_time
+        self.current_frame = int(frame_progress * self.total_frames)
+        
+        # Update sword position and frame
+        self.update_position()
+        
+        # Update flame particles for fire sword
+        self.update_flame_particles()
+        
+    def draw(self, surface):
+        """Draw the sword and any effects"""
+        if not self.active:
+            return
+            
+        # Draw the sword
+        surface.blit(self.image, self.rect)
+        
+        # Draw flame particles if fire sword
+        if self.is_fire_sword:
+            self.draw_flame_particles(surface)
+            
+    def update_position(self):
+        """Update sword position and animation frame based on player facing direction"""
         if self.player.facing == 'right':
             self.image = self.animation_frames['right'][self.current_frame]
             self.rect = self.image.get_rect()
@@ -328,11 +438,15 @@ class Sword(pygame.sprite.Sprite):
             # Adjust position to be much closer to the player
             offset_y = int((self.rect.height * 0.7))  # Move sword closer by 70% of its height
             self.rect.y -= offset_y
+    
+    def activate(self):
+        """Activate the sword attack animation"""
+        if not self.active:
+            self.active = True
+            self.start_time = pygame.time.get_ticks()
+            self.current_frame = 0
+            self.update_position()
         
-        # Check if attack animation is finished
-        if elapsed_time > self.animation_time:
-            self.active = False
-            
 class Bow:
     """Bow weapon that shoots arrows"""
     def __init__(self, player):
@@ -399,6 +513,7 @@ class WeaponManager:
     """Manages all weapons for the player"""
     def __init__(self, player, destroyable_walls=None, damage_sprites=None):
         self.player = player
+        self.sound_manager = get_sound_manager()
         self.sword = Sword(player)
         self.bow = Bow(player)
         self.current_weapon = "sword"  # Default weapon
@@ -409,8 +524,8 @@ class WeaponManager:
         self.weapon_sprites = pygame.sprite.Group()
         self.weapon_sprites.add(self.sword)
         
-        # Sound manager for weapon sounds
-        self.sound_manager = get_sound_manager()
+        # Track if fire sword is active
+        self.has_fire_sword = False
         
     def update(self):
         # Update all weapons
@@ -446,12 +561,27 @@ class WeaponManager:
                 elif self.current_weapon == "bow":
                     self.attack_bow(mouse_pos)
         
+    def enable_fire_sword(self):
+        """Enable fire sword for the player"""
+        self.has_fire_sword = True
+        self.sword.set_fire_sword(True)
+        
     def attack_sword(self):
-        # Activate the sword animation
-        if not self.sword.active:
-            self.sword.start_attack()
-            # Play sword attack sound effect from effects subdirectory
-            self.sound_manager.play_sound("effects/sword_attack")
+        """Attack with sword and play sound effect"""
+        sword_hitbox = self.player.attack_sword()
+        if sword_hitbox:
+            self.sword.activate()
+            
+            # Play appropriate sword sound
+            if self.has_fire_sword:
+                self.sound_manager.play_sound("effects/fire_sword")
+            else:
+                self.sound_manager.play_sound("effects/sword")
+            
+            # Return the hitbox for collision detection
+            return sword_hitbox
+        return None
+    
     def attack_bow(self, mouse_pos):
         # Check if player has arrows
 

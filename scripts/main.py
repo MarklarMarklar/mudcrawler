@@ -468,6 +468,29 @@ class Game:
                 print(f"Player picked up {arrow_amount} arrows! Now has {self.player.arrow_count}/{self.player.max_arrows} arrows.")
         except Exception as e:
             print(f"Error checking arrow pickup: {e}")
+            
+        # Check for weapon pickups
+        try:
+            weapon_type = self.level.check_weapon_pickup(self.player.hitbox)
+            if weapon_type:
+                if weapon_type == "fire_sword":
+                    # Enable fire sword
+                    self.weapon_manager.enable_fire_sword()
+                    
+                    # Show notification about fire sword
+                    self.level.show_notification("FIRE SWORD ACQUIRED!", (255, 100, 0), 3000)
+                    
+                    # Create particles effect for pickup
+                    self.particle_system.create_fire_effect(
+                        self.player.rect.centerx,
+                        self.player.rect.centery,
+                        amount=20
+                    )
+                    
+                    # Also trigger screen shake for epic effect
+                    self.trigger_screen_shake(amount=5, duration=15)
+        except Exception as e:
+            print(f"Error checking weapon pickup: {e}")
         
         # Get current room for entity interactions
         current_room = self.level.rooms[self.level.current_room_coords]
@@ -550,7 +573,17 @@ class Game:
                 # Check sword collisions
                 if (self.weapon_manager.sword.active and 
                     self.weapon_manager.sword.rect.colliderect(enemy.rect)):
-                    enemy.take_damage(SWORD_DAMAGE)
+                    # Apply fire sword damage bonus if active
+                    damage = SWORD_DAMAGE
+                    if self.weapon_manager.has_fire_sword:
+                        damage = int(SWORD_DAMAGE * 1.5)  # 50% damage bonus
+                        # Create fire particles on hit
+                        self.particle_system.create_fire_effect(
+                            enemy.rect.centerx, 
+                            enemy.rect.centery,
+                            amount=5
+                        )
+                    enemy.take_damage(damage)
                     
                 # Check arrow collisions with enemies
                 arrows_to_remove = []
@@ -578,7 +611,17 @@ class Game:
             if current_room.boss and current_room.boss.health > 0:
                 if (self.weapon_manager.sword.active and 
                     self.weapon_manager.sword.rect.colliderect(current_room.boss.rect)):
-                    current_room.boss.take_damage(SWORD_DAMAGE)
+                    # Apply fire sword damage bonus if active
+                    damage = SWORD_DAMAGE
+                    if self.weapon_manager.has_fire_sword:
+                        damage = int(SWORD_DAMAGE * 1.5)  # 50% damage bonus
+                        # Create fire particles on hit
+                        self.particle_system.create_fire_effect(
+                            current_room.boss.rect.centerx, 
+                            current_room.boss.rect.centery,
+                            amount=10
+                        )
+                    current_room.boss.take_damage(damage)
                     
                 # Check arrow collisions with boss
                 arrows_to_remove = []

@@ -6,7 +6,6 @@ import glob
 from config import *
 from enemy import Enemy, Boss
 from asset_manager import get_asset_manager
-from pickups import ArrowPickup, HealthPickup, KeyPickup, WeaponPickup
 
 class BloodPuddle:
     """Blood puddle that appears when monsters die"""
@@ -34,12 +33,138 @@ class BloodPuddle:
     def draw(self, surface):
         """Draw the blood puddle to the surface"""
         if self.texture:
-            # Slightly randomize position for more natural look
-            rect = self.texture.get_rect(center=(self.x, self.y))
-            surface.blit(self.texture, rect)
-        else:
-            # Fallback rendering if texture isn't available
-            pygame.draw.circle(surface, (120, 0, 0), (self.x, self.y), self.size // 2)
+            surface.blit(self.texture, self.rect)
+
+class ArrowPickup:
+    """Arrow pickup item that gives the player additional arrows"""
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        # Create a simple arrow shape
+        self.size = TILE_SIZE // 2
+        self.rect = pygame.Rect(x - self.size//2, y - self.size//2, self.size, self.size)
+        self.arrow_amount = 2  # Each pickup gives 2 arrows
+        self.collected = False
+        self.pulse_timer = 0
+        self.asset_manager = get_asset_manager()
+        
+        # Try to load arrow texture
+        try:
+            arrow_path = os.path.join(WEAPON_SPRITES_PATH, "rock.png")
+            if os.path.exists(arrow_path):
+                self.arrow_texture = self.asset_manager.load_image(arrow_path, scale=(self.size, self.size))
+            else:
+                self.arrow_texture = None
+        except Exception as e:
+            print(f"Failed to load arrow texture: {e}")
+            self.arrow_texture = None
+        
+    def update(self):
+        # Simple animation effect
+        self.pulse_timer += 0.1
+        
+    def draw(self, surface):
+        if self.collected:
+            return
+            
+        try:
+            # Pulsing effect
+            pulse = math.sin(self.pulse_timer) * 0.2 + 0.8
+            size = int(self.size * pulse)
+            
+            # Draw arrow pickup
+            if self.arrow_texture:
+                # Scale the texture based on pulse
+                scaled_texture = pygame.transform.scale(self.arrow_texture, (size, size))
+                # Draw centered at pickup position
+                rect = scaled_texture.get_rect(center=(self.x, self.y))
+                surface.blit(scaled_texture, rect)
+            else:
+                # Draw a fallback arrow shape if texture isn't available
+                pygame.draw.circle(surface, BLUE, (self.x, self.y), size // 2)
+                pygame.draw.polygon(surface, WHITE, [
+                    (self.x, self.y - size // 2),
+                    (self.x - size // 4, self.y + size // 4),
+                    (self.x + size // 4, self.y + size // 4)
+                ])
+                
+            # Add a glow effect
+            glow_surf = pygame.Surface((size * 3, size * 3), pygame.SRCALPHA)
+            pygame.draw.circle(glow_surf, (*BLUE[:3], 70), (size * 1.5, size * 1.5), size * pulse)
+            glow_rect = glow_surf.get_rect(center=(self.x, self.y))
+            surface.blit(glow_surf, glow_rect)
+        except Exception as e:
+            print(f"Error rendering arrow pickup: {e}")
+
+class HealthPickup:
+    """Health pickup item that restores player health"""
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        # Create a simple heart shape
+        self.size = TILE_SIZE // 2
+        self.rect = pygame.Rect(x - self.size//2, y - self.size//2, self.size, self.size)
+        self.heal_amount = 20  # Flat 20 HP instead of percentage-based healing
+        self.collected = False
+        self.pulse_timer = 0
+        self.asset_manager = get_asset_manager()
+        
+        # Try to load health pickup texture
+        try:
+            health_path = os.path.join(WEAPON_SPRITES_PATH, "health_pickup.png")
+            if os.path.exists(health_path):
+                self.health_texture = self.asset_manager.load_image(health_path, scale=(self.size, self.size))
+            else:
+                self.health_texture = None
+        except Exception as e:
+            print(f"Failed to load health pickup texture: {e}")
+            self.health_texture = None
+        
+    def update(self):
+        # Simple animation effect
+        self.pulse_timer += 0.1
+        
+    def draw(self, surface):
+        if self.collected:
+            return
+            
+        try:
+            # Pulsing effect
+            pulse = math.sin(self.pulse_timer) * 0.2 + 0.8
+            size = int(self.size * pulse)
+            
+            # Create a surface for the heart shape
+            heart_surf = pygame.Surface((size, size), pygame.SRCALPHA)
+            
+            # Draw a red heart shape
+            heart_color = (255, 0, 0, 200)  # Semi-transparent red
+            
+            # Draw heart using 2 circles and a triangle
+            radius = size // 4
+            x_offset = size // 4
+            pygame.draw.circle(heart_surf, heart_color, (x_offset, radius), radius)  # Left circle
+            pygame.draw.circle(heart_surf, heart_color, (size - x_offset, radius), radius)  # Right circle
+            
+            # Triangle for bottom of heart
+            pygame.draw.polygon(heart_surf, heart_color, [
+                (0, radius),
+                (size // 2, size),
+                (size, radius)
+            ])
+            
+            # Add a glow effect
+            glow_surf = pygame.Surface((size * 3, size * 3), pygame.SRCALPHA)
+            glow_color = (255, 100, 100, 100)
+            pygame.draw.circle(glow_surf, glow_color, (size * 1.5, size * 1.5), size * pulse)
+            
+            # Blit heart and glow to main surface
+            heart_rect = heart_surf.get_rect(center=(self.x, self.y))
+            glow_rect = glow_surf.get_rect(center=(self.x, self.y))
+            
+            surface.blit(glow_surf, glow_rect)
+            surface.blit(heart_surf, heart_rect)
+        except Exception as e:
+            print(f"Error rendering health pickup: {e}")
 
 class Room:
     """Represents a single room in a dungeon level"""
@@ -82,12 +207,6 @@ class Room:
         self.health_pickups = []
         self.arrow_pickups = []
         
-        # Weapon pickups (including fire sword)
-        self.weapon_pickups = []
-        
-        # Track if fire sword has been dropped from boss
-        self.fire_sword_dropped = False
-        
         # Blood puddles
         self.blood_puddles = []
         
@@ -129,7 +248,7 @@ class Room:
                             (x == center_x and (abs(y - center_y) < 3)) or
                             (y == center_y and (abs(x - center_x) < 3))
                         ):
-                            self.tiles[y][x] = 1
+                    self.tiles[y][x] = 1
                     
                         # Add some additional symmetric walls for density
                         elif (x == center_x - 4 or x == center_x + 4) and (5 < y < self.height - 6):
@@ -317,7 +436,7 @@ class Room:
             for y in range(center_y - 2, center_y + 3):
                 for x in range(center_x - 2, center_x + 3):
                     if 0 <= y < self.height and 0 <= x < self.width:
-                        self.tiles[y][x] = 0
+                    self.tiles[y][x] = 0
             
             # Add some symmetric decorative walls near edges
             for offset in range(3, min(center_x, center_y) - 2, 4):
@@ -680,10 +799,6 @@ class Room:
             elif pickup_roll < 0.5:
                 self.arrow_pickups.append(ArrowPickup(center_x, center_y))
                 print(f"Room: Arrow pickup spawned at {center_x}, {center_y} from destroyed wall")
-            # 2% chance to drop a fire sword in levels 2+
-            elif pickup_roll < 0.20 and self.level_number >= 2:
-                self.weapon_pickups.append(WeaponPickup(center_x, center_y, "fire_sword"))
-                print(f"Room: Fire sword spawned from defeated enemy at {center_x}, {center_y}")
             
             print(f"Room: Successfully destroyed wall at {x},{y}")
             return True
@@ -871,10 +986,6 @@ class Room:
             # Boss is defeated, drop the key
             self.drop_key()
             
-            # For level 2 boss, drop the fire sword
-            if self.level_number == 2:
-                self.drop_fire_sword()
-            
         # Check for enemy deaths
         for enemy in list(self.enemies):
             if enemy.health <= 0:
@@ -888,10 +999,6 @@ class Room:
                 elif pickup_roll < 0.18:
                     self.arrow_pickups.append(ArrowPickup(enemy.rect.centerx, enemy.rect.centery))
                     print(f"Arrow pickup spawned from defeated enemy at {enemy.rect.centerx}, {enemy.rect.centery}")
-                # 2% chance to drop a fire sword in levels 2+
-                elif pickup_roll < 0.20 and self.level_number >= 2:
-                    self.weapon_pickups.append(WeaponPickup(enemy.rect.centerx, enemy.rect.centery, "fire_sword"))
-                    print(f"Room: Fire sword spawned from defeated enemy at {enemy.rect.centerx}, {enemy.rect.centery}")
                     
                 # Always create a blood puddle when an enemy dies
                 self.blood_puddles.append(BloodPuddle(enemy.rect.centerx, enemy.rect.centery))
@@ -903,9 +1010,6 @@ class Room:
             pickup.update()
             
         for pickup in self.arrow_pickups:
-            pickup.update()
-            
-        for pickup in self.weapon_pickups:
             pickup.update()
         
         # Check if room is cleared
@@ -1062,11 +1166,6 @@ class Room:
         for pickup in self.arrow_pickups:
             if not pickup.collected:
                 pickup.draw(surface)
-                
-        # Draw weapon pickups
-        for pickup in self.weapon_pickups:
-            if not pickup.collected:
-                pickup.draw(surface)
                     
         # Draw enemies
         for enemy in self.enemies:
@@ -1167,18 +1266,6 @@ class Room:
             self.key_drop_time = pygame.time.get_ticks()  # Record when the key was dropped
             print(f"Boss defeated! A key has been dropped at {self.key_position}")
             
-    def drop_fire_sword(self):
-        """Drop a fire sword when the level 2 boss is defeated"""
-        if self.room_type == 'boss' and self.boss and self.boss.health <= 0 and self.level_number == 2 and not self.fire_sword_dropped:
-            # Place the fire sword where the boss was
-            boss_center_x = self.boss.rect.centerx
-            boss_center_y = self.boss.rect.centery
-            
-            # Add the fire sword pickup to the room
-            self.weapon_pickups.append(WeaponPickup(boss_center_x, boss_center_y, "fire_sword"))
-            self.fire_sword_dropped = True
-            print(f"Level 2 boss defeated! A fire sword has been dropped at {boss_center_x}, {boss_center_y}")
-            
     def check_exit_collision(self, rect):
         """Check if player is touching the exit door"""
         if not self.has_exit:
@@ -1204,15 +1291,6 @@ class Room:
         )
         
         return rect.colliderect(key_rect)
-
-    def try_pickup_weapon(self, player_rect):
-        """Check if player is touching a weapon pickup"""
-        for pickup in self.weapon_pickups:
-            if not pickup.collected and pickup.rect.colliderect(player_rect):
-                pickup.collected = True
-                print(f"Weapon pickup collected: {pickup.weapon_type}")
-                return pickup.weapon_type
-        return None
 
 class Level:
     """Represents an entire dungeon level composed of multiple rooms"""
@@ -1262,12 +1340,6 @@ class Level:
         
         # Set current room to start room
         self.current_room_coords = (0, 0)
-        
-        # Notification system
-        self.notification_text = None
-        self.notification_color = (255, 255, 0)  # Default yellow
-        self.notification_time = 0
-        self.notification_duration = 0
         
     def get_random_texture(self, texture_type):
         """Get a random texture file from the specified directory"""
@@ -1785,72 +1857,27 @@ class Level:
         return result
         
     def check_health_pickup(self, player_rect):
-        """Check if player is touching a health pickup in the current room"""
-        if self.current_room_coords in self.rooms:
-            room = self.rooms[self.current_room_coords]
-            return room.try_pickup_health(player_rect)
-        return 0
+        """Check if player is picking up a health item"""
+        current_room = self.rooms[self.current_room_coords]
+        return current_room.try_pickup_health(player_rect)
         
     def check_arrow_pickup(self, player_rect):
-        """Check if player is touching an arrow pickup in the current room"""
-        if self.current_room_coords in self.rooms:
-            room = self.rooms[self.current_room_coords]
-            return room.try_pickup_arrows(player_rect)
-        return 0
-        
-    def check_weapon_pickup(self, player_rect):
-        """Check if player is touching a weapon pickup in the current room"""
-        if self.current_room_coords in self.rooms:
-            room = self.rooms[self.current_room_coords]
-            return room.try_pickup_weapon(player_rect)
-        return None
+        """Check if player is picking up arrows"""
+        try:
+            current_room = self.rooms[self.current_room_coords]
+            return current_room.try_pickup_arrows(player_rect)
+        except Exception as e:
+            print(f"Error in check_arrow_pickup: {e}")
+            return 0
         
     def draw(self, surface):
         """Draw only the current room"""
-        if self.current_room_coords in self.rooms:
-            room = self.rooms[self.current_room_coords]
-            room.draw(surface, self.tiles, self)
-            
-            # Draw notification if active
-            if self.notification_text:
-                current_time = pygame.time.get_ticks()
-                time_elapsed = current_time - self.notification_time
-                
-                if time_elapsed < self.notification_duration:
-                    # Create pulsing effect
-                    pulse = 0.7 + 0.3 * abs(math.sin(time_elapsed / 200))
-                    
-                    try:
-                        # Try to use a nice font
-                        font_path = os.path.join(ASSET_PATH, "fonts/PixelatedEleganceRegular-ovyAA.ttf")
-                        font = pygame.font.Font(font_path, 28)
-                    except:
-                        # Fallback to system font
-                        font = pygame.font.Font(None, 32)
-                        
-                    # Create text surface
-                    text = font.render(self.notification_text, True, self.notification_color)
-                    text_rect = text.get_rect(center=(WINDOW_WIDTH//2, 80))
-                    
-                    # Create background for better readability
-                    bg_rect = text_rect.inflate(40, 20)
-                    bg_surf = pygame.Surface((bg_rect.width, bg_rect.height), pygame.SRCALPHA)
-                    pygame.draw.rect(bg_surf, (0, 0, 0, 180), bg_surf.get_rect(), 0, 10)
-                    surface.blit(bg_surf, bg_rect)
-                    
-                    # Apply pulse effect to text
-                    if pulse < 1.0:
-                        # Scale alpha based on pulse
-                        alpha = int(255 * pulse)
-                        alpha_surf = pygame.Surface(text.get_size(), pygame.SRCALPHA)
-                        alpha_surf.fill((255, 255, 255, alpha))
-                        text.blit(alpha_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-                    
-                    # Draw the text
-                    surface.blit(text, text_rect)
-                else:
-                    # Clear notification after duration expires
-                    self.notification_text = None
+        current_room = self.rooms[self.current_room_coords]
+        current_room.draw(surface, self.tiles, self)
+        
+        # Draw exit confirmation if needed
+        if self.show_exit_confirmation:
+            self.draw_exit_confirmation(surface)
         
     def draw_exit_confirmation(self, surface):
         """Draw confirmation dialog when trying to exit level"""
@@ -1972,11 +1999,3 @@ class Level:
         
         # Return button rects for click handling
         return yes_rect, no_rect 
-
-    def show_notification(self, message, color=(255, 255, 0), duration=3000):
-        """Show a notification message"""
-        self.notification_text = message
-        self.notification_color = color
-        self.notification_time = pygame.time.get_ticks()
-        self.notification_duration = duration
-        print(f"Showing notification: {message}")
