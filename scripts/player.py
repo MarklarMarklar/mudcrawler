@@ -27,6 +27,12 @@ class Player(pygame.sprite.Sprite):
         self.death_animation_complete = False
         self.death_time = 0
         
+        # Trailing effect for dodge - use a similar implementation to boss
+        self.trailing_enabled = False  # Flag to indicate if trailing effect is active
+        self.trail_start_time = 0      # When the trail effect started
+        self.trail_duration = 500      # How long trail lasts in milliseconds (increased from 150ms)
+        self.trail_positions = []      # List of positions for trail images
+        
         # Load the sprite sheet
         sprite_sheet_path = os.path.join(PLAYER_SPRITES_PATH, "my_character_guides.png")
         if os.path.exists(sprite_sheet_path):
@@ -290,6 +296,56 @@ class Player(pygame.sprite.Sprite):
         original_hitbox_x = self.hitbox.x
         original_hitbox_y = self.hitbox.y
         
+        # Enable trailing effect and store the trail positions
+        self.trailing_enabled = True
+        self.trail_start_time = current_time
+        
+        # Store the exact positions where ghost images should appear
+        self.trail_positions = []
+        
+        # Calculate positions for ghost images based on starting position and dodge direction
+        if self.facing == 'right':
+            # When dodging right, distribute ghosts from arrival position back to starting position
+            # First ghost (i=0) at the farthest point from arrival, last ghost (i=3) at arrival position
+            for i in range(4):
+                fraction = i / 3  # 0/3, 1/3, 2/3, 3/3 (0, 0.33, 0.67, 1)
+                # Interpolate between original position and target position
+                ghost_x = original_x + (target_x - original_x) * fraction
+                # Add slight offset for better visibility (reduced by 50%)
+                offset = 2 + (3-i) * 8  # 26, 18, 10, 2 pixels
+                ghost_x -= offset
+                self.trail_positions.append((ghost_x, original_y))
+        elif self.facing == 'left':
+            # When dodging left, distribute ghosts from arrival position back to starting position
+            for i in range(4):
+                fraction = i / 3  # 0/3, 1/3, 2/3, 3/3 (0, 0.33, 0.67, 1)
+                # Interpolate between original position and target position
+                ghost_x = original_x + (target_x - original_x) * fraction
+                # Add slight offset for better visibility (reduced by 50%)
+                offset = 2 + (3-i) * 8  # 26, 18, 10, 2 pixels
+                ghost_x += offset
+                self.trail_positions.append((ghost_x, original_y))
+        elif self.facing == 'down':
+            # When dodging down, distribute ghosts from arrival position back to starting position
+            for i in range(4):
+                fraction = i / 3  # 0/3, 1/3, 2/3, 3/3 (0, 0.33, 0.67, 1)
+                # Interpolate between original position and target position
+                ghost_y = original_y + (target_y - original_y) * fraction
+                # Add slight offset for better visibility (reduced by 50%)
+                offset = 2 + (3-i) * 8  # 26, 18, 10, 2 pixels
+                ghost_y -= offset
+                self.trail_positions.append((original_x, ghost_y))
+        elif self.facing == 'up':
+            # When dodging up, distribute ghosts from arrival position back to starting position
+            for i in range(4):
+                fraction = i / 3  # 0/3, 1/3, 2/3, 3/3 (0, 0.33, 0.67, 1)
+                # Interpolate between original position and target position
+                ghost_y = original_y + (target_y - original_y) * fraction
+                # Add slight offset for better visibility (reduced by 50%)
+                offset = 2 + (3-i) * 8  # 26, 18, 10, 2 pixels
+                ghost_y += offset
+                self.trail_positions.append((original_x, ghost_y))
+        
         # Move to target position
         self.rect.x = target_x
         self.rect.y = target_y
@@ -538,7 +594,14 @@ class Player(pygame.sprite.Sprite):
             current_time = pygame.time.get_ticks()
             if current_time - self.death_time > 4000:  # 4 seconds
                 self.death_animation_complete = True
-                
+        
+        # Update trailing effect (for dodge)
+        current_time = pygame.time.get_ticks()
+        if self.trailing_enabled:
+            # Check if trail effect has expired
+            if current_time - self.trail_start_time > self.trail_duration:
+                self.trailing_enabled = False
+        
         # Update animation
         self._update_animation()
     
@@ -604,6 +667,40 @@ class Player(pygame.sprite.Sprite):
         return amount
     
     def draw(self, surface):
+        # Draw trail effect if enabled (much simpler implementation)
+        if self.trailing_enabled:
+            current_time = pygame.time.get_ticks()
+            time_in_effect = current_time - self.trail_start_time
+            
+            # Only draw trails during the effect duration
+            if time_in_effect < self.trail_duration:
+                # Draw ghost images with decreasing opacity and staggered disappearance
+                for i, (ghost_x, ghost_y) in enumerate(self.trail_positions):
+                    # Calculate a staggered duration for each ghost image
+                    # Furthest ghost (i=0) disappears first, closest ghost (i=3) disappears last
+                    staggered_duration = self.trail_duration * (0.7 + (i * 0.1))  # 70%, 80%, 90%, 100% of total duration
+                    
+                    # Skip this ghost image if its staggered time has expired
+                    if time_in_effect > staggered_duration:
+                        continue
+                        
+                    # Calculate alpha based on remaining time (fade out)
+                    # Each ghost fades relative to its own duration
+                    alpha_factor = 1.0 - (time_in_effect / staggered_duration)
+                    alpha_factor = alpha_factor * alpha_factor  # Quadratic falloff for faster fade
+                    
+                    ghost_img = self.image.copy().convert_alpha()
+                    
+                    # Calculate alpha for this trail image (further back = more transparent)
+                    # Base alpha decreases with distance
+                    base_alpha = 90 - i * 15  # 90, 75, 60, 45 - decreasing transparency
+                    trail_alpha = int(base_alpha * alpha_factor)
+                    ghost_img.set_alpha(trail_alpha)
+                    
+                    # Draw ghost image at its fixed position
+                    surface.blit(ghost_img, (ghost_x, ghost_y))
+        
+        # Then draw the player
         surface.blit(self.image, self.rect)
         
         # Uncomment to debug hitbox visualization
