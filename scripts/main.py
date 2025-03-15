@@ -35,6 +35,11 @@ class Game:
         # Death sequence flag
         self.death_sequence_active = False
         self.death_message_shown = False
+        self.death_zoom_complete = False
+        self.death_zoom_start_time = 0
+        self.death_zoom_duration = 3000  # 3 seconds for zoom effect
+        self.death_original_zoom = 2.0  # Store original zoom level
+        self.death_target_zoom = 4.0  # Target zoom level for death sequence
         
         # Debug: Print working directory
         print(f"Current working directory: {os.getcwd()}")
@@ -142,6 +147,11 @@ class Game:
         # Reset death sequence flags
         self.death_sequence_active = False
         self.death_message_shown = False
+        self.death_zoom_complete = False
+        self.death_zoom_start_time = 0
+        self.death_zoom_duration = 3000  # 3 seconds for zoom effect
+        self.death_original_zoom = 2.0  # Store original zoom level
+        self.death_target_zoom = 4.0  # Target zoom level for death sequence
         # Reset particle system
         self.particle_system = ParticleSystem()
         # First initialize the level
@@ -381,13 +391,75 @@ class Game:
             # Update the player still to advance death animation
             self.player.update()
             
+            # Handle camera zoom effect during death sequence
+            current_time = pygame.time.get_ticks()
+            
+            # Only start the zoom effect once we've detected death
+            if self.death_zoom_start_time == 0:
+                self.death_zoom_start_time = current_time
+                self.death_original_zoom = self.camera.zoom  # Store the current zoom level
+            
+            # Calculate how far through the zoom effect we are (0.0 to 1.0)
+            if not self.death_zoom_complete:
+                elapsed = current_time - self.death_zoom_start_time
+                progress = min(elapsed / self.death_zoom_duration, 1.0)
+                
+                # Create blood pool particles throughout the zoom effect
+                # More frequent at the beginning, less frequent towards the end
+                if random.random() < 0.3 * (1 - progress/2):  # Gradually reduce frequency
+                    # Create blood pool centered on player
+                    pool_x = self.player.rect.centerx
+                    pool_y = self.player.rect.centery
+                    
+                    # Vary particle size based on zoom progress (larger as we zoom in)
+                    min_size = 4 + progress * 6  # Start at 4, grow to 10
+                    max_size = 8 + progress * 12  # Start at 8, grow to 20
+                    
+                    # Create blood pool particles
+                    self.particle_system.create_blood_pool(
+                        pool_x, pool_y, 
+                        amount=random.randint(1, 3),
+                        size_range=(min_size, max_size)
+                    )
+                
+                # Use easing function for smoother zoom (ease-in-out)
+                if progress < 0.5:
+                    # Ease in (slow start)
+                    t = 2 * progress * progress
+                else:
+                    # Ease out (slow end)
+                    t = -1 + (4 - 2 * progress) * progress
+                
+                # Interpolate zoom level
+                new_zoom = self.death_original_zoom + (self.death_target_zoom - self.death_original_zoom) * t
+                
+                # Update camera zoom
+                self.camera.zoom = new_zoom
+                self.camera.view_width = self.camera.width / self.camera.zoom
+                self.camera.view_height = self.camera.height / self.camera.zoom
+                
+                # Center camera on player
+                self.camera.center_on_point(self.player.rect.centerx, self.player.rect.centery)
+                
+                # Mark zoom as complete when we reach the end
+                if progress >= 1.0:
+                    self.death_zoom_complete = True
+                    
+                    # Final large blood pool at the end of the zoom
+                    self.particle_system.create_blood_pool(
+                        self.player.rect.centerx, 
+                        self.player.rect.centery,
+                        amount=8,
+                        size_range=(12, 25)  # Larger final pool
+                    )
+            
             # Check if death animation is complete and waiting for input
             if self.player.death_animation_complete:
                 # Keep showing the death scene until any button is pressed
                 return
             
-            # Continue updating camera and particles during death
-            self.camera.update(self.player.rect.centerx, self.player.rect.centery)
+            # Continue updating camera during death even after zoom is complete
+            self.camera.center_on_point(self.player.rect.centerx, self.player.rect.centery)
             return
         
         # Update player movement
@@ -663,6 +735,8 @@ class Game:
         if self.player.is_dead and not self.death_sequence_active:
             # Start death sequence instead of immediately showing game over
             self.death_sequence_active = True
+            self.death_zoom_start_time = 0  # Will be set in the next update
+            self.death_zoom_complete = False
             print("Player died - starting death sequence")
             # We'll show the game over screen after death animation completes
         
@@ -733,11 +807,23 @@ class Game:
             if has_key_notification:
                 self.level.key_pickup_time = key_pickup_time
         
-        # Draw player to room surface
-        self.player.draw(room_surface)
-        
-        # Draw particles
-        self.particle_system.draw(room_surface, (0, 0))
+        # Special handling for death sequence to ensure blood pools are drawn underneath the player
+        if self.death_sequence_active:
+            # First draw only the blood pool particles (underneath the player)
+            self.particle_system.draw_blood_pools_only(room_surface, (0, 0))
+            
+            # Then draw the player
+            self.player.draw(room_surface)
+            
+            # Then draw all other particles (on top of player)
+            self.particle_system.draw_except_blood_pools(room_surface, (0, 0))
+        else:
+            # Normal rendering order when player is alive
+            # Draw player to room surface
+            self.player.draw(room_surface)
+            
+            # Draw particles
+            self.particle_system.draw(room_surface, (0, 0))
         
         # Draw weapons (EXCEPT arrows, which we'll draw last)
         if self.weapon_manager.sword.active:
@@ -893,9 +979,9 @@ class Game:
         
         # Draw "Press any button to continue" message when death animation is complete
         if self.death_sequence_active and self.player.death_animation_complete:
-            # Only show the message after a brief delay
+            # Only show the message after zoom is complete and a brief delay
             current_time = pygame.time.get_ticks()
-            if current_time - self.player.death_time > 2500:  # 2.5 seconds
+            if self.death_zoom_complete and current_time - self.player.death_time > 2500:  # 2.5 seconds
                 # Create a message with a pulsing effect
                 try:
                     # Try to use the pixelated font

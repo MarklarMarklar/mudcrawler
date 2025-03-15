@@ -164,6 +164,42 @@ class ParticleSystem:
                 'fade_speed': random.uniform(3, 7)
             }
             self.particles.append(particle)
+            
+    def create_blood_pool(self, x, y, amount=5, size_range=(4, 10)):
+        """Create a slow-spreading blood pool effect for death sequence"""
+        min_size, max_size = size_range
+        
+        for _ in range(amount):
+            # Very slow outward movement - like blood slowly spilling
+            angle = random.uniform(0, math.pi * 2)
+            speed = random.uniform(0.1, 0.5)  # Very slow
+            
+            # Darker blood colors for pools
+            color = (
+                random.randint(80, 150),  # R - darker reds for pooling blood
+                random.randint(0, 15),    # G - minimal green
+                random.randint(0, 15)     # B - minimal blue
+            )
+            
+            # Blood pools last longer and are larger
+            size = random.uniform(min_size, max_size)
+            lifetime = random.randint(80, 120)  # Longer lifetime
+            
+            # Create a particle with blood pool properties
+            particle = {
+                'x': x + random.randint(-5, 5),  # Small position variation
+                'y': y + random.randint(-5, 5),
+                'velocity_x': math.cos(angle) * speed,
+                'velocity_y': math.sin(angle) * speed,
+                'color': color,
+                'size': size,
+                'lifetime': lifetime,
+                'alpha': 255,
+                'gravity': 0.0,  # No gravity - stays at the same level
+                'fade_speed': random.uniform(0.3, 0.6),  # Much slower fade
+                'is_pool': True  # Mark as a pool particle
+            }
+            self.particles.append(particle)
     
     def update(self):
         """Update all particles and remove dead ones"""
@@ -191,12 +227,29 @@ class ParticleSystem:
                 particle['velocity_x'] *= 0.95
                 particle['velocity_y'] *= 0.95
                 
+                # Special handling for blood pool particles
+                if particle.get('is_pool', False):
+                    # Blood pools grow slightly as they spread
+                    if particle['lifetime'] > 60:  # Only grow during initial phase
+                        growth_rate = 0.03
+                        particle['size'] += growth_rate
+                    
+                    # Make pool particles stick to the ground faster
+                    particle['velocity_x'] *= 0.8
+                    particle['velocity_y'] *= 0.8
+                
                 # Update lifetime
                 particle['lifetime'] -= 1
                 
                 # Shrink particles as they age
                 if 'fade_speed' in particle:
-                    particle['size'] -= particle['fade_speed'] * 0.05
+                    # Blood pools fade slower
+                    if particle.get('is_pool', False):
+                        # Only start shrinking in the last third of lifetime
+                        if particle['lifetime'] < particle.get('lifetime', 30) / 3:
+                            particle['size'] -= particle['fade_speed'] * 0.025
+                    else:
+                        particle['size'] -= particle['fade_speed'] * 0.05
                 
                 # Mark dead particles
                 if particle['lifetime'] <= 0 or particle['size'] <= 0:
@@ -209,7 +262,14 @@ class ParticleSystem:
     
     def draw(self, surface, camera_offset=(0, 0)):
         """Draw all particles to the surface"""
-        for particle in self.particles:
+        # Sort particles so blood pools are drawn first (underneath everything else)
+        # This ensures blood splatter appears on top of pools
+        sorted_particles = sorted(
+            self.particles, 
+            key=lambda p: 0 if isinstance(p, Particle) or not p.get('is_pool', False) else 1
+        )
+        
+        for particle in sorted_particles:
             if isinstance(particle, Particle):
                 # For Particle class objects
                 particle.draw(surface, camera_offset)
@@ -225,9 +285,123 @@ class ParticleSystem:
                 
                 # Draw the particle
                 try:
+                    # Special drawing for blood pools - flatter ellipses instead of circles
+                    if particle.get('is_pool', False):
+                        size = max(1, int(particle['size']))
+                        height = max(1, int(size * 0.4))  # Flatter height
+                        
+                        # For very large pools, use irregular shapes
+                        if size > 6:
+                            # Draw a slightly irregular pool shape
+                            points = []
+                            segments = 8
+                            for i in range(segments):
+                                angle = i * (2 * math.pi / segments)
+                                # Vary the radius slightly for irregular shape
+                                radius_x = size * (0.9 + random.random() * 0.2)
+                                radius_y = height * (0.9 + random.random() * 0.2)
+                                point_x = draw_x + int(math.cos(angle) * radius_x)
+                                point_y = draw_y + int(math.sin(angle) * radius_y)
+                                points.append((point_x, point_y))
+                            
+                            # Draw the pool as a polygon
+                            pygame.draw.polygon(surface, particle['color'], points)
+                        else:
+                            # For smaller pools, use an ellipse
+                            ellipse_rect = pygame.Rect(
+                                draw_x - size, 
+                                draw_y - height, 
+                                size * 2, 
+                                height * 2
+                            )
+                            pygame.draw.ellipse(surface, particle['color'], ellipse_rect)
+                    elif 'color' in particle and len(particle['color']) >= 3:
+                        # Draw glow effect for fire particles
+                        glow_size = int(particle['size'] * 2)
+                        if glow_size > 0:
+                            glow_surf = pygame.Surface((glow_size * 2, glow_size * 2), pygame.SRCALPHA)
+                            glow_alpha = min(150, int(particle['alpha'] * 0.6) if 'alpha' in particle else 100)
+                            glow_color = (*particle['color'][:3], glow_alpha)
+                            pygame.draw.circle(glow_surf, glow_color, (glow_size, glow_size), glow_size)
+                            surface.blit(glow_surf, (draw_x - glow_size, draw_y - glow_size))
+                        
+                        # Draw the actual particle
+                        size = max(1, int(particle['size']))
+                        pygame.draw.circle(surface, particle['color'], (draw_x, draw_y), size)
+                except Exception as e:
+                    print(f"Error drawing particle: {e}")
+                    
+    def draw_blood_pools_only(self, surface, camera_offset=(0, 0)):
+        """Draw only blood pool particles to the surface"""
+        for particle in self.particles:
+            # Skip Particle class objects and non-pool particles
+            if isinstance(particle, Particle) or not particle.get('is_pool', False):
+                continue
+                
+            # Skip dead particles
+            if particle['lifetime'] <= 0 or particle['size'] <= 0:
+                continue
+            
+            # Apply camera offset
+            draw_x = int(particle['x'] - camera_offset[0])
+            draw_y = int(particle['y'] - camera_offset[1])
+            
+            # Draw the blood pool
+            try:
+                size = max(1, int(particle['size']))
+                height = max(1, int(size * 0.4))  # Flatter height
+                
+                # For very large pools, use irregular shapes
+                if size > 6:
+                    # Draw a slightly irregular pool shape
+                    points = []
+                    segments = 8
+                    for i in range(segments):
+                        angle = i * (2 * math.pi / segments)
+                        # Vary the radius slightly for irregular shape
+                        radius_x = size * (0.9 + random.random() * 0.2)
+                        radius_y = height * (0.9 + random.random() * 0.2)
+                        point_x = draw_x + int(math.cos(angle) * radius_x)
+                        point_y = draw_y + int(math.sin(angle) * radius_y)
+                        points.append((point_x, point_y))
+                    
+                    # Draw the pool as a polygon
+                    pygame.draw.polygon(surface, particle['color'], points)
+                else:
+                    # For smaller pools, use an ellipse
+                    ellipse_rect = pygame.Rect(
+                        draw_x - size, 
+                        draw_y - height, 
+                        size * 2, 
+                        height * 2
+                    )
+                    pygame.draw.ellipse(surface, particle['color'], ellipse_rect)
+            except Exception as e:
+                print(f"Error drawing blood pool: {e}")
+                
+    def draw_except_blood_pools(self, surface, camera_offset=(0, 0)):
+        """Draw all particles except blood pools to the surface"""
+        for particle in self.particles:
+            # Skip blood pool particles
+            if not isinstance(particle, Particle) and particle.get('is_pool', False):
+                continue
+                
+            if isinstance(particle, Particle):
+                # For Particle class objects
+                particle.draw(surface, camera_offset)
+            else:
+                # Skip dead particles
+                if particle['lifetime'] <= 0 or particle['size'] <= 0:
+                    continue
+                
+                # Apply camera offset
+                draw_x = int(particle['x'] - camera_offset[0])
+                draw_y = int(particle['y'] - camera_offset[1])
+                
+                # Draw regular (non-pool) particles
+                try:
                     # Draw glow effect for fire particles
                     if 'color' in particle and len(particle['color']) >= 3:
-                        # Semi-transparent glow for special effects
                         glow_size = int(particle['size'] * 2)
                         if glow_size > 0:
                             glow_surf = pygame.Surface((glow_size * 2, glow_size * 2), pygame.SRCALPHA)
@@ -240,4 +414,4 @@ class ParticleSystem:
                     size = max(1, int(particle['size']))
                     pygame.draw.circle(surface, particle['color'], (draw_x, draw_y), size)
                 except Exception as e:
-                    print(f"Error drawing particle: {e}") 
+                    print(f"Error drawing regular particle: {e}") 

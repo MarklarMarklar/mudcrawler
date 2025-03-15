@@ -384,7 +384,7 @@ class Player(pygame.sprite.Sprite):
                 self.game.particle_system.create_blood_splash(
                     self.rect.centerx, 
                     self.rect.centery,
-                    amount=30  # Large number of particles
+                    amount=50  # Increased from 30 to 50 for more dramatic initial effect
                 )
                 
                 # Create directional blood splashes in all 4 directions
@@ -393,8 +393,16 @@ class Player(pygame.sprite.Sprite):
                     self.game.particle_system.create_blood_splash(
                         self.rect.centerx + offset_x,
                         self.rect.centery + offset_y,
-                        amount=5
+                        amount=10  # Increased from 5 to 10
                     )
+                
+                # Initial blood pool effect
+                self.game.particle_system.create_blood_pool(
+                    self.rect.centerx,
+                    self.rect.centery,
+                    amount=10,
+                    size_range=(6, 12)
+                )
             
             # Stop any playing walking sounds when the player dies
             if self.walk_sound_channel is not None:
@@ -417,9 +425,10 @@ class Player(pygame.sprite.Sprite):
             # Keep player on screen
             self.rect.clamp_ip(pygame.display.get_surface().get_rect())
         elif not self.death_animation_complete:
-            # Check if death animation should be complete (after 2 seconds)
+            # Check if death animation should be complete (after 4 seconds)
+            # This is longer to allow for the zoom effect to complete
             current_time = pygame.time.get_ticks()
-            if current_time - self.death_time > 2000:  # 2 seconds
+            if current_time - self.death_time > 4000:  # 4 seconds
                 self.death_animation_complete = True
                 
         # Update animation
