@@ -578,6 +578,38 @@ class Enemy(pygame.sprite.Sprite):
         pygame.draw.rect(surface, GREEN, (self.rect.x, self.rect.y - 10,
                                         health_bar_width * health_ratio, health_bar_height))
 
+class BossProjectile:
+    """Projectile fired by bosses"""
+    def __init__(self, x, y, direction, damage, speed=0.8, color=(200, 50, 50)):
+        self.x, self.y = x, y
+        self.direction = direction
+        self.speed = speed
+        self.lifetime = 120  # Max frames the projectile exists for
+        self.damage = damage
+        self.color = color
+        
+        # Create a rectangle for collision detection
+        self.size = TILE_SIZE * 0.5  # Smaller than player arrows
+        self.rect = pygame.Rect(x - self.size//2, y - self.size//2, self.size, self.size)
+    
+    def update(self):
+        # Move in the specified direction
+        self.x += self.direction[0] * self.speed
+        self.y += self.direction[1] * self.speed
+        
+        # Update rectangle position
+        self.rect.x = self.x - self.size//2
+        self.rect.y = self.y - self.size//2
+        
+        # Reduce lifetime
+        self.lifetime -= 1
+        
+        # Return True if projectile should be removed
+        return self.lifetime <= 0
+        
+    def draw(self, surface):
+        pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), int(self.size//2))
+
 class Boss(Enemy):
     def __init__(self, x, y, level, level_instance=None):
         super().__init__(x, y, None, level, level_instance)
@@ -590,6 +622,11 @@ class Boss(Enemy):
         self.damage = self.enemy_data['damage']
         self.speed = self.enemy_data['speed']
         self.name = self.enemy_data['name']
+        
+        # Override attack properties for level 2 boss
+        if level == 2:
+            self.attack_range = TILE_SIZE * 1  # 1 tile attack range
+            self.attack_cooldown = 1500  # 1.5 seconds between attacks
         
         # Animation states and directions (override from Enemy)
         self.animations = {
@@ -747,8 +784,13 @@ class Boss(Enemy):
         # Boss-specific attributes
         self.phase = 1
         self.max_phases = 3
+        if level == 2:
+            self.max_phases = 1  # Level 2 boss has only 1 phase
         self.special_attack_cooldown = 3000  # 3 seconds
         self.last_special_attack_time = 0
+        
+        # Projectiles list for level 2 boss
+        self.projectiles = []
         
         # Position history for trailing effect (used by level 1 boss)
         self.trail_enabled = level == 1 or level == 2  # Enable for level 1 and 2 bosses
@@ -783,9 +825,57 @@ class Boss(Enemy):
             self.current_state = 'special'
             self.frame = 0  # Reset animation frame
             
-            # Implement unique boss attacks here
-            damage_multiplier = 1 + (self.phase * 0.5)  # Damage increases with phase
-            return player.take_damage(self.damage * damage_multiplier)
+            # Level 2 boss special attack: 3 projectiles in a cone
+            if self.level == 2:
+                # Calculate direction to player
+                dx = player.rect.centerx - self.rect.centerx
+                dy = player.rect.centery - self.rect.centery
+                distance = math.sqrt(dx * dx + dy * dy)
+                
+                if distance > 0:
+                    # Normalize direction
+                    dx = dx / distance
+                    dy = dy / distance
+                    
+                    # Create 3 projectiles in a cone (35 degree spread)
+                    angle = math.atan2(dy, dx)
+                    spread = math.radians(35)  # 35 degree spread
+                    
+                    # Center projectile directly at player
+                    self.projectiles.append(BossProjectile(
+                        self.rect.centerx, 
+                        self.rect.centery,
+                        (dx, dy),
+                        self.damage * 1.5  # 50% damage increase for special attack
+                    ))
+                    
+                    # Left projectile
+                    left_angle = angle - spread / 2
+                    left_dx = math.cos(left_angle)
+                    left_dy = math.sin(left_angle)
+                    self.projectiles.append(BossProjectile(
+                        self.rect.centerx, 
+                        self.rect.centery,
+                        (left_dx, left_dy),
+                        self.damage * 1.5
+                    ))
+                    
+                    # Right projectile
+                    right_angle = angle + spread / 2
+                    right_dx = math.cos(right_angle)
+                    right_dy = math.sin(right_angle)
+                    self.projectiles.append(BossProjectile(
+                        self.rect.centerx, 
+                        self.rect.centery,
+                        (right_dx, right_dy),
+                        self.damage * 1.5
+                    ))
+                    
+                return True  # Attack executed
+            else:
+                # Original boss attack for other levels
+                damage_multiplier = 1 + (self.phase * 0.5)  # Damage increases with phase
+                return player.take_damage(self.damage * damage_multiplier)
         return False
         
     def move_towards_player(self, player):
@@ -900,124 +990,32 @@ class Boss(Enemy):
                     self.facing = 'down' if dy > 0 else 'up'
 
     def update(self, player):
-        # Override the standard update method to prevent patrolling
+        # Update projectiles first
+        for projectile in self.projectiles[:]:
+            if projectile.update():
+                self.projectiles.remove(projectile)
+            elif projectile.rect.colliderect(player.hitbox):
+                player.take_damage(projectile.damage)
+                self.projectiles.remove(projectile)
         
-        # Calculate distance to player
-        dx = player.rect.centerx - self.rect.centerx
-        dy = player.rect.centery - self.rect.centery
-        distance = math.sqrt(dx * dx + dy * dy)
-        
-        # Current time for cooldown calculations
-        current_time = pygame.time.get_ticks()
-        
-        # Update state based on distance to player
-        if distance <= self.attack_range:
-            # Attack state - same as regular enemies
-            self.state = 'attack'
-            self.velocity_x = 0
-            self.velocity_y = 0
-            self.attack(player)
-            self.has_spotted_player = True  # Mark that boss has spotted player
-        elif distance <= self.detection_range or self.has_spotted_player:
-            # Chase state - same as regular enemies
-            self.state = 'chase'
-            self.current_state = 'walk'
-            self.move_towards_player(player)
-            
-            # Mark that this boss has spotted the player
-            if distance <= self.detection_range:
-                self.has_spotted_player = True
-        else:
-            # Idle state - bosses don't patrol, they stand still until they see the player
-            self.state = 'idle'
-            self.current_state = 'idle'
-            self.velocity_x = 0
-            self.velocity_y = 0
-        
-        # Store the old position to revert if collision happens
-        old_rect = self.rect.copy()
-        old_velocity_x = self.velocity_x
-        old_velocity_y = self.velocity_y
-        
-        # Ensure player has level attribute before checking collision
-        has_level = hasattr(player, 'level') and player.level is not None
-        
-        # Try moving horizontally
-        self.rect.x += self.velocity_x
-        
-        # If collision occurs, try with half the velocity
-        if has_level and player.level.check_collision(self.rect):
-            self.rect = old_rect.copy()
-            self.rect.x += self.velocity_x * 0.5  # Try half speed
-            
-            # If still colliding, revert and mark as movement failure
-            if has_level and player.level.check_collision(self.rect):
-                self.rect = old_rect.copy()
-                self.velocity_x = 0
-                
-                if self.state == 'chase':
-                    self.movement_failed_counter += 1
-            else:
-                # Half speed worked, reset failure counter
-                self.movement_failed_counter = 0
-        else:
-            # Movement succeeded, reset failure counter
-            if old_velocity_x != 0 and self.state == 'chase':
-                self.movement_failed_counter = 0
-        
-        # Now try moving vertically
-        self.rect.y += self.velocity_y
-        
-        # If collision occurs, try with half the velocity
-        if has_level and player.level.check_collision(self.rect):
-            self.rect.y = old_rect.y  # Revert only Y position
-            self.rect.y += self.velocity_y * 0.5  # Try half speed
-            
-            # If still colliding, revert and mark as movement failure
-            if has_level and player.level.check_collision(self.rect):
-                self.rect.y = old_rect.y
-                self.velocity_y = 0
-                
-                if self.state == 'chase':
-                    self.movement_failed_counter += 1
-            else:
-                # Half speed worked, reset failure counter
-                self.movement_failed_counter = 0
-        else:
-            # Movement succeeded, reset failure counter
-            if old_velocity_y != 0 and self.state == 'chase':
-                self.movement_failed_counter = 0
-        
-        # Keep boss on screen
-        self.rect.clamp_ip(pygame.display.get_surface().get_rect())
-        
-        # Update animation
-        self.animation_time += self.animation_speed
-        
-        # If the attack animation is done, go back to previous state
-        if self.current_state == 'attack' and self.animation_time >= len(self.animations[self.current_state][self.facing]):
-            self.current_state = 'idle' if self.state == 'idle' else 'walk'
-            self.animation_time = 0
-            
-        # Calculate current frame
-        self.frame = int(self.animation_time) % len(self.animations[self.current_state][self.facing])
-        self.image = self.animations[self.current_state][self.facing][self.frame]
+        # Call the parent update method for normal boss behavior
+        super().update(player)
         
         # Handle boss voice sound effect
-        if distance <= self.detection_range:
+        if hasattr(player, 'level') and player.level is not None:
             # Boss has detected the player
             if not self.has_seen_player:
                 # First time seeing player, play voice sound
                 voice_file = f"effects/boss_{self.level}_voice"
                 self.sound_manager.play_sound(voice_file)
                 self.has_seen_player = True
-                self.last_voice_time = current_time
+                self.last_voice_time = pygame.time.get_ticks()
                 print(f"Boss has seen the player! Playing voice sound: {voice_file}")
-            elif current_time - self.last_voice_time >= self.voice_cooldown:
+            elif pygame.time.get_ticks() - self.last_voice_time >= self.voice_cooldown:
                 # Repeat the voice sound every 4 seconds
                 voice_file = f"effects/boss_{self.level}_voice"
                 self.sound_manager.play_sound(voice_file)
-                self.last_voice_time = current_time
+                self.last_voice_time = pygame.time.get_ticks()
                 print(f"Boss repeating voice sound: {voice_file}")
         
         # Update position history for trailing effect if enabled
@@ -1108,4 +1106,8 @@ class Boss(Enemy):
         pygame.draw.rect(surface, RED, (health_bar_x, health_bar_y,
                                       health_bar_width, health_bar_height))
         pygame.draw.rect(surface, GREEN, (health_bar_x, health_bar_y,
-                                        health_bar_width * health_ratio, health_bar_height)) 
+                                        health_bar_width * health_ratio, health_bar_height))
+        
+        # Draw projectiles
+        for projectile in self.projectiles:
+            projectile.draw(surface) 
