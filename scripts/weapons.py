@@ -130,6 +130,10 @@ class Sword(pygame.sprite.Sprite):
         self.sword_images = {}
         self.animation_frames = {}  # Store animation frames for each direction
         
+        # Fire sword images and animations
+        self.fire_sword_images = {}
+        self.fire_animation_frames = {}
+        
         # Track if this is a fire sword
         self.is_fire_sword = False
         self.flame_particles = []
@@ -228,6 +232,9 @@ class Sword(pygame.sprite.Sprite):
                         self.animation_frames[direction] = self._create_animation_frames(sword_img, direction)
                 except Exception as e:
                     print(f"Failed to load sword_{direction}.png: {e}")
+                    
+        # Load fire sword images and create animation frames
+        self._load_fire_sword_images()
         
         # Set initial image and animation frame
         self.image = self.sword_images['right']
@@ -240,6 +247,52 @@ class Sword(pygame.sprite.Sprite):
         self.start_time = 0
         self.current_frame = 0
         self.total_frames = 4  # Number of animation frames
+        
+    def _load_fire_sword_images(self):
+        """Load the fire sword images and create animation frames for all directions"""
+        try:
+            # Load the fire_sword.png (which is in the up position)
+            fire_sword_path = os.path.join(WEAPON_SPRITES_PATH, "fire_sword.png")
+            if os.path.exists(fire_sword_path):
+                # Use the same scale as the normal sword
+                sword_scale_factor = 0.675
+                sword_width = int(TILE_SIZE * sword_scale_factor)
+                sword_height = int(sword_width * 1.5)
+                
+                # Load the up-facing fire sword
+                up_fire_sword = self.asset_manager.load_image(fire_sword_path, scale=(sword_width, sword_height))
+                self.fire_sword_images['up'] = up_fire_sword
+                
+                # Create animation frames for up direction
+                self.fire_animation_frames['up'] = self._create_animation_frames(up_fire_sword, 'up')
+                
+                # Rotate for other directions
+                # Down: 180 degrees from up
+                down_fire_sword = pygame.transform.rotate(up_fire_sword, 180)
+                self.fire_sword_images['down'] = down_fire_sword
+                self.fire_animation_frames['down'] = self._create_animation_frames(down_fire_sword, 'down')
+                
+                # Right: 270 degrees from up (90 degrees clockwise)
+                right_fire_sword = pygame.transform.rotate(up_fire_sword, 270)
+                self.fire_sword_images['right'] = right_fire_sword
+                self.fire_animation_frames['right'] = self._create_animation_frames(right_fire_sword, 'right')
+                
+                # Left: 90 degrees from up (90 degrees counterclockwise)
+                left_fire_sword = pygame.transform.rotate(up_fire_sword, 90)
+                self.fire_sword_images['left'] = left_fire_sword
+                self.fire_animation_frames['left'] = self._create_animation_frames(left_fire_sword, 'left')
+                
+                print("Successfully loaded fire_sword.png for all directions")
+            else:
+                print("fire_sword.png not found - using normal sword images for fire sword")
+                # If fire sword image doesn't exist, just use the normal sword images
+                self.fire_sword_images = self.sword_images.copy()
+                self.fire_animation_frames = self.animation_frames.copy()
+        except Exception as e:
+            print(f"Failed to load fire_sword.png: {e}")
+            # Fall back to normal sword images
+            self.fire_sword_images = self.sword_images.copy()
+            self.fire_animation_frames = self.animation_frames.copy()
         
     def _create_animation_frames(self, base_image, direction):
         """Create 4 animation frames by rotating the sword around its handle."""
@@ -301,6 +354,10 @@ class Sword(pygame.sprite.Sprite):
         self.is_fire_sword = enabled
         print(f"Fire sword {'enabled' if enabled else 'disabled'}")
         
+        # Make sure fire sword images are loaded
+        if enabled and not self.fire_sword_images:
+            self._load_fire_sword_images()
+            
         # Play sound effect when fire sword is activated
         if enabled:
             self.sound_manager.play_sound("effects/power_up")
@@ -409,8 +466,11 @@ class Sword(pygame.sprite.Sprite):
             
     def update_position(self):
         """Update sword position and animation frame based on player facing direction"""
+        # Use the fire sword frames if enabled, otherwise use normal sword frames
+        animation_frames = self.fire_animation_frames if self.is_fire_sword else self.animation_frames
+        
         if self.player.facing == 'right':
-            self.image = self.animation_frames['right'][self.current_frame]
+            self.image = animation_frames['right'][self.current_frame]
             self.rect = self.image.get_rect()
             # Position closer to player
             self.rect.midleft = self.player.rect.midright
@@ -418,21 +478,21 @@ class Sword(pygame.sprite.Sprite):
             offset_x = int((self.rect.width * 0.7))  # Move sword closer by 70% of its width
             self.rect.x -= offset_x
         elif self.player.facing == 'left':
-            self.image = self.animation_frames['left'][self.current_frame]
+            self.image = animation_frames['left'][self.current_frame]
             self.rect = self.image.get_rect()
             self.rect.midright = self.player.rect.midleft
             # Adjust position to be much closer to the player
             offset_x = int((self.rect.width * 0.7))  # Move sword closer by 70% of its width
             self.rect.x += offset_x
         elif self.player.facing == 'up':
-            self.image = self.animation_frames['up'][self.current_frame]
+            self.image = animation_frames['up'][self.current_frame]
             self.rect = self.image.get_rect()
             self.rect.midbottom = self.player.rect.midtop
             # Adjust position to be much closer to the player
             offset_y = int((self.rect.height * 0.7))  # Move sword closer by 70% of its height
             self.rect.y += offset_y
         elif self.player.facing == 'down':
-            self.image = self.animation_frames['down'][self.current_frame]
+            self.image = animation_frames['down'][self.current_frame]
             self.rect = self.image.get_rect()
             self.rect.midtop = self.player.rect.midbottom
             # Adjust position to be much closer to the player
