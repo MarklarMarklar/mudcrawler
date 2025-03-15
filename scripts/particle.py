@@ -102,21 +102,142 @@ class ParticleSystem:
         """Add a particle to the system"""
         self.particles.append(particle)
     
-    def create_blood_splash(self, x, y, amount=15):
-        """Create a blood splash at the given position"""
+    def create_blood_splash(self, x, y, amount=10):
+        """Create a blood splash effect at the specified position"""
         for _ in range(amount):
-            self.particles.append(BloodParticle(x, y))
+            speed = random.uniform(0.5, 3.0)
+            angle = random.uniform(0, math.pi * 2)
+            velocity_x = math.cos(angle) * speed
+            velocity_y = math.sin(angle) * speed
+            lifetime = random.randint(20, 60)  # frames
+            size = random.randint(2, 6)
+            
+            # Create a particle with blood-like properties
+            particle = {
+                'x': x,
+                'y': y,
+                'velocity_x': velocity_x,
+                'velocity_y': velocity_y,
+                'color': (
+                    random.randint(100, 200),  # R - various dark reds
+                    random.randint(0, 20),     # G - very little green
+                    random.randint(0, 20)      # B - very little blue
+                ),
+                'size': size,
+                'lifetime': lifetime,
+                'alpha': 255,
+                'gravity': 0.1,  # Blood is affected by gravity
+                'fade_speed': random.uniform(2, 5)
+            }
+            self.particles.append(particle)
+            
+    def create_fire_effect(self, x, y, amount=15):
+        """Create a fire effect at the specified position"""
+        for _ in range(amount):
+            speed = random.uniform(1.0, 4.0)
+            # Mostly upward with some sideways variation
+            angle = random.uniform(-math.pi/4, math.pi/4) - math.pi/2  # -pi/2 is up
+            velocity_x = math.cos(angle) * speed
+            velocity_y = math.sin(angle) * speed
+            lifetime = random.randint(20, 60)  # frames
+            size = random.randint(3, 10)
+            
+            # Fire colors: yellow, orange, red
+            fire_colors = [
+                (255, 255, 0),    # Yellow
+                (255, 165, 0),    # Orange
+                (255, 100, 0),    # Dark orange
+                (255, 50, 0)      # Reddish orange
+            ]
+            
+            # Create a particle with fire-like properties
+            particle = {
+                'x': x + random.randint(-10, 10),  # Slight position variation
+                'y': y + random.randint(-5, 5),
+                'velocity_x': velocity_x,
+                'velocity_y': velocity_y,
+                'color': random.choice(fire_colors),
+                'size': size,
+                'lifetime': lifetime,
+                'alpha': 255,
+                'gravity': -0.05,  # Fire rises slightly
+                'fade_speed': random.uniform(3, 7)
+            }
+            self.particles.append(particle)
     
     def update(self):
         """Update all particles and remove dead ones"""
-        # Update all particles
-        for particle in self.particles:
-            particle.update()
+        # List to track particles to remove
+        particles_to_remove = []
         
-        # Remove dead particles
-        self.particles = [p for p in self.particles if p.alive]
+        # Update all particles
+        for i, particle in enumerate(self.particles):
+            if isinstance(particle, Particle):
+                # For Particle class objects
+                particle.update()
+                if not particle.alive:
+                    particles_to_remove.append(i)
+            else:
+                # For dictionary-based particles
+                # Update position
+                particle['x'] += particle['velocity_x']
+                particle['y'] += particle['velocity_y']
+                
+                # Apply gravity if present
+                if 'gravity' in particle:
+                    particle['velocity_y'] += particle['gravity']
+                
+                # Apply drag to velocity
+                particle['velocity_x'] *= 0.95
+                particle['velocity_y'] *= 0.95
+                
+                # Update lifetime
+                particle['lifetime'] -= 1
+                
+                # Shrink particles as they age
+                if 'fade_speed' in particle:
+                    particle['size'] -= particle['fade_speed'] * 0.05
+                
+                # Mark dead particles
+                if particle['lifetime'] <= 0 or particle['size'] <= 0:
+                    particles_to_remove.append(i)
+        
+        # Remove dead particles - in reverse order to avoid index issues
+        for i in sorted(particles_to_remove, reverse=True):
+            if i < len(self.particles):  # Safety check
+                self.particles.pop(i)
     
     def draw(self, surface, camera_offset=(0, 0)):
         """Draw all particles to the surface"""
         for particle in self.particles:
-            particle.draw(surface, camera_offset) 
+            if isinstance(particle, Particle):
+                # For Particle class objects
+                particle.draw(surface, camera_offset)
+            else:
+                # For dictionary-based particles
+                # Only draw if alive
+                if particle['lifetime'] <= 0 or particle['size'] <= 0:
+                    continue
+                
+                # Apply camera offset
+                draw_x = int(particle['x'] - camera_offset[0])
+                draw_y = int(particle['y'] - camera_offset[1])
+                
+                # Draw the particle
+                try:
+                    # Draw glow effect for fire particles
+                    if 'color' in particle and len(particle['color']) >= 3:
+                        # Semi-transparent glow for special effects
+                        glow_size = int(particle['size'] * 2)
+                        if glow_size > 0:
+                            glow_surf = pygame.Surface((glow_size * 2, glow_size * 2), pygame.SRCALPHA)
+                            glow_alpha = min(150, int(particle['alpha'] * 0.6) if 'alpha' in particle else 100)
+                            glow_color = (*particle['color'][:3], glow_alpha)
+                            pygame.draw.circle(glow_surf, glow_color, (glow_size, glow_size), glow_size)
+                            surface.blit(glow_surf, (draw_x - glow_size, draw_y - glow_size))
+                    
+                    # Draw the actual particle
+                    size = max(1, int(particle['size']))
+                    pygame.draw.circle(surface, particle['color'], (draw_x, draw_y), size)
+                except Exception as e:
+                    print(f"Error drawing particle: {e}") 
