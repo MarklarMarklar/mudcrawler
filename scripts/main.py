@@ -377,6 +377,8 @@ class Game:
                             print(f"Player dodged in direction: {self.player.facing}")
                             # Apply a small screen shake for feedback
                             self.trigger_screen_shake(amount=3, duration=5)
+                            # Play dodge sound effect
+                            self.sound_manager.play_sound("effects/dodge")
                 
     def update(self):
         if self.state != PLAYING:
