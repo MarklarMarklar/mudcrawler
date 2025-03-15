@@ -7,78 +7,6 @@ from config import *
 from asset_manager import get_asset_manager
 from sound_manager import get_sound_manager
 
-class BossProjectile(pygame.sprite.Sprite):
-    def __init__(self, x, y, direction, speed=1.4, damage=25, color=(255, 0, 0)):
-        super().__init__()
-        self.asset_manager = get_asset_manager()
-        
-        # Create the projectile image - make it larger and more visible
-        self.image = pygame.Surface((TILE_SIZE//1.5, TILE_SIZE//1.5), pygame.SRCALPHA)
-        
-        # Store the main color
-        self.color = color
-        
-        # Make lighter versions of the color for the glow effect
-        lighter_color = tuple(min(255, c + 100) for c in color) + (180,)
-        lightest_color = tuple(min(255, c + 200) for c in color) + (120,)
-        
-        # Draw a colored circle with a glow effect
-        radius = int(TILE_SIZE//3)
-        pygame.draw.circle(self.image, color, (radius, radius), radius)  # Main color center
-        pygame.draw.circle(self.image, lighter_color, (radius, radius), radius-2)  # Lighter inner
-        pygame.draw.circle(self.image, lightest_color, (radius, radius), radius-4)  # Even lighter core
-        
-        self.rect = self.image.get_rect()
-        self.rect.centerx = x
-        self.rect.centery = y
-        
-        # Movement properties
-        self.direction = direction  # Tuple (dx, dy) - normalized direction
-        self.speed = speed
-        self.damage = damage
-        self.distance_traveled = 0
-        self.max_distance = TILE_SIZE * 10  # Projectiles disappear after traveling this distance
-        
-        # Add a pulsing effect
-        self.pulse_counter = 0
-        self.pulse_rate = 0.1
-        self.original_image = self.image.copy()
-        
-    def update(self):
-        # Move the projectile
-        dx = self.direction[0] * self.speed
-        dy = self.direction[1] * self.speed
-        self.rect.x += dx
-        self.rect.y += dy
-        
-        # Track distance traveled
-        self.distance_traveled += math.sqrt(dx*dx + dy*dy)
-        
-        # Check if the projectile should be destroyed
-        if self.distance_traveled >= self.max_distance:
-            self.kill()
-            
-        # Update pulsing effect
-        self.pulse_counter += self.pulse_rate
-        scale_factor = 0.9 + 0.2 * abs(math.sin(self.pulse_counter))  # Oscillate between 0.9 and 1.1 size
-        
-        new_width = int(self.original_image.get_width() * scale_factor)
-        new_height = int(self.original_image.get_height() * scale_factor)
-        
-        # Create a new scaled image for the pulse effect
-        self.image = pygame.transform.scale(self.original_image, (new_width, new_height))
-        
-        # Keep the projectile centered
-        old_center = self.rect.center
-        self.rect = self.image.get_rect()
-        self.rect.center = old_center
-        
-    def check_collision(self, player_rect):
-        """Check if projectile collides with player"""
-        if self.rect.colliderect(player_rect):
-            return True
-        return False
-
 class Enemy(pygame.sprite.Sprite):
     def __init__(self, x, y, enemy_type, level, level_instance=None):
         super().__init__()
@@ -373,10 +301,10 @@ class Enemy(pygame.sprite.Sprite):
         should_update_path = (
             not self.path or 
             (self.last_target_position and 
-              ((abs(self.last_target_position[0] - target_pos[0]) > TILE_SIZE * 2) or 
-               (abs(self.last_target_position[1] - target_pos[1]) > TILE_SIZE * 2))) or
-             self.path_update_timer >= self.path_update_frequency or
-             self.movement_failed_counter >= self.max_movement_failures
+             ((abs(self.last_target_position[0] - target_pos[0]) > TILE_SIZE * 2) or 
+              (abs(self.last_target_position[1] - target_pos[1]) > TILE_SIZE * 2))) or
+            self.path_update_timer >= self.path_update_frequency or
+            self.movement_failed_counter >= self.max_movement_failures
         )
         
         if should_update_path and hasattr(player, 'level'):
@@ -430,10 +358,6 @@ class Enemy(pygame.sprite.Sprite):
                     # If we couldn't find a path, use the old method (direct movement)
                     if not self.path:
                         # Old direct movement code
-                        dx = player.rect.centerx - self.rect.centerx
-                        dy = player.rect.centery - self.rect.centery
-                        distance = math.sqrt(dx * dx + dy * dy)
-                        
                         if distance > 0:
                             dx = dx / distance
                             dy = dy / distance
@@ -446,19 +370,25 @@ class Enemy(pygame.sprite.Sprite):
                             else:
                                 self.facing = 'down' if dy > 0 else 'up'
                         return
-            else:
-                # Move towards next point
-                if distance > 0:
-                    dx = dx / distance
-                    dy = dy / distance
-                    self.velocity_x = dx * self.speed
-                    self.velocity_y = dy * self.speed
-                    
-                    # Update facing direction based on movement
-                    if abs(dx) > abs(dy):
-                        self.facing = 'right' if dx > 0 else 'left'
-                    else:
-                        self.facing = 'down' if dy > 0 else 'up'
+                # Continue to next iteration
+                if self.path:
+                    next_point = self.path[0]
+                    dx = next_point[0] - self.rect.centerx
+                    dy = next_point[1] - self.rect.centery
+                    distance = math.sqrt(dx * dx + dy * dy)
+            
+            # Move towards next point
+            if distance > 0:
+                dx = dx / distance
+                dy = dy / distance
+                self.velocity_x = dx * self.speed
+                self.velocity_y = dy * self.speed
+                
+                # Update facing direction based on movement
+                if abs(dx) > abs(dy):
+                    self.facing = 'right' if dx > 0 else 'left'
+                else:
+                    self.facing = 'down' if dy > 0 else 'up'
         else:
             # If there's no path, fall back to direct movement
             dx = player.rect.centerx - self.rect.centerx
@@ -476,7 +406,7 @@ class Enemy(pygame.sprite.Sprite):
                     self.facing = 'right' if dx > 0 else 'left'
                 else:
                     self.facing = 'down' if dy > 0 else 'up'
-
+    
     def can_attack(self):
         current_time = pygame.time.get_ticks()
         return current_time - self.last_attack_time >= self.attack_cooldown
@@ -537,6 +467,15 @@ class Enemy(pygame.sprite.Sprite):
             self.current_state = 'walk'
     
     def update(self, player):
+        # Update projectiles first
+        for projectile in self.projectiles[:]:
+            if projectile.update():
+                self.projectiles.remove(projectile)
+            elif projectile.rect.colliderect(player.hitbox):
+                player.take_damage(projectile.damage)
+                self.projectiles.remove(projectile)
+        
+        # Override the standard update method to prevent patrolling
         # Calculate distance to player
         dx = player.rect.centerx - self.rect.centerx
         dy = player.rect.centery - self.rect.centery
@@ -545,24 +484,29 @@ class Enemy(pygame.sprite.Sprite):
         # Current time for cooldown calculations
         current_time = pygame.time.get_ticks()
         
-        # Always mark that enemy has spotted player if within detection range
-        if distance <= self.detection_range:
-            self.has_spotted_player = True
+        # Try special attack occasionally
+        if self.level == 2 and random.random() < 0.01:  # 1% chance each frame
+            self.special_attack(player)
         
         # Update state based on distance to player
         if distance <= self.attack_range:
-            # Attack state - use melee attack
+            # Attack state - same as regular enemies
             self.state = 'attack'
             self.velocity_x = 0
             self.velocity_y = 0
             self.attack(player)
-        elif self.has_spotted_player:
-            # Chase state - chase player once spotted (regardless of current distance)
+            self.has_spotted_player = True  # Mark that boss has spotted player
+        elif distance <= self.detection_range or self.has_spotted_player:
+            # Chase state - same as regular enemies
             self.state = 'chase'
             self.current_state = 'walk'
             self.move_towards_player(player)
+            
+            # Mark that this boss has spotted the player
+            if distance <= self.detection_range:
+                self.has_spotted_player = True
         else:
-            # Idle state - enemies don't patrol, they stand still until they see the player
+            # Idle state - bosses don't patrol, they stand still until they see the player
             self.state = 'idle'
             self.current_state = 'idle'
             self.velocity_x = 0
@@ -622,7 +566,7 @@ class Enemy(pygame.sprite.Sprite):
             if old_velocity_y != 0 and self.state == 'chase':
                 self.movement_failed_counter = 0
         
-        # Keep enemy on screen
+        # Keep boss on screen
         self.rect.clamp_ip(pygame.display.get_surface().get_rect())
         
         # Update animation
@@ -637,6 +581,65 @@ class Enemy(pygame.sprite.Sprite):
         self.frame = int(self.animation_time) % len(self.animations[self.current_state][self.facing])
         self.image = self.animations[self.current_state][self.facing][self.frame]
         
+        # Handle boss voice sound effect
+        if hasattr(player, 'level') and player.level is not None:
+            # Boss has detected the player
+            if not self.has_seen_player:
+                # First time seeing player, play voice sound
+                voice_file = f"effects/boss_{self.level}_voice"
+                self.sound_manager.play_sound(voice_file)
+                self.has_seen_player = True
+                self.last_voice_time = current_time
+                print(f"Boss has seen the player! Playing voice sound: {voice_file}")
+            elif current_time - self.last_voice_time >= self.voice_cooldown:
+                # Repeat the voice sound every 4 seconds
+                voice_file = f"effects/boss_{self.level}_voice"
+                self.sound_manager.play_sound(voice_file)
+                self.last_voice_time = current_time
+                print(f"Boss repeating voice sound: {voice_file}")
+        
+        # Update position history for trailing effect if enabled
+        if self.trail_enabled:
+            self.trail_frame_counter += 1
+            if self.trail_frame_counter >= self.trail_update_rate:
+                self.trail_frame_counter = 0
+                # Store current position and image
+                # Store the visual position (collision rect center adjusted for the visual offset)
+                visual_pos_x = self.rect.x - self.visual_offset_x
+                visual_pos_y = self.rect.y - self.visual_offset_y
+                self.position_history.append({
+                    'pos': (visual_pos_x, visual_pos_y),
+                    'image': self.image,
+                    'frame': self.frame,
+                    'state': self.current_state,
+                    'facing': self.facing
+                })
+                # Keep only the most recent positions
+                if len(self.position_history) > self.max_trail_length:
+                    self.position_history.pop(0)
+        
+        # Check for special attack conditions based on health percentage
+        health_percent = self.health / self.enemy_data['health']
+        
+        if health_percent < 0.3:
+            # Low health - more aggressive, faster, special attacks more often
+            self.attack_cooldown = 500  # ms
+            self.speed = self.enemy_data['speed'] * 1.5
+            self.damage = int(self.enemy_data['damage'] * 1.5)
+            
+            # Chance to do special attack
+            if random.random() < 0.05:
+                self.special_attack(player)
+        elif health_percent < 0.6:
+            # Medium health - somewhat aggressive
+            self.attack_cooldown = 750  # ms
+            self.speed = self.enemy_data['speed'] * 1.2
+            self.damage = int(self.enemy_data['damage'] * 1.2)
+            
+            # Lower chance for special attack
+            if random.random() < 0.03:
+                self.special_attack(player)
+        
     def draw(self, surface):
         surface.blit(self.image, self.rect)
         
@@ -648,6 +651,38 @@ class Enemy(pygame.sprite.Sprite):
                                       health_bar_width, health_bar_height))
         pygame.draw.rect(surface, GREEN, (self.rect.x, self.rect.y - 10,
                                         health_bar_width * health_ratio, health_bar_height))
+
+class BossProjectile:
+    """Projectile fired by bosses"""
+    def __init__(self, x, y, direction, damage, speed=0.8, color=(200, 50, 50)):
+        self.x, self.y = x, y
+        self.direction = direction
+        self.speed = speed
+        self.lifetime = 120  # Max frames the projectile exists for
+        self.damage = damage
+        self.color = color
+        
+        # Create a rectangle for collision detection
+        self.size = TILE_SIZE * 0.5  # Smaller than player arrows
+        self.rect = pygame.Rect(x - self.size//2, y - self.size//2, self.size, self.size)
+    
+    def update(self):
+        # Move in the specified direction
+        self.x += self.direction[0] * self.speed
+        self.y += self.direction[1] * self.speed
+        
+        # Update rectangle position
+        self.rect.x = self.x - self.size//2
+        self.rect.y = self.y - self.size//2
+        
+        # Reduce lifetime
+        self.lifetime -= 1
+        
+        # Return True if projectile should be removed
+        return self.lifetime <= 0
+        
+    def draw(self, surface):
+        pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), int(self.size//2))
 
 class Boss(Enemy):
     def __init__(self, x, y, level, level_instance=None):
@@ -661,6 +696,11 @@ class Boss(Enemy):
         self.damage = self.enemy_data['damage']
         self.speed = self.enemy_data['speed']
         self.name = self.enemy_data['name']
+        
+        # Override attack properties for level 2 boss
+        if level == 2:
+            self.attack_range = TILE_SIZE * 1  # 1 tile attack range
+            self.attack_cooldown = 1500  # 1.5 seconds between attacks
         
         # Animation states and directions (override from Enemy)
         self.animations = {
@@ -817,19 +857,14 @@ class Boss(Enemy):
         
         # Boss-specific attributes
         self.phase = 1
-        # Set max_phases based on level
+        self.max_phases = 3
         if level == 2:
-            self.max_phases = 1  # Skeleton Lord only has 1 phase
-        else:
-            self.max_phases = 3  # Default value for other bosses
-            
+            self.max_phases = 1  # Level 2 boss has only 1 phase
         self.special_attack_cooldown = 3000  # 3 seconds
         self.last_special_attack_time = 0
         
-        # For level 2 boss, adjust attack properties
-        if level == 2:
-            self.attack_range = TILE_SIZE * 1  # Reduced attack range to 1 tile
-            self.attack_cooldown = 1500  # 1.5 seconds between attacks
+        # Projectiles list for level 2 boss
+        self.projectiles = []
         
         # Position history for trailing effect (used by level 1 boss)
         self.trail_enabled = level == 1 or level == 2  # Enable for level 1 and 2 bosses
@@ -849,137 +884,6 @@ class Boss(Enemy):
         self.last_voice_time = 0
         self.voice_cooldown = 4000  # 4 seconds (in milliseconds)
         
-        # Projectiles for level 2 boss
-        self.projectiles = pygame.sprite.Group()
-        
-    def move_towards_player(self, player):
-        """Move towards player using simplified movement for more reliable chasing"""
-        # Calculate direction vector to player
-        dx = player.rect.centerx - self.rect.centerx
-        dy = player.rect.centery - self.rect.centery
-        distance = math.sqrt(dx * dx + dy * dy)
-        
-        # Always use direct movement for level 2 boss to ensure reliable chasing
-        if self.level == 2 or distance < TILE_SIZE * 5:
-            # Use direct movement - much more reliable
-            if distance > 0:
-                dx = dx / distance
-                dy = dy / distance
-                
-                # Set velocity with full speed
-                self.velocity_x = dx * self.speed
-                self.velocity_y = dy * self.speed
-                
-                # Update facing direction
-                if abs(dx) > abs(dy):
-                    self.facing = 'right' if dx > 0 else 'left'
-                else:
-                    self.facing = 'down' if dy > 0 else 'up'
-            return
-        
-        # For other bosses (or longer distances for non-level-2 bosses), try pathfinding
-        target_pos = (player.rect.centerx, player.rect.centery)
-        
-        # Update path more frequently to avoid getting stuck
-        should_update_path = (
-            not self.path or 
-            self.path_update_timer >= 10 or
-            self.movement_failed_counter >= 2 or
-            (self.last_target_position and 
-             ((abs(self.last_target_position[0] - target_pos[0]) > TILE_SIZE) or 
-              (abs(self.last_target_position[1] - target_pos[1]) > TILE_SIZE)))
-        )
-        
-        if should_update_path and hasattr(player, 'level'):
-            # Find path to player
-            self.path = self.find_path(
-                self.rect.centerx, 
-                self.rect.centery, 
-                player.rect.centerx, 
-                player.rect.centery,
-                player.level
-            )
-            
-            # Reset counters
-            self.path_update_timer = 0
-            self.movement_failed_counter = 0
-            self.last_target_position = target_pos
-            
-            # If pathfinding fails, use direct movement
-            if not self.path and distance > 0:
-                dx = dx / distance
-                dy = dy / distance
-                self.velocity_x = dx * self.speed
-                self.velocity_y = dy * self.speed
-                
-                if abs(dx) > abs(dy):
-                    self.facing = 'right' if dx > 0 else 'left'
-                else:
-                    self.facing = 'down' if dy > 0 else 'up'
-                return
-        else:
-            # Increment timer
-            self.path_update_timer += 1
-        
-        # If no path, use direct movement
-        if not self.path:
-            if distance > 0:
-                dx = dx / distance
-                dy = dy / distance
-                self.velocity_x = dx * self.speed
-                self.velocity_y = dy * self.speed
-                
-                if abs(dx) > abs(dy):
-                    self.facing = 'right' if dx > 0 else 'left'
-                else:
-                    self.facing = 'down' if dy > 0 else 'up'
-            return
-        
-        # Follow the path if we have one
-        next_point = self.path[0]
-        
-        # Calculate direction to next path point
-        dx = next_point[0] - self.rect.centerx
-        dy = next_point[1] - self.rect.centery
-        point_distance = math.sqrt(dx * dx + dy * dy)
-        
-        # If we're close enough to this point, move to the next one
-        if point_distance < self.speed:
-            self.path.pop(0)
-            # If no more points, use direct movement
-            if not self.path:
-                if distance > 0:
-                    dx = (player.rect.centerx - self.rect.centerx) / distance
-                    dy = (player.rect.centery - self.rect.centery) / distance
-                    self.velocity_x = dx * self.speed
-                    self.velocity_y = dy * self.speed
-                    
-                    if abs(dx) > abs(dy):
-                        self.facing = 'right' if dx > 0 else 'left'
-                    else:
-                        self.facing = 'down' if dy > 0 else 'up'
-                # Force path recalculation on next update
-                self.path_update_timer = 999
-                return
-            
-            # Use the next point in the path
-            next_point = self.path[0]
-            dx = next_point[0] - self.rect.centerx
-            dy = next_point[1] - self.rect.centery
-            point_distance = math.sqrt(dx * dx + dy * dy)
-        
-        # Move toward the next point in the path
-        if point_distance > 0:
-            dx = dx / point_distance
-            dy = dy / point_distance
-            self.velocity_x = dx * self.speed
-            self.velocity_y = dy * self.speed
-            
-            if abs(dx) > abs(dy):
-                self.facing = 'right' if dx > 0 else 'left'
-            else:
-                self.facing = 'down' if dy > 0 else 'up'
-                
     def take_damage(self, amount):
         """Override the parent take_damage method to make boss aggressive when hit"""
         # Set the has_spotted_player flag to True when boss takes damage
@@ -995,95 +899,180 @@ class Boss(Enemy):
             self.current_state = 'special'
             self.frame = 0  # Reset animation frame
             
-            # Level 2 boss has projectile attack
+            # Level 2 boss special attack: 3 projectiles in a cone
             if self.level == 2:
-                # Calculate normalized direction vector to player
+                # Calculate direction to player
                 dx = player.rect.centerx - self.rect.centerx
                 dy = player.rect.centery - self.rect.centery
-                length = math.sqrt(dx*dx + dy*dy)
+                distance = math.sqrt(dx * dx + dy * dy)
                 
-                if length > 0:
-                    # Normalize
-                    dx = dx / length
-                    dy = dy / length
-                else:
-                    # Default direction if player is exactly at the same position
-                    dx, dy = 0, -1  # Up
-                
-                # Create center projectile (directly at player)
-                center_dx, center_dy = dx, dy
-                
-                # Create perpendicular vector for creating the left/right projectiles
-                # Perpendicular to (dx, dy) is (-dy, dx) or (dy, -dx)
-                perp_dx, perp_dy = -dy, dx
-                
-                # Calculate rotated vectors for left and right projectiles
-                # Left = center rotated slightly towards perpendicular
-                # Right = center rotated slightly away from perpendicular
-                rotation_factor = 0.5  # Increased from 0.3 to make the spread more obvious
-                
-                # Left projectile - rotate towards perpendicular
-                left_dx = center_dx + perp_dx * rotation_factor
-                left_dy = center_dy + perp_dy * rotation_factor
-                # Normalize
-                left_length = math.sqrt(left_dx*left_dx + left_dy*left_dy)
-                left_dx = left_dx / left_length
-                left_dy = left_dy / left_length
-                
-                # Right projectile - rotate away from perpendicular
-                right_dx = center_dx - perp_dx * rotation_factor
-                right_dy = center_dy - perp_dy * rotation_factor
-                # Normalize
-                right_length = math.sqrt(right_dx*right_dx + right_dy*right_dy)
-                right_dx = right_dx / right_length
-                right_dy = right_dy / right_length
-                
-                # Print for debugging
-                print(f"Player dir: ({dx:.2f}, {dy:.2f})")
-                print(f"Center: ({center_dx:.2f}, {center_dy:.2f})")
-                print(f"Left: ({left_dx:.2f}, {left_dy:.2f})")
-                print(f"Right: ({right_dx:.2f}, {right_dy:.2f})")
-                
-                # Create the projectiles with different colors
-                # Center projectile - offset slightly ahead of the others and use brighter color
-                center_projectile = BossProjectile(
-                    self.rect.centerx + center_dx * 10,  # Offset slightly ahead 
-                    self.rect.centery + center_dy * 10, 
-                    (center_dx, center_dy), 
-                    1.4, 
-                    self.damage * 1.5, 
-                    color=(20, 150, 255)  # Brighter blue
-                )
-                
-                left_projectile = BossProjectile(
-                    self.rect.centerx, 
-                    self.rect.centery, 
-                    (left_dx, left_dy), 
-                    1.4, 
-                    self.damage * 1.5, 
-                    color=(255, 0, 255)  # Magenta
-                )
-                
-                right_projectile = BossProjectile(
-                    self.rect.centerx, 
-                    self.rect.centery, 
-                    (right_dx, right_dy), 
-                    1.4, 
-                    self.damage * 1.5, 
-                    color=(255, 165, 0)  # Orange
-                )
-                
-                # Add to projectile group
-                self.projectiles.add(center_projectile, left_projectile, right_projectile)
-                
-                return False
+                if distance > 0:
+                    # Normalize direction
+                    dx = dx / distance
+                    dy = dy / distance
+                    
+                    # Create 3 projectiles in a cone (35 degree spread)
+                    angle = math.atan2(dy, dx)
+                    spread = math.radians(35)  # 35 degree spread
+                    
+                    # Center projectile directly at player
+                    self.projectiles.append(BossProjectile(
+                        self.rect.centerx, 
+                        self.rect.centery,
+                        (dx, dy),
+                        self.damage * 1.5  # 50% damage increase for special attack
+                    ))
+                    
+                    # Left projectile
+                    left_angle = angle - spread / 2
+                    left_dx = math.cos(left_angle)
+                    left_dy = math.sin(left_angle)
+                    self.projectiles.append(BossProjectile(
+                        self.rect.centerx, 
+                        self.rect.centery,
+                        (left_dx, left_dy),
+                        self.damage * 1.5
+                    ))
+                    
+                    # Right projectile
+                    right_angle = angle + spread / 2
+                    right_dx = math.cos(right_angle)
+                    right_dy = math.sin(right_angle)
+                    self.projectiles.append(BossProjectile(
+                        self.rect.centerx, 
+                        self.rect.centery,
+                        (right_dx, right_dy),
+                        self.damage * 1.5
+                    ))
+                    
+                return True  # Attack executed
             else:
-                # Other bosses use the original special attack
+                # Original boss attack for other levels
                 damage_multiplier = 1 + (self.phase * 0.5)  # Damage increases with phase
                 return player.take_damage(self.damage * damage_multiplier)
         return False
         
+    def move_towards_player(self, player):
+        """Move towards player using enhanced pathfinding for boss"""
+        # Check if we need to update the path
+        target_pos = (player.rect.centerx, player.rect.centery)
+        
+        # Bosses update their path more frequently and with more aggressive parameters
+        should_update_path = (
+            not self.path or 
+            (self.last_target_position and 
+             ((abs(self.last_target_position[0] - target_pos[0]) > TILE_SIZE) or  # More sensitive to player movement
+              (abs(self.last_target_position[1] - target_pos[1]) > TILE_SIZE))) or
+            self.path_update_timer >= (self.path_update_frequency // 2) or  # Update twice as frequently
+            self.movement_failed_counter >= (self.max_movement_failures // 2)  # Less tolerant of failures
+        )
+        
+        if should_update_path and hasattr(player, 'level'):
+            # Find path to player with enhanced options for boss
+            self.path = self.find_path(
+                self.rect.centerx, 
+                self.rect.centery, 
+                player.rect.centerx, 
+                player.rect.centery,
+                player.level
+            )
+            
+            # Reset timer and counters
+            self.path_update_timer = 0
+            self.movement_failed_counter = 0
+            self.last_target_position = target_pos
+        else:
+            # Increment timer
+            self.path_update_timer += 1
+        
+        # If we have a path, follow it
+        if self.path:
+            # Get the next point in the path
+            next_point = self.path[0]
+            
+            # Calculate direction to next point
+            dx = next_point[0] - self.rect.centerx
+            dy = next_point[1] - self.rect.centery
+            distance = math.sqrt(dx * dx + dy * dy)
+            
+            # If we've reached this point (or close enough), move to the next point
+            if distance < self.speed:
+                self.path.pop(0)
+                # If path is now empty, recalculate immediately for bosses
+                if not self.path:
+                    self.path = self.find_path(
+                        self.rect.centerx, 
+                        self.rect.centery, 
+                        player.rect.centerx, 
+                        player.rect.centery,
+                        player.level
+                    )
+                    
+                    # If we still couldn't find a path, use direct movement
+                    if not self.path:
+                        dx = player.rect.centerx - self.rect.centerx
+                        dy = player.rect.centery - self.rect.centery
+                        distance = math.sqrt(dx * dx + dy * dy)
+                        
+                        if distance > 0:
+                            dx = dx / distance
+                            dy = dy / distance
+                            self.velocity_x = dx * self.speed
+                            self.velocity_y = dy * self.speed
+                            
+                            # Update facing direction based on movement
+                            if abs(dx) > abs(dy):
+                                self.facing = 'right' if dx > 0 else 'left'
+                            else:
+                                self.facing = 'down' if dy > 0 else 'up'
+                        return
+                # Continue to next iteration if we have more path points
+                if self.path:
+                    next_point = self.path[0]
+                    dx = next_point[0] - self.rect.centerx
+                    dy = next_point[1] - self.rect.centery
+                    distance = math.sqrt(dx * dx + dy * dy)
+            
+            # Move towards next point
+            if distance > 0:
+                dx = dx / distance
+                dy = dy / distance
+                self.velocity_x = dx * self.speed
+                self.velocity_y = dy * self.speed
+                
+                # Update facing direction based on movement
+                if abs(dx) > abs(dy):
+                    self.facing = 'right' if dx > 0 else 'left'
+                else:
+                    self.facing = 'down' if dy > 0 else 'up'
+        else:
+            # If no path found, try to move directly towards player
+            dx = player.rect.centerx - self.rect.centerx
+            dy = player.rect.centery - self.rect.centery
+            distance = math.sqrt(dx * dx + dy * dy)
+            
+            if distance > 0:
+                dx = dx / distance
+                dy = dy / distance
+                self.velocity_x = dx * self.speed
+                self.velocity_y = dy * self.speed
+                
+                # Update facing direction based on movement
+                if abs(dx) > abs(dy):
+                    self.facing = 'right' if dx > 0 else 'left'
+                else:
+                    self.facing = 'down' if dy > 0 else 'up'
+
     def update(self, player):
+        # Update projectiles first
+        for projectile in self.projectiles[:]:
+            if projectile.update():
+                self.projectiles.remove(projectile)
+            elif projectile.rect.colliderect(player.hitbox):
+                player.take_damage(projectile.damage)
+                self.projectiles.remove(projectile)
+        
+        # Override the standard update method to prevent patrolling
         # Calculate distance to player
         dx = player.rect.centerx - self.rect.centerx
         dy = player.rect.centery - self.rect.centery
@@ -1092,65 +1081,87 @@ class Boss(Enemy):
         # Current time for cooldown calculations
         current_time = pygame.time.get_ticks()
         
-        # Always mark that boss has spotted player if within detection range
-        # For level 2 boss, increase detection range substantially
-        detection_range = self.detection_range * 2 if self.level == 2 else self.detection_range
-        
-        if distance <= detection_range:
-            self.has_spotted_player = True
-        
-        # Level 2 boss: use special attack when player is in range but not in melee range
-        # (to avoid spamming when in close combat)
-        if self.level == 2 and self.has_spotted_player and distance > self.attack_range * 2:
+        # Try special attack occasionally for level 2 boss
+        if self.level == 2 and random.random() < 0.01:  # 1% chance each frame
             self.special_attack(player)
         
         # Update state based on distance to player
         if distance <= self.attack_range:
-            # Attack state - use melee attack when in range
+            # Attack state - same as regular enemies
             self.state = 'attack'
             self.velocity_x = 0
             self.velocity_y = 0
             self.attack(player)
-        elif self.has_spotted_player:
-            # Chase state - always chase once spotted
+            self.has_spotted_player = True  # Mark that boss has spotted player
+        elif distance <= self.detection_range or self.has_spotted_player:
+            # Chase state - same as regular enemies
             self.state = 'chase'
             self.current_state = 'walk'
             self.move_towards_player(player)
+            
+            # Mark that this boss has spotted the player
+            if distance <= self.detection_range:
+                self.has_spotted_player = True
         else:
-            # Idle state - stand still until player is spotted
+            # Idle state - bosses don't patrol, they stand still until they see the player
             self.state = 'idle'
             self.current_state = 'idle'
             self.velocity_x = 0
             self.velocity_y = 0
         
-        # Store old position to handle collisions
+        # Store the old position to revert if collision happens
         old_rect = self.rect.copy()
+        old_velocity_x = self.velocity_x
+        old_velocity_y = self.velocity_y
         
-        # Horizontal movement - simplified with no half-step attempts
+        # Ensure player has level attribute before checking collision
+        has_level = hasattr(player, 'level') and player.level is not None
+        
+        # Try moving horizontally
         self.rect.x += self.velocity_x
-        if hasattr(player, 'level') and player.level and player.level.check_collision(self.rect):
-            # Simply revert if collision occurs
-            self.rect.x = old_rect.x
-            # Try to move vertically if horizontal movement is blocked
-            if self.velocity_x != 0 and self.velocity_y == 0:
-                # Try to move up or down to get around the obstacle
-                if random.choice([True, False]):
-                    self.velocity_y = self.speed * 0.5
-                else:
-                    self.velocity_y = -self.speed * 0.5
         
-        # Vertical movement - simplified with no half-step attempts
+        # If collision occurs, try with half the velocity
+        if has_level and player.level.check_collision(self.rect):
+            self.rect = old_rect.copy()
+            self.rect.x += self.velocity_x * 0.5  # Try half speed
+            
+            # If still colliding, revert and mark as movement failure
+            if has_level and player.level.check_collision(self.rect):
+                self.rect = old_rect.copy()
+                self.velocity_x = 0
+                
+                if self.state == 'chase':
+                    self.movement_failed_counter += 1
+            else:
+                # Half speed worked, reset failure counter
+                self.movement_failed_counter = 0
+        else:
+            # Movement succeeded, reset failure counter
+            if old_velocity_x != 0 and self.state == 'chase':
+                self.movement_failed_counter = 0
+        
+        # Now try moving vertically
         self.rect.y += self.velocity_y
-        if hasattr(player, 'level') and player.level and player.level.check_collision(self.rect):
-            # Simply revert if collision occurs
-            self.rect.y = old_rect.y
-            # Try to move horizontally if vertical movement is blocked
-            if self.velocity_y != 0 and self.velocity_x == 0:
-                # Try to move left or right to get around the obstacle
-                if random.choice([True, False]):
-                    self.velocity_x = self.speed * 0.5
-                else:
-                    self.velocity_x = -self.speed * 0.5
+        
+        # If collision occurs, try with half the velocity
+        if has_level and player.level.check_collision(self.rect):
+            self.rect.y = old_rect.y  # Revert only Y position
+            self.rect.y += self.velocity_y * 0.5  # Try half speed
+            
+            # If still colliding, revert and mark as movement failure
+            if has_level and player.level.check_collision(self.rect):
+                self.rect.y = old_rect.y
+                self.velocity_y = 0
+                
+                if self.state == 'chase':
+                    self.movement_failed_counter += 1
+            else:
+                # Half speed worked, reset failure counter
+                self.movement_failed_counter = 0
+        else:
+            # Movement succeeded, reset failure counter
+            if old_velocity_y != 0 and self.state == 'chase':
+                self.movement_failed_counter = 0
         
         # Keep boss on screen
         self.rect.clamp_ip(pygame.display.get_surface().get_rect())
@@ -1158,7 +1169,7 @@ class Boss(Enemy):
         # Update animation
         self.animation_time += self.animation_speed
         
-        # If attack animation is done, go back to previous state
+        # If the attack animation is done, go back to previous state
         if self.current_state == 'attack' and self.animation_time >= len(self.animations[self.current_state][self.facing]):
             self.current_state = 'idle' if self.state == 'idle' else 'walk'
             self.animation_time = 0
@@ -1167,97 +1178,98 @@ class Boss(Enemy):
         self.frame = int(self.animation_time) % len(self.animations[self.current_state][self.facing])
         self.image = self.animations[self.current_state][self.facing][self.frame]
         
-        # Update projectiles
-        if self.level == 2:
-            self.projectiles.update()
-            
-            # Check for collisions with player
-            for projectile in self.projectiles:
-                if projectile.check_collision(player.hitbox):
-                    player.take_damage(projectile.damage)
-                    projectile.kill()
-        
         # Handle boss voice sound effect
-        if distance <= detection_range:
+        if hasattr(player, 'level') and player.level is not None:
+            # Boss has detected the player
             if not self.has_seen_player:
+                # First time seeing player, play voice sound
                 voice_file = f"effects/boss_{self.level}_voice"
                 self.sound_manager.play_sound(voice_file)
                 self.has_seen_player = True
                 self.last_voice_time = current_time
+                print(f"Boss has seen the player! Playing voice sound: {voice_file}")
             elif current_time - self.last_voice_time >= self.voice_cooldown:
+                # Repeat the voice sound every 4 seconds
                 voice_file = f"effects/boss_{self.level}_voice"
                 self.sound_manager.play_sound(voice_file)
                 self.last_voice_time = current_time
+                print(f"Boss repeating voice sound: {voice_file}")
         
-        # Update position history for trailing effect
+        # Update position history for trailing effect if enabled
         if self.trail_enabled:
             self.trail_frame_counter += 1
             if self.trail_frame_counter >= self.trail_update_rate:
                 self.trail_frame_counter = 0
-                visual_pos_x = self.rect.centerx
-                visual_pos_y = self.rect.centery
-                self.position_history.append((visual_pos_x, visual_pos_y))
-                
+                # Store current position and image
+                # Store the visual position (collision rect center adjusted for the visual offset)
+                visual_pos_x = self.rect.x - self.visual_offset_x
+                visual_pos_y = self.rect.y - self.visual_offset_y
+                self.position_history.append({
+                    'pos': (visual_pos_x, visual_pos_y),
+                    'image': self.image,
+                    'frame': self.frame,
+                    'state': self.current_state,
+                    'facing': self.facing
+                })
+                # Keep only the most recent positions
                 if len(self.position_history) > self.max_trail_length:
                     self.position_history.pop(0)
         
-        # Check health-based special attack for non-level-2 bosses
-        if self.level != 2:
-            health_percent = self.health / self.enemy_data['health']
+        # Check for special attack conditions based on health percentage
+        health_percent = self.health / self.enemy_data['health']
+        
+        if health_percent < 0.3:
+            # Low health - more aggressive, faster, special attacks more often
+            self.attack_cooldown = 500  # ms
+            self.speed = self.enemy_data['speed'] * 1.5
+            self.damage = int(self.enemy_data['damage'] * 1.5)
             
-            if health_percent < 0.3:
-                self.attack_cooldown = 500
-                self.speed = self.enemy_data['speed'] * 1.5
-                self.damage = int(self.enemy_data['damage'] * 1.5)
-                if random.random() < 0.05:
-                    self.special_attack(player)
-            elif health_percent < 0.6:
-                self.attack_cooldown = 750
-                self.speed = self.enemy_data['speed'] * 1.2
-                self.damage = int(self.enemy_data['damage'] * 1.2)
-                if random.random() < 0.03:
-                    self.special_attack(player)
-
+            # Chance to do special attack
+            if random.random() < 0.05:
+                self.special_attack(player)
+        elif health_percent < 0.6:
+            # Medium health - somewhat aggressive
+            self.attack_cooldown = 750  # ms
+            self.speed = self.enemy_data['speed'] * 1.2
+            self.damage = int(self.enemy_data['damage'] * 1.2)
+            
+            # Lower chance for special attack
+            if random.random() < 0.03:
+                self.special_attack(player)
+        
     def draw(self, surface):
-        # Draw the boss character
-        # Calculate position with visual offset
-        draw_x = self.rect.x - self.visual_offset_x
-        draw_y = self.rect.y - self.visual_offset_y
-        
-        # Draw boss character
-        surface.blit(self.image, (draw_x, draw_y))
-        
-        # Draw trailing effect for level 1 and 2 bosses
+        # Draw trailing effect if enabled (for level 1 boss)
         if self.trail_enabled and self.position_history:
-            # Draw position history for trailing effect
-            for i, (hist_x, hist_y) in enumerate(reversed(self.position_history)):
-                # Calculate size of trail dot based on position in history
-                # Make the most recent ones bigger
-                size = max(5, 15 - (i * 2))
+            # Draw trails from oldest to newest with increasing opacity
+            for i, pos_data in enumerate(self.position_history):
+                # Calculate alpha based on position in history (oldest = most transparent)
+                alpha = int(((i + 1) / self.max_trail_length) * 180)  # Max alpha of 180 (semi-transparent)
                 
-                # Calculate alpha (transparency) based on position in history
-                # Make the oldest ones more transparent
-                alpha = max(20, 150 - (i * 15))
+                # Get the image for this trail position
+                trail_image = pos_data['image']
                 
-                # Create a surface for the trail dot with alpha channel
-                dot_surface = pygame.Surface((size, size), pygame.SRCALPHA)
+                # Create a copy of the image with adjusted alpha
+                ghost_image = trail_image.copy()
+                ghost_image.set_alpha(alpha)
                 
-                # Set the color with alpha
-                color_with_alpha = (*self.trail_color, alpha)
+                # Create a colored trail effect
+                if hasattr(self, 'trail_color'):
+                    # Create a surface the same size as the trail image
+                    colored_surface = pygame.Surface(ghost_image.get_size(), pygame.SRCALPHA)
+                    # Fill with the trail color
+                    colored_surface.fill((*self.trail_color, alpha))
+                    # Apply the colored surface using a mask of the ghost image
+                    ghost_image.blit(colored_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
                 
-                # Draw the circle on the dot surface
-                pygame.draw.circle(dot_surface, color_with_alpha, (size//2, size//2), size//2)
-                
-                # Blit the dot to the main surface
-                surface.blit(dot_surface, (hist_x - size//2, hist_y - size//2))
-                
-        # Draw projectiles for level 2 boss
-        if self.level == 2:
-            for projectile in self.projectiles:
-                surface.blit(projectile.image, projectile.rect)
-                
-        # Uncomment to show boss hitbox for debugging
-        # pygame.draw.rect(surface, (255, 0, 0), self.rect, 1)
+                # Draw the ghost image at the historical position (already contains visual offset)
+                pos = pos_data['pos']
+                surface.blit(ghost_image, pos)
+        
+        # Calculate draw position (visual position, not collision box)
+        draw_pos = (self.rect.x - self.visual_offset_x, self.rect.y - self.visual_offset_y)
+        
+        # Draw the current image (fully opaque) at the adjusted position
+        surface.blit(self.image, draw_pos)
         
         # Draw health bar
         health_bar_width = 60  # Wider than regular enemies
@@ -1265,10 +1277,14 @@ class Boss(Enemy):
         health_ratio = self.health / self.enemy_data['health']
         
         # Position health bar relative to the visual representation
-        health_bar_x = draw_x + (self.image.get_width() - health_bar_width) // 2
-        health_bar_y = draw_y - 12
+        health_bar_x = draw_pos[0] + (self.image.get_width() - health_bar_width) // 2
+        health_bar_y = draw_pos[1] - 12
         
         pygame.draw.rect(surface, RED, (health_bar_x, health_bar_y,
                                       health_bar_width, health_bar_height))
         pygame.draw.rect(surface, GREEN, (health_bar_x, health_bar_y,
-                                        health_bar_width * health_ratio, health_bar_height)) 
+                                        health_bar_width * health_ratio, health_bar_height))
+        
+        # Draw projectiles
+        for projectile in self.projectiles:
+            projectile.draw(surface) 
