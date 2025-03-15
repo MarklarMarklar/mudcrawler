@@ -190,9 +190,12 @@ class KeyPickup(BasePickup):
 
 class WeaponPickup(BasePickup):
     """Pickup for special weapons like the fire sword"""
-    def __init__(self, x, y, weapon_type="fire_sword"):
-        super().__init__(x, y)
+    def __init__(self, x, y, weapon_type="fire_sword", scale=1.0):
+        # Apply the scale to the size before passing to the BasePickup
+        pickup_size = int(TILE_SIZE // 2 * scale)
+        super().__init__(x, y, size=pickup_size)
         self.weapon_type = weapon_type
+        self.scale = scale  # Store the scale for reference
         
         # Try to load weapon texture
         try:
@@ -202,7 +205,9 @@ class WeaponPickup(BasePickup):
                 weapon_path = os.path.join(WEAPON_SPRITES_PATH, f"{weapon_type}.png")
                 
             if os.path.exists(weapon_path):
-                self.weapon_texture = self.asset_manager.load_image(weapon_path, scale=(self.size, self.size))
+                # Apply the scaling factor to the texture
+                scaled_size = int(self.size * scale)
+                self.weapon_texture = self.asset_manager.load_image(weapon_path, scale=(scaled_size, scaled_size))
             else:
                 print(f"{weapon_type} texture does not exist: {weapon_path}")
                 self.weapon_texture = None

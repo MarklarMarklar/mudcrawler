@@ -91,6 +91,11 @@ class Room:
         # Blood puddles
         self.blood_puddles = []
         
+        # Special flags for fire sword chest
+        self.fire_sword_chest_x = None
+        self.fire_sword_chest_y = None
+        self.has_fire_sword_chest = False
+        
         # Generate room layout
         self.generate_room()
         
@@ -667,7 +672,20 @@ class Room:
             self.tiles[y][x] = 0
             self.destroyable_walls[y][x] = False
             
-            # Determine what kind of pickup to spawn
+            # Check if this is the special fire sword chest
+            if self.has_fire_sword_chest and x == self.fire_sword_chest_x and y == self.fire_sword_chest_y:
+                # This is the fire sword chest - spawn the fire sword with a larger scale
+                center_x = x * TILE_SIZE + TILE_SIZE // 2
+                center_y = y * TILE_SIZE + TILE_SIZE // 2
+                
+                # Create a fire sword pickup with a 50% larger scale
+                fire_sword = WeaponPickup(center_x, center_y, "fire_sword", scale=1.5)
+                self.weapon_pickups.append(fire_sword)
+                
+                print(f"Room: Fire sword chest destroyed! Fire sword spawned at {center_x}, {center_y}")
+                return True
+            
+            # Regular destroyable wall - normal loot drop logic
             pickup_roll = random.random()
             center_x = x * TILE_SIZE + TILE_SIZE // 2
             center_y = y * TILE_SIZE + TILE_SIZE // 2
@@ -680,10 +698,6 @@ class Room:
             elif pickup_roll < 0.5:
                 self.arrow_pickups.append(ArrowPickup(center_x, center_y))
                 print(f"Room: Arrow pickup spawned at {center_x}, {center_y} from destroyed wall")
-            # 2% chance to drop a fire sword in levels 2+
-            elif pickup_roll < 0.20 and self.level_number >= 2:
-                self.weapon_pickups.append(WeaponPickup(center_x, center_y, "fire_sword"))
-                print(f"Room: Fire sword spawned from defeated enemy at {center_x}, {center_y}")
             
             print(f"Room: Successfully destroyed wall at {x},{y}")
             return True
@@ -967,6 +981,9 @@ class Room:
                 
                 if self.tiles[y][x] == 1:  # Wall
                     if self.destroyable_walls[y][x] and level and level.destroyable_wall_textures:
+                        # Check if this is the special fire sword chest
+                        is_fire_sword_chest = self.has_fire_sword_chest and x == self.fire_sword_chest_x and y == self.fire_sword_chest_y
+                        
                         # Randomly select a destroyable wall texture if not already cached
                         # We'll use a consistent hash based on the coordinates to keep the same texture
                         # for the same wall tile within a session
@@ -976,8 +993,17 @@ class Room:
                         try:
                             # Load and draw the destroyable wall texture
                             if os.path.exists(destroyable_wall_texture):
-                                texture = level.asset_manager.load_image(destroyable_wall_texture, scale=(TILE_SIZE, TILE_SIZE))
-                                surface.blit(texture, (tile_x, tile_y))
+                                if is_fire_sword_chest:
+                                    # Scale up by 150% for fire sword chest
+                                    scaled_size = int(TILE_SIZE * 1.5)
+                                    texture = level.asset_manager.load_image(destroyable_wall_texture, scale=(scaled_size, scaled_size))
+                                    # Draw centered at the tile position
+                                    offset = (scaled_size - TILE_SIZE) // 2
+                                    surface.blit(texture, (tile_x - offset, tile_y - offset))
+                                else:
+                                    # Regular destroyable wall
+                                    texture = level.asset_manager.load_image(destroyable_wall_texture, scale=(TILE_SIZE, TILE_SIZE))
+                                    surface.blit(texture, (tile_x, tile_y))
                             else:
                                 # Fallback to regular wall if texture loading fails
                                 surface.blit(tile_images['wall'], (tile_x, tile_y))
@@ -1170,14 +1196,23 @@ class Room:
     def drop_fire_sword(self):
         """Drop a fire sword when the level 2 boss is defeated"""
         if self.room_type == 'boss' and self.boss and self.boss.health <= 0 and self.level_number == 2 and not self.fire_sword_dropped:
-            # Place the fire sword where the boss was
-            boss_center_x = self.boss.rect.centerx
-            boss_center_y = self.boss.rect.centery
+            # Instead of dropping the fire sword directly, create a treasure chest in the middle of the room
             
-            # Add the fire sword pickup to the room
-            self.weapon_pickups.append(WeaponPickup(boss_center_x, boss_center_y, "fire_sword"))
+            # Calculate the center of the room in tile coordinates
+            center_x = self.width // 2
+            center_y = self.height // 2
+            
+            # Mark this position as a destroyable wall (treasure chest)
+            self.tiles[center_y][center_x] = 1  # Wall tile
+            self.destroyable_walls[center_y][center_x] = True  # Destroyable
+            
+            # Store the position of this special chest
+            self.fire_sword_chest_x = center_x
+            self.fire_sword_chest_y = center_y
+            self.has_fire_sword_chest = True
             self.fire_sword_dropped = True
-            print(f"Level 2 boss defeated! A fire sword has been dropped at {boss_center_x}, {boss_center_y}")
+            
+            print(f"Level 2 boss defeated! A treasure chest has appeared in the center of the room at {center_x}, {center_y}")
             
     def check_exit_collision(self, rect):
         """Check if player is touching the exit door"""
