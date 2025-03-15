@@ -636,7 +636,7 @@ class WeaponManager:
             if self.has_fire_sword:
                 self.sound_manager.play_sound("effects/fire_sword")
             else:
-                self.sound_manager.play_sound("effects/sword")
+                self.sound_manager.play_sound("effects/sword_attack")
             
             # Return the hitbox for collision detection
             return sword_hitbox
