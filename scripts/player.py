@@ -242,8 +242,8 @@ class Player(pygame.sprite.Sprite):
         # Handle walk sound state transitions - only play sounds if player is alive
         if self.health > 0:
             if previous_state == 'idle' and self.current_state == 'walk':
-                # Player started walking - play only the first 2 seconds of walking sound and loop it
-                self.walk_sound_channel = self.sound_manager.play_sound_portion("effects/walk", start_ms=0, duration_ms=2000, loop=-1)
+                # Player started walking - play the new shorter walking sound and loop it
+                self.walk_sound_channel = self.sound_manager.play_sound("effects/walk", loop=-1)
             elif previous_state == 'walk' and self.current_state == 'idle':
                 # Player stopped walking - stop sound
                 self.sound_manager.stop_sound_channel(self.walk_sound_channel)
