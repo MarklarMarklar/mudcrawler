@@ -67,7 +67,7 @@ BOSS_TYPES = {
     'level7': {'name': 'Demon Lord', 'health': 500, 'damage': 60, 'speed': 3},
     'level8': {'name': 'Dragon', 'health': 550, 'damage': 65, 'speed': 4},
     'level9': {'name': 'Shadow King', 'health': 600, 'damage': 70, 'speed': 4},
-    'level10': {'name': 'Dark Lord', 'health': 700, 'damage': 75, 'speed': 5}
+    'level10': {'name': 'Dark Lord', 'health': 700, 'damage': 10, 'speed': 1}
 }
 
 # Game States
