@@ -703,11 +703,6 @@ class Enemy(pygame.sprite.Sprite):
             
             # If just resurrected
             if current_time >= self.resurrection_time and current_time <= self.resurrection_time + 200:
-                # Play resurrection sound exactly once when resurrection starts
-                if not self.resurrection_sound_played:
-                    self.sound_manager.play_sound("effects/respawn")
-                    self.resurrection_sound_played = True
-                
                 # Create visual effect for resurrection
                 for _ in range(10):  # Increased particles for more dramatic effect
                     offset_x = random.randint(-TILE_SIZE//2, TILE_SIZE//2)
@@ -767,6 +762,13 @@ class Enemy(pygame.sprite.Sprite):
         
     def resurrect(self):
         """Resurrect the minion after the blood puddle state"""
+        # Play resurrection sound effect
+        try:
+            self.sound_manager.play_sound("effects/respawn")
+            print("Playing resurrection sound")  # Debug line
+        except Exception as e:
+            print(f"Error playing resurrection sound: {e}")
+            
         # Restore original texture
         if self.original_texture:
             self.image = self.original_texture
@@ -1420,11 +1422,6 @@ class Boss(Enemy):
             
             # If just resurrected
             if current_time >= self.resurrection_time and current_time <= self.resurrection_time + 200:
-                # Play resurrection sound exactly once when resurrection starts
-                if not self.resurrection_sound_played:
-                    self.sound_manager.play_sound("effects/respawn")
-                    self.resurrection_sound_played = True
-                
                 # Create visual effect for resurrection
                 for _ in range(10):  # Increased particles for more dramatic effect
                     offset_x = random.randint(-TILE_SIZE//2, TILE_SIZE//2)
