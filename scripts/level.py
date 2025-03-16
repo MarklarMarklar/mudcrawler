@@ -2016,14 +2016,14 @@ class Level:
                     try:
                         # Try to use a nice font
                         font_path = os.path.join(ASSET_PATH, "fonts/PixelatedEleganceRegular-ovyAA.ttf")
-                        font = pygame.font.Font(font_path, 28)
+                        font = pygame.font.Font(font_path, 16)
                     except:
                         # Fallback to system font
                         font = pygame.font.Font(None, 32)
                         
                     # Create text surface
                     text = font.render(self.notification_text, True, self.notification_color)
-                    text_rect = text.get_rect(center=(WINDOW_WIDTH//2, 80))
+                    text_rect = text.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2))  # Center of the screen
                     
                     # Create background for better readability
                     bg_rect = text_rect.inflate(40, 20)

@@ -196,7 +196,7 @@ class Enemy(pygame.sprite.Sprite):
         # AI behavior
         self.state = 'idle'
         self.detection_range = TILE_SIZE * 5
-        self.attack_range = TILE_SIZE * 1.5
+        self.attack_range = TILE_SIZE * 1
         self.last_attack_time = 0
         self.attack_cooldown = 1000  # 1 second
         self.has_spotted_player = False  # Track if enemy has seen the player
