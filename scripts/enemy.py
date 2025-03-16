@@ -84,6 +84,7 @@ class Enemy(pygame.sprite.Sprite):
     def __init__(self, x, y, enemy_type, level, level_instance=None):
         super().__init__()
         self.asset_manager = get_asset_manager()
+        self.sound_manager = get_sound_manager()
         self.enemy_data = ENEMY_TYPES[f'level{level}']
         self.level_instance = level_instance
         
@@ -230,6 +231,7 @@ class Enemy(pygame.sprite.Sprite):
         self.original_texture = None  # Store the original texture for restoration
         self.blood_puddle_texture = None  # Blood puddle texture when "dead"
         self.max_health = self.health  # Store max health for restoration
+        self.resurrection_sound_played = False  # Track if resurrection sound has played
         
     def take_damage(self, amount):
         self.health -= amount
@@ -549,39 +551,14 @@ class Enemy(pygame.sprite.Sprite):
         if self.is_dead:
             current_time = pygame.time.get_ticks()
             
-            # Add visual effects while in blood puddle state
-            if current_time % 20 == 0:  # Add particles occasionally
-                # Calculate progress (0 to 1, where 0 = just died and 1 = about to respawn)
-                time_left = self.resurrection_time - current_time
-                progress = 1.0 - (time_left / 4000.0)  # 4000 = respawn time
-                
-                # Add more particle effects as resurrection gets closer
-                if progress > 0.5 and random.random() < progress * 0.3:
-                    # Create pulsing glow effect
-                    pulse_size = TILE_SIZE * (0.3 + 0.5 * progress + 0.2 * math.sin(current_time / 100))
-                    alpha = int(50 + 100 * progress)
-                    glow_color = (100 + int(50 * progress), 0, 180 + int(75 * progress), alpha)
-                    
-                    # Draw directly to the screen for simplicity
-                    # Create a surface with the glow
-                    glow_surface = pygame.Surface((pulse_size * 2, pulse_size * 2), pygame.SRCALPHA)
-                    pygame.draw.circle(glow_surface, glow_color, (pulse_size, pulse_size), pulse_size)
-                    
-                    # Draw the glow
-                    screen = pygame.display.get_surface()
-                    screen.blit(glow_surface, (self.rect.centerx - pulse_size, self.rect.centery - pulse_size), 
-                               special_flags=pygame.BLEND_RGBA_ADD)
+            # Calculate resurrection progress (0 to 1)
+            time_left = self.resurrection_time - current_time
+            progress = 1.0 - (time_left / 4000.0)  # 4000 = respawn time in ms
             
             # If it's time to resurrect
             if current_time >= self.resurrection_time:
                 self.resurrect()
-                # Create visual effect for resurrection
-                for _ in range(5):  # Increased number of particles
-                    offset_x = random.randint(-TILE_SIZE//2, TILE_SIZE//2)
-                    offset_y = random.randint(-TILE_SIZE//2, TILE_SIZE//2)
-                    size = random.randint(5, 15)
-                    pygame.draw.circle(pygame.display.get_surface(), (150, 0, 255), 
-                                      (self.rect.centerx + offset_x, self.rect.centery + offset_y), size)
+            
             # Skip the rest of the update if still in blood puddle state
             return
             
@@ -686,8 +663,69 @@ class Enemy(pygame.sprite.Sprite):
     def draw(self, surface):
         surface.blit(self.image, self.rect)
         
+        # Draw resurrection effects if in blood puddle state
+        if self.is_dead:
+            current_time = pygame.time.get_ticks()
+            
+            # Calculate resurrection progress (0 to 1)
+            time_left = self.resurrection_time - current_time
+            progress = 1.0 - (time_left / 4000.0)  # 4000 = respawn time in ms
+            
+            # Add resurrection visual effects
+            if progress > 0.5:  # Start effects at halfway point
+                # Create a pulsing glow effect that grows as resurrection approaches
+                pulse_size = TILE_SIZE * (0.3 + 0.7 * progress + 0.2 * math.sin(current_time / 100))
+                
+                # Create a surface with transparency for the glow
+                glow_surface = pygame.Surface((pulse_size * 2, pulse_size * 2), pygame.SRCALPHA)
+                
+                # Color transitions from dark purple to bright purple based on progress
+                alpha = int(40 + 100 * progress)
+                glow_color = (100 + int(50 * progress), 0, 180 + int(75 * progress), alpha)
+                pygame.draw.circle(glow_surface, glow_color, (pulse_size, pulse_size), pulse_size)
+                
+                # Blit the glow at the enemy position
+                surface.blit(glow_surface, (self.rect.centerx - pulse_size, self.rect.centery - pulse_size))
+                
+                # Add particle effects as resurrection gets closer
+                if random.random() < 0.1 * progress:
+                    for _ in range(int(3 * progress)):
+                        # Calculate random position around the blood puddle
+                        angle = random.uniform(0, math.pi * 2)
+                        dist = random.uniform(0, TILE_SIZE * 0.5)
+                        spark_x = self.rect.centerx + dist * math.cos(angle)
+                        spark_y = self.rect.centery + dist * math.sin(angle)
+                        spark_size = random.randint(2, 4)
+                        
+                        # Draw the spark with a purple color
+                        spark_color = (180 + int(75 * progress), 50, 255)
+                        pygame.draw.circle(surface, spark_color, (int(spark_x), int(spark_y)), spark_size)
+            
+            # If just resurrected
+            if current_time >= self.resurrection_time and current_time <= self.resurrection_time + 200:
+                # Play resurrection sound exactly once when resurrection starts
+                if not self.resurrection_sound_played:
+                    self.sound_manager.play_sound("effects/respawn")
+                    self.resurrection_sound_played = True
+                
+                # Create visual effect for resurrection
+                for _ in range(10):  # Increased particles for more dramatic effect
+                    offset_x = random.randint(-TILE_SIZE//2, TILE_SIZE//2)
+                    offset_y = random.randint(-TILE_SIZE//2, TILE_SIZE//2)
+                    size = random.randint(5, 15)
+                    pygame.draw.circle(surface, (150, 0, 255), 
+                                      (self.rect.centerx + offset_x, self.rect.centery + offset_y), size)
+                    
+                # Add a larger pulse ring effect
+                for radius in range(10, TILE_SIZE, 5):
+                    alpha = max(10, 200 - radius * 2)
+                    ring_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+                    pygame.draw.circle(ring_surface, (150, 0, 255, alpha), (radius, radius), radius, 2)
+                    surface.blit(ring_surface, 
+                                 (self.rect.centerx - radius, self.rect.centery - radius))
+        
         # Draw health bar only if not in blood puddle state
-        if not self.is_dead:
+        else:
             health_bar_width = 50
             health_bar_height = 5
             health_ratio = self.health / self.enemy_data['health']
@@ -724,6 +762,8 @@ class Enemy(pygame.sprite.Sprite):
         # Mark as dead and set resurrection time (4 seconds from now)
         self.is_dead = True
         self.resurrection_time = pygame.time.get_ticks() + 4000
+        # Reset resurrection sound flag
+        self.resurrection_sound_played = False
         
     def resurrect(self):
         """Resurrect the minion after the blood puddle state"""
@@ -748,6 +788,7 @@ class Boss(Enemy):
     def __init__(self, x, y, level, level_instance=None):
         super().__init__(x, y, None, level, level_instance)
         self.asset_manager = get_asset_manager()
+        self.sound_manager = get_sound_manager()
         self.enemy_data = BOSS_TYPES[f'level{level}']
         self.level = level  # Explicitly save the level
         
@@ -1195,39 +1236,10 @@ class Boss(Enemy):
         if self.is_dead:
             current_time = pygame.time.get_ticks()
             
-            # Add visual effects while in blood puddle state
-            if current_time % 20 == 0:  # Add particles occasionally
-                # Calculate progress (0 to 1, where 0 = just died and 1 = about to respawn)
-                time_left = self.resurrection_time - current_time
-                progress = 1.0 - (time_left / 4000.0)  # 4000 = respawn time
-                
-                # Add more particle effects as resurrection gets closer
-                if progress > 0.5 and random.random() < progress * 0.3:
-                    # Create pulsing glow effect
-                    pulse_size = TILE_SIZE * (0.3 + 0.5 * progress + 0.2 * math.sin(current_time / 100))
-                    alpha = int(50 + 100 * progress)
-                    glow_color = (100 + int(50 * progress), 0, 180 + int(75 * progress), alpha)
-                    
-                    # Draw directly to the screen for simplicity
-                    # Create a surface with the glow
-                    glow_surface = pygame.Surface((pulse_size * 2, pulse_size * 2), pygame.SRCALPHA)
-                    pygame.draw.circle(glow_surface, glow_color, (pulse_size, pulse_size), pulse_size)
-                    
-                    # Draw the glow
-                    screen = pygame.display.get_surface()
-                    screen.blit(glow_surface, (self.rect.centerx - pulse_size, self.rect.centery - pulse_size), 
-                               special_flags=pygame.BLEND_RGBA_ADD)
-            
             # If it's time to resurrect
             if current_time >= self.resurrection_time:
                 self.resurrect()
-                # Create visual effect for resurrection
-                for _ in range(5):  # Increased number of particles
-                    offset_x = random.randint(-TILE_SIZE//2, TILE_SIZE//2)
-                    offset_y = random.randint(-TILE_SIZE//2, TILE_SIZE//2)
-                    size = random.randint(5, 15)
-                    pygame.draw.circle(pygame.display.get_surface(), (150, 0, 255), 
-                                      (self.rect.centerx + offset_x, self.rect.centery + offset_y), size)
+            
             # Skip the rest of the update if still in blood puddle state
             return
             
@@ -1275,8 +1287,9 @@ class Boss(Enemy):
         
         # Horizontal movement - simplified with no half-step attempts
         self.rect.x += self.velocity_x
+        
+        # If collision occurs, try with half the velocity
         if hasattr(player, 'level') and player.level and player.level.check_collision(self.rect):
-            # Simply revert if collision occurs
             self.rect.x = old_rect.x
             # Try to move vertically if horizontal movement is blocked
             if self.velocity_x != 0 and self.velocity_y == 0:
@@ -1366,48 +1379,109 @@ class Boss(Enemy):
                     self.special_attack(player)
 
     def draw(self, surface):
-        # Draw the boss character
-        # Calculate position with visual offset
-        draw_x = self.rect.x - self.visual_offset_x
-        draw_y = self.rect.y - self.visual_offset_y
-        
-        # Draw boss character
-        surface.blit(self.image, (draw_x, draw_y))
-        
-        # Draw trailing effect for level 1 and 2 bosses
-        if self.trail_enabled and self.position_history:
-            # Draw position history for trailing effect
-            for i, (hist_x, hist_y) in enumerate(reversed(self.position_history)):
-                # Calculate size of trail dot based on position in history
-                # Make the most recent ones bigger
-                size = max(5, 15 - (i * 2))
+        # Draw resurrection effects if in blood puddle state
+        if self.is_dead:
+            current_time = pygame.time.get_ticks()
+            
+            # Calculate resurrection progress (0 to 1)
+            time_left = self.resurrection_time - current_time
+            progress = 1.0 - (time_left / 4000.0)  # 4000 = respawn time in ms
+            
+            # Add resurrection visual effects
+            if progress > 0.5:  # Start effects at halfway point
+                # Create a pulsing glow effect that grows as resurrection approaches
+                pulse_size = TILE_SIZE * (0.3 + 0.7 * progress + 0.2 * math.sin(current_time / 100))
                 
-                # Calculate alpha (transparency) based on position in history
-                # Make the oldest ones more transparent
-                alpha = max(20, 150 - (i * 15))
+                # Create a surface with transparency for the glow
+                glow_surface = pygame.Surface((pulse_size * 2, pulse_size * 2), pygame.SRCALPHA)
                 
-                # Create a surface for the trail dot with alpha channel
-                dot_surface = pygame.Surface((size, size), pygame.SRCALPHA)
+                # Color transitions from dark purple to bright purple based on progress
+                alpha = int(40 + 100 * progress)
+                glow_color = (100 + int(50 * progress), 0, 180 + int(75 * progress), alpha)
+                pygame.draw.circle(glow_surface, glow_color, (pulse_size, pulse_size), pulse_size)
                 
-                # Set the color with alpha
-                color_with_alpha = (*self.trail_color, alpha)
+                # Blit the glow at the enemy position
+                surface.blit(glow_surface, (self.rect.centerx - pulse_size, self.rect.centery - pulse_size))
                 
-                # Draw the circle on the dot surface
-                pygame.draw.circle(dot_surface, color_with_alpha, (size//2, size//2), size//2)
+                # Add particle effects as resurrection gets closer
+                if random.random() < 0.1 * progress:
+                    for _ in range(int(3 * progress)):
+                        # Calculate random position around the blood puddle
+                        angle = random.uniform(0, math.pi * 2)
+                        dist = random.uniform(0, TILE_SIZE * 0.5)
+                        spark_x = self.rect.centerx + dist * math.cos(angle)
+                        spark_y = self.rect.centery + dist * math.sin(angle)
+                        spark_size = random.randint(2, 4)
+                        
+                        # Draw the spark with a purple color
+                        spark_color = (180 + int(75 * progress), 50, 255)
+                        pygame.draw.circle(surface, spark_color, (int(spark_x), int(spark_y)), spark_size)
+            
+            # If just resurrected
+            if current_time >= self.resurrection_time and current_time <= self.resurrection_time + 200:
+                # Play resurrection sound exactly once when resurrection starts
+                if not self.resurrection_sound_played:
+                    self.sound_manager.play_sound("effects/respawn")
+                    self.resurrection_sound_played = True
                 
-                # Blit the dot to the main surface
-                surface.blit(dot_surface, (hist_x - size//2, hist_y - size//2))
-        
-        # Draw projectiles for level 2 boss
-        if self.level == 2:
-            for projectile in self.projectiles:
-                surface.blit(projectile.image, projectile.rect)
-                
-        # Uncomment to show boss hitbox for debugging
-        # pygame.draw.rect(surface, (255, 0, 0), self.rect, 1)
-        
-        # Draw health bar only if not in blood puddle state
-        if not self.is_dead:
+                # Create visual effect for resurrection
+                for _ in range(10):  # Increased particles for more dramatic effect
+                    offset_x = random.randint(-TILE_SIZE//2, TILE_SIZE//2)
+                    offset_y = random.randint(-TILE_SIZE//2, TILE_SIZE//2)
+                    size = random.randint(5, 15)
+                    pygame.draw.circle(surface, (150, 0, 255), 
+                                      (self.rect.centerx + offset_x, self.rect.centery + offset_y), size)
+                    
+                # Add a larger pulse ring effect
+                for radius in range(10, TILE_SIZE, 5):
+                    alpha = max(10, 200 - radius * 2)
+                    ring_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+                    pygame.draw.circle(ring_surface, (150, 0, 255, alpha), (radius, radius), radius, 2)
+                    surface.blit(ring_surface, 
+                                 (self.rect.centerx - radius, self.rect.centery - radius))
+            
+            # Draw the blood puddle image
+            surface.blit(self.image, self.rect)
+            
+        else:
+            # Draw the boss character
+            # Calculate position with visual offset
+            draw_x = self.rect.x - self.visual_offset_x
+            draw_y = self.rect.y - self.visual_offset_y
+            
+            # Draw boss character
+            surface.blit(self.image, (draw_x, draw_y))
+            
+            # Draw trailing effect for level 1 and 2 bosses
+            if self.trail_enabled and self.position_history:
+                # Draw position history for trailing effect
+                for i, (hist_x, hist_y) in enumerate(reversed(self.position_history)):
+                    # Calculate size of trail dot based on position in history
+                    # Make the most recent ones bigger
+                    size = max(5, 15 - (i * 2))
+                    
+                    # Calculate alpha (transparency) based on position in history
+                    # Make the oldest ones more transparent
+                    alpha = max(20, 150 - (i * 15))
+                    
+                    # Create a surface for the trail dot with alpha channel
+                    dot_surface = pygame.Surface((size, size), pygame.SRCALPHA)
+                    
+                    # Set the color with alpha
+                    color_with_alpha = (*self.trail_color, alpha)
+                    
+                    # Draw the circle on the dot surface
+                    pygame.draw.circle(dot_surface, color_with_alpha, (size//2, size//2), size//2)
+                    
+                    # Blit the dot to the main surface
+                    surface.blit(dot_surface, (hist_x - size//2, hist_y - size//2))
+            
+            # Draw projectiles for level 2 boss
+            if self.level == 2:
+                for projectile in self.projectiles:
+                    surface.blit(projectile.image, projectile.rect)
+            
+            # Draw health bar
             health_bar_width = 60  # Wider than regular enemies
             health_bar_height = 6
             health_ratio = self.health / self.enemy_data['health']

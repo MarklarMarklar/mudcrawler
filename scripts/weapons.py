@@ -697,6 +697,7 @@ class WeaponManager:
         return hit_count
 
     def clear_arrows(self):
-        """Clear all arrows from the bow"""
-        self.bow.arrows = []
-        print("All arrows cleared")
+        """Remove all arrows when warping between levels or resetting the game"""
+        if hasattr(self, 'bow') and self.bow:
+            self.bow.arrows = []
+            print("Cleared all arrows")

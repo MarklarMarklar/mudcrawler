@@ -280,6 +280,13 @@ class Game:
                 # Print debug info on key press
                 print(f"Key pressed: {pygame.key.name(event.key)}")
                 
+                # DEVELOPMENT FEATURE: Level warping with F1-F10 keys
+                # This will be removed for the final release
+                if event.key >= pygame.K_F1 and event.key <= pygame.K_F10 and self.state == PLAYING:
+                    new_level = event.key - pygame.K_F1 + 1  # F1 = Level 1, F2 = Level 2, etc.
+                    self.warp_to_level(new_level)
+                    continue
+                
                 if event.key == pygame.K_ESCAPE:
                     if self.state == PLAYING:
                         print("Pausing game")
@@ -1231,6 +1238,37 @@ class Game:
         else:
             self.sound_manager.play_music('game')
             print(f"Playing standard game music for level {self.current_level}")
+
+    def warp_to_level(self, level_number):
+        """DEVELOPMENT FEATURE: Warps the player to the specified level"""
+        if level_number < 1 or level_number > 10:
+            print(f"Invalid level number: {level_number}")
+            return
+            
+        print(f"Warping to level {level_number}")
+        self.current_level = level_number
+        
+        # Create new level
+        self.level = Level(self.current_level)
+        
+        # Get valid player position
+        player_x, player_y = self.level.get_valid_player_start_position()
+        
+        # Reset player position
+        self.player.rect.centerx = player_x
+        self.player.rect.centery = player_y
+        self.player.level = self.level
+        
+        # Reset relevant game state
+        self.death_sequence_active = False
+        self.weapon_manager.clear_arrows()
+        self.particle_system = ParticleSystem()
+        
+        # Update music for the new level
+        self.play_level_appropriate_music()
+        
+        # Show level notification
+        self.level.show_notification(f"Level {self.current_level}", (255, 255, 0), 3000)
 
 if __name__ == "__main__":
     print("Initializing Mud Crawler game...")
