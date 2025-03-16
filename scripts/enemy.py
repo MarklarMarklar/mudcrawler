@@ -233,6 +233,9 @@ class Enemy(pygame.sprite.Sprite):
         self.max_health = self.health  # Store max health for restoration
         self.resurrection_sound_played = False  # Track if resurrection sound has played
         
+        # Damage tracking - prevent multiple hits from same sword swing
+        self.has_been_hit_this_swing = False
+        
     def take_damage(self, amount):
         self.health -= amount
         if self.health <= 0:
@@ -720,14 +723,13 @@ class Enemy(pygame.sprite.Sprite):
                                  (self.rect.centerx - radius, self.rect.centery - radius))
         
         # Draw health bar only if not in blood puddle state
-        else:
-            health_bar_width = 50
-            health_bar_height = 5
-            health_ratio = self.health / self.enemy_data['health']
-            pygame.draw.rect(surface, RED, (self.rect.x, self.rect.y - 10,
-                                          health_bar_width, health_bar_height))
-            pygame.draw.rect(surface, GREEN, (self.rect.x, self.rect.y - 10,
-                                            health_bar_width * health_ratio, health_bar_height))
+        health_bar_width = 50
+        health_bar_height = 5
+        health_ratio = self.health / self.enemy_data['health']
+        pygame.draw.rect(surface, RED, (self.rect.x, self.rect.y - 10,
+                                      health_bar_width, health_bar_height))
+        pygame.draw.rect(surface, GREEN, (self.rect.x, self.rect.y - 10,
+                                        health_bar_width * health_ratio, health_bar_height))
 
     def enter_blood_puddle_state(self):
         """Enter the blood puddle state for respawnable minions"""
@@ -795,19 +797,57 @@ class Boss(Enemy):
         self.enemy_data = BOSS_TYPES[f'level{level}']
         self.level = level  # Explicitly save the level
         
-        # Override stats with boss stats
-        self.health = self.enemy_data['health']
-        self.damage = self.enemy_data['damage']
-        self.speed = self.enemy_data['speed']
-        self.name = self.enemy_data['name']
-        
-        # Animation states and directions (override from Enemy)
+        # Animation states and directions with more frames for bosses
         self.animations = {
             'idle': {},
             'walk': {},
             'attack': {},
-            'special': {}  # Bosses have special attacks
+            'special': {}  # Special attack animation for bosses
         }
+        
+        # Store the original rect which represents the full sprite size
+        self.original_rect = self.rect.copy()
+        
+        # Use a smaller hitbox for movement and collision detection
+        # Make it ~65% of the visual size (down from 75%)
+        small_size = int(TILE_SIZE * 0.65)  # Even smaller for fairness
+        
+        # Center the hitbox in the sprite
+        hitbox_x = self.rect.centerx - small_size // 2
+        hitbox_y = self.rect.centery - small_size // 2
+        self.rect = pygame.Rect(hitbox_x, hitbox_y, small_size, small_size)
+        
+        # Create a damage hitbox that uses the full sprite size for easier hit detection
+        self.damage_hitbox = self.original_rect.copy()
+        
+        # Initialize health to the boss-specific value
+        self.health = self.enemy_data['health']
+        self.max_health = self.health
+        
+        # Use adjusted speeds for bosses
+        self.speed = self.enemy_data['speed']
+        
+        # Adjust attack range to be smaller than player's sword range
+        # This allows player to hit boss without getting hit themselves
+        self.attack_range = TILE_SIZE * 0.7  # Reduced from 1.0 to 0.7 tiles
+        
+        # Reduce the detection range for level 1 boss
+        # Level 1 boss is faster, so it needs a smaller detection range
+        # to give player more time to react
+        self.detection_range = TILE_SIZE * (4 if level == 1 else 6)
+        
+        # Increase attack cooldown to give player more time between attacks
+        self.attack_cooldown = 1200  # 1.2 seconds between attacks
+        
+        # Level 2 boss uses projectiles
+        self.projectiles = pygame.sprite.Group()
+        self.projectile_cooldown = 0
+        self.projectile_cooldown_time = 90  # frames between projectile attacks
+        
+        # Phase system for special attacks
+        self.phase = 0  # 0 = normal, 1 = <60% health, 2 = <30% health
+        self.last_special_attack_time = 0
+        self.special_attack_cooldown = 3000  # 3 seconds between special attacks
         
         # Get boss name
         boss_name = self.enemy_data['name'].lower().replace(' ', '_')
@@ -971,10 +1011,10 @@ class Boss(Enemy):
             self.attack_cooldown = 1500  # 1.5 seconds between attacks
         
         # Position history for trailing effect (used by level 1 boss)
-        self.trail_enabled = level == 1 or level == 2  # Enable for level 1 and 2 bosses
+        self.trail_enabled = level in [1, 2]  # Only for level 1 and 2 bosses
         self.position_history = []
-        self.max_trail_length = 5  # Store 5 previous positions
-        self.trail_update_rate = 4  # Update trail every 4 frames
+        self.max_trail_length = 10  # Number of previous positions to remember
+        self.trail_update_rate = 3   # Update every N frames
         self.trail_frame_counter = 0
         
         # Trail color based on level
@@ -988,9 +1028,6 @@ class Boss(Enemy):
         self.last_voice_time = 0
         self.voice_cooldown = 4000  # 4 seconds (in milliseconds)
         
-        # Projectiles for level 2 boss
-        self.projectiles = pygame.sprite.Group()
-        
         # Resurrection functionality for level 3 boss
         if level == 3:
             self.resurrection_enabled = True
@@ -1002,6 +1039,13 @@ class Boss(Enemy):
             print("Level 3 boss initialized with resurrection abilities")
         else:
             self.resurrection_enabled = False
+        
+        # Boss-specific properties
+        self.visual_offset_x = 0  # Visual offset for drawing (not affecting hitbox)
+        self.visual_offset_y = 0
+        
+        # Damage tracking - ensure it's set for bosses too
+        self.has_been_hit_this_swing = False
         
     def move_towards_player(self, player):
         """Move towards player using simplified movement for more reliable chasing"""
@@ -1230,8 +1274,33 @@ class Boss(Enemy):
                 return False
             else:
                 # Other bosses use the original special attack
-                damage_multiplier = 1 + (self.phase * 0.5)  # Damage increases with phase
-                return player.take_damage(self.damage * damage_multiplier)
+                # Check if player is within attack range before applying damage
+                dx = player.rect.centerx - self.rect.centerx
+                dy = player.rect.centery - self.rect.centery
+                distance = math.sqrt(dx * dx + dy * dy)
+                
+                # Only apply damage if player is within the attack range
+                if distance <= self.attack_range:
+                    damage_multiplier = 1 + (self.phase * 0.5)  # Damage increases with phase
+                    
+                    # Create visual effect to show the special attack
+                    if hasattr(player, 'game') and player.game and hasattr(player.game, 'particle_system'):
+                        for _ in range(8):  # Create 8 particles
+                            offset_x = random.randint(-10, 10)
+                            offset_y = random.randint(-10, 10)
+                            player.game.particle_system.create_particle(
+                                player.rect.centerx + offset_x,
+                                player.rect.centery + offset_y,
+                                color=(255, 0, 0),
+                                size=random.randint(3, 6),
+                                speed=random.uniform(0.5, 1.5),
+                                lifetime=random.randint(20, 30)
+                            )
+                    
+                    return player.take_damage(self.damage * damage_multiplier)
+                else:
+                    # Player is out of range, special attack misses
+                    return False
         return False
         
     def update(self, player):
@@ -1318,6 +1387,10 @@ class Boss(Enemy):
         # Keep boss on screen
         self.rect.clamp_ip(pygame.display.get_surface().get_rect())
         
+        # Update the damage hitbox to match the new position of the movement hitbox
+        # Position the damage hitbox (which is full-sized) so it's centered on the movement hitbox
+        self.damage_hitbox.center = self.rect.center
+        
         # Update animation
         self.animation_time += self.animation_speed
         
@@ -1357,29 +1430,43 @@ class Boss(Enemy):
             self.trail_frame_counter += 1
             if self.trail_frame_counter >= self.trail_update_rate:
                 self.trail_frame_counter = 0
-                visual_pos_x = self.rect.centerx
-                visual_pos_y = self.rect.centery
-                self.position_history.append((visual_pos_x, visual_pos_y))
+                # Store both position and current sprite image
+                self.position_history.append((
+                    self.rect.x, 
+                    self.rect.y, 
+                    self.image.copy()  # Store a copy of the current sprite
+                ))
                 
                 if len(self.position_history) > self.max_trail_length:
                     self.position_history.pop(0)
-        
+
         # Check health-based special attack for non-level-2 bosses
         if self.level != 2:
             health_percent = self.health / self.enemy_data['health']
+            original_attack_range = self.attack_range  # Store original attack range
             
             if health_percent < 0.3:
                 self.attack_cooldown = 500
                 self.speed = self.enemy_data['speed'] * 1.5
                 self.damage = int(self.enemy_data['damage'] * 1.5)
+                # Note: we deliberately do NOT increase attack_range here
+                self.phase = 2  # High phase for damage calculation
                 if random.random() < 0.05:
                     self.special_attack(player)
             elif health_percent < 0.6:
                 self.attack_cooldown = 750
                 self.speed = self.enemy_data['speed'] * 1.2
                 self.damage = int(self.enemy_data['damage'] * 1.2)
+                # Note: we deliberately do NOT increase attack_range here
+                self.phase = 1  # Medium phase for damage calculation
                 if random.random() < 0.03:
                     self.special_attack(player)
+            else:
+                self.phase = 0  # Base phase
+                
+            # Safety check to ensure attack range doesn't change
+            if self.attack_range != original_attack_range:
+                self.attack_range = original_attack_range
 
     def draw(self, surface):
         # Draw resurrection effects if in blood puddle state
@@ -1442,37 +1529,28 @@ class Boss(Enemy):
             surface.blit(self.image, self.rect)
             
         else:
-            # Draw the boss character
-            # Calculate position with visual offset
-            draw_x = self.rect.x - self.visual_offset_x
-            draw_y = self.rect.y - self.visual_offset_y
-            
-            # Draw boss character
-            surface.blit(self.image, (draw_x, draw_y))
-            
-            # Draw trailing effect for level 1 and 2 bosses
+            # Draw trailing effect for level 1 and 2 bosses (BEFORE drawing the main sprite)
             if self.trail_enabled and self.position_history:
                 # Draw position history for trailing effect
-                for i, (hist_x, hist_y) in enumerate(reversed(self.position_history)):
-                    # Calculate size of trail dot based on position in history
-                    # Make the most recent ones bigger
-                    size = max(5, 15 - (i * 2))
-                    
+                for i, (x, y, img) in enumerate(reversed(self.position_history)):
                     # Calculate alpha (transparency) based on position in history
                     # Make the oldest ones more transparent
                     alpha = max(20, 150 - (i * 15))
                     
-                    # Create a surface for the trail dot with alpha channel
-                    dot_surface = pygame.Surface((size, size), pygame.SRCALPHA)
+                    # Create a copy of the sprite with alpha transparency
+                    ghost_img = img.copy()
+                    # Set the alpha of the entire surface
+                    ghost_img.set_alpha(alpha)
                     
-                    # Set the color with alpha
-                    color_with_alpha = (*self.trail_color, alpha)
-                    
-                    # Draw the circle on the dot surface
-                    pygame.draw.circle(dot_surface, color_with_alpha, (size//2, size//2), size//2)
-                    
-                    # Blit the dot to the main surface
-                    surface.blit(dot_surface, (hist_x - size//2, hist_y - size//2))
+                    # Draw the ghost sprite at the historical position
+                    surface.blit(ghost_img, (x - self.visual_offset_x, y - self.visual_offset_y))
+            
+            # Calculate position with visual offset
+            draw_x = self.rect.x - self.visual_offset_x
+            draw_y = self.rect.y - self.visual_offset_y
+            
+            # Draw boss character (drawn AFTER the trail)
+            surface.blit(self.image, (draw_x, draw_y))
             
             # Draw projectiles for level 2 boss
             if self.level == 2:

@@ -424,8 +424,9 @@ class Player(pygame.sprite.Sprite):
             self.frame = 0  # Reset animation frame
             self.animation_time = 0  # Reset animation time
             
-            # Create sword hitbox based on facing direction
-            hitbox = pygame.Rect(self.rect.x, self.rect.y, TILE_SIZE, TILE_SIZE)
+            # Create sword hitbox based on facing direction with 15% increased range
+            attack_size = int(TILE_SIZE * 1.15)  # 15% larger than normal tile size
+            hitbox = pygame.Rect(self.rect.x, self.rect.y, attack_size, attack_size)
             if self.facing == 'right':
                 hitbox.x += TILE_SIZE
             elif self.facing == 'left':

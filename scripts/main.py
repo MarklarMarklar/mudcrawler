@@ -672,7 +672,8 @@ class Game:
             for enemy in current_room.enemies:
                 # Check sword collisions
                 if (self.weapon_manager.sword.active and 
-                    self.weapon_manager.sword.rect.colliderect(enemy.rect)):
+                    self.weapon_manager.sword.rect.colliderect(enemy.rect) and
+                    not enemy.has_been_hit_this_swing):  # Add check for hit tracking
                     # Apply fire sword damage bonus if active
                     damage = SWORD_DAMAGE
                     if self.weapon_manager.has_fire_sword:
@@ -684,6 +685,7 @@ class Game:
                             amount=5
                         )
                     enemy.take_damage(damage)
+                    enemy.has_been_hit_this_swing = True  # Mark as hit for this swing
                     
                 # Check arrow collisions with enemies
                 arrows_to_remove = []
@@ -710,7 +712,8 @@ class Game:
         try:
             if current_room.boss and current_room.boss.health > 0:
                 if (self.weapon_manager.sword.active and 
-                    self.weapon_manager.sword.rect.colliderect(current_room.boss.rect)):
+                    self.weapon_manager.sword.rect.colliderect(current_room.boss.damage_hitbox) and
+                    not current_room.boss.has_been_hit_this_swing):  # Add check for hit tracking
                     # Apply fire sword damage bonus if active
                     damage = SWORD_DAMAGE
                     if self.weapon_manager.has_fire_sword:
@@ -722,12 +725,13 @@ class Game:
                             amount=10
                         )
                     current_room.boss.take_damage(damage)
+                    current_room.boss.has_been_hit_this_swing = True  # Mark as hit for this swing
                     
                 # Check arrow collisions with boss
                 arrows_to_remove = []
                 for arrow in self.weapon_manager.bow.arrows:
                     try:
-                        if arrow.rect.colliderect(current_room.boss.rect):
+                        if arrow.rect.colliderect(current_room.boss.damage_hitbox):
                             current_room.boss.take_damage(BOW_DAMAGE)
                             arrows_to_remove.append(arrow)
                             break
@@ -743,6 +747,13 @@ class Game:
                         print(f"Error removing arrow after boss collision: {e}")
         except Exception as e:
             print(f"Error checking boss collisions: {e}")
+            
+        # Reset hit tracking if sword is not active anymore
+        if not self.weapon_manager.sword.active:
+            for enemy in current_room.enemies:
+                enemy.has_been_hit_this_swing = False
+            if current_room.boss:
+                current_room.boss.has_been_hit_this_swing = False
 
         # Check if level is completed
         if self.level.completed:
