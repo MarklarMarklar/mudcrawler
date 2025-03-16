@@ -723,12 +723,12 @@ class Enemy(pygame.sprite.Sprite):
                                  (self.rect.centerx - radius, self.rect.centery - radius))
         
         # Draw health bar only if not in blood puddle state
-        health_bar_width = 50
-        health_bar_height = 5
+        health_bar_width = 40  # Reduced from 50
+        health_bar_height = 3  # Reduced from 5
         health_ratio = self.health / self.enemy_data['health']
-        pygame.draw.rect(surface, RED, (self.rect.x, self.rect.y - 10,
+        pygame.draw.rect(surface, RED, (self.rect.x, self.rect.y - 8,  # Moved closer to enemy
                                       health_bar_width, health_bar_height))
-        pygame.draw.rect(surface, GREEN, (self.rect.x, self.rect.y - 10,
+        pygame.draw.rect(surface, GREEN, (self.rect.x, self.rect.y - 8,  # Moved closer to enemy
                                         health_bar_width * health_ratio, health_bar_height))
 
     def enter_blood_puddle_state(self):
@@ -1558,13 +1558,13 @@ class Boss(Enemy):
                     surface.blit(projectile.image, projectile.rect)
             
             # Draw health bar
-            health_bar_width = 60  # Wider than regular enemies
-            health_bar_height = 6
+            health_bar_width = 50  # Reduced from 60
+            health_bar_height = 4  # Reduced from 6
             health_ratio = self.health / self.enemy_data['health']
             
             # Position health bar relative to the visual representation
             health_bar_x = draw_x + (self.image.get_width() - health_bar_width) // 2
-            health_bar_y = draw_y - 12
+            health_bar_y = draw_y - 10  # Moved closer to boss (was -12)
             
             pygame.draw.rect(surface, RED, (health_bar_x, health_bar_y,
                                           health_bar_width, health_bar_height))

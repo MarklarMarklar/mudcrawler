@@ -33,6 +33,9 @@ class Player(pygame.sprite.Sprite):
         self.trail_duration = 500      # How long trail lasts in milliseconds (increased from 150ms)
         self.trail_positions = []      # List of positions for trail images
         
+        # Initialize dodge cooldown tracking
+        self.last_dodge_time = 0       # Initialize to 0 so dodge is available immediately
+        
         # Load the sprite sheet
         sprite_sheet_path = os.path.join(PLAYER_SPRITES_PATH, "my_character_guides.png")
         if os.path.exists(sprite_sheet_path):
@@ -424,8 +427,8 @@ class Player(pygame.sprite.Sprite):
             self.frame = 0  # Reset animation frame
             self.animation_time = 0  # Reset animation time
             
-            # Create sword hitbox based on facing direction with 15% increased range
-            attack_size = int(TILE_SIZE * 1.15)  # 15% larger than normal tile size
+            # Create sword hitbox based on facing direction with 30% increased range (15% + 15%)
+            attack_size = int(TILE_SIZE * 1.32)  # 32% larger than normal tile size (1.15 * 1.15 ≈ 1.32)
             hitbox = pygame.Rect(self.rect.x, self.rect.y, attack_size, attack_size)
             if self.facing == 'right':
                 hitbox.x += TILE_SIZE
@@ -703,6 +706,31 @@ class Player(pygame.sprite.Sprite):
         
         # Then draw the player
         surface.blit(self.image, self.rect)
+        
+        # Draw dodge cooldown indicator (small blue bar above player's head)
+        if hasattr(self, 'last_dodge_time'):
+            current_time = pygame.time.get_ticks()
+            cooldown_time = 1500  # 1.5 seconds cooldown (same as in dodge method)
+            time_since_dodge = current_time - self.last_dodge_time
+            
+            if time_since_dodge < cooldown_time:
+                # Calculate remaining cooldown as a percentage
+                cooldown_remaining = 1 - (time_since_dodge / cooldown_time)
+                
+                # Bar dimensions
+                bar_width = 20
+                bar_height = 3
+                
+                # Position bar above player's head
+                bar_x = self.rect.centerx - bar_width / 2
+                bar_y = self.rect.y - 5  # 5 pixels above player
+                
+                # Draw background of bar (darker blue)
+                pygame.draw.rect(surface, (0, 0, 100), (bar_x, bar_y, bar_width, bar_height))
+                
+                # Draw the filled portion of the bar (brighter blue)
+                filled_width = bar_width * cooldown_remaining
+                pygame.draw.rect(surface, (0, 100, 255), (bar_x, bar_y, filled_width, bar_height))
         
         # Uncomment to debug hitbox visualization
         # pygame.draw.rect(surface, (0, 255, 0), self.hitbox, 1)
