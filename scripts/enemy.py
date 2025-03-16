@@ -783,6 +783,7 @@ class Enemy(pygame.sprite.Sprite):
         # No longer dead
         self.is_dead = False
         self.resurrection_time = 0
+        self.resurrection_sound_played = False  # Reset sound flag to ensure it plays next time
 
 class Boss(Enemy):
     def __init__(self, x, y, level, level_instance=None):
@@ -974,7 +975,7 @@ class Boss(Enemy):
         self.trail_update_rate = 4  # Update trail every 4 frames
         self.trail_frame_counter = 0
         
-        # Set trail color based on level
+        # Trail color based on level
         self.trail_color = (150, 0, 0) if level == 1 else (0, 150, 150)  # Red for level 1, Cyan for level 2
         
         # Sound manager for boss voice
