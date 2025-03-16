@@ -1074,48 +1074,70 @@ class Room:
         # Store exit door positions for later glow drawing
         exit_door_positions = []
         
-        # Draw tiles
+        # Draw the tiles
         for y in range(self.height):
             for x in range(self.width):
                 tile_x = x * TILE_SIZE
                 tile_y = y * TILE_SIZE
                 
                 if self.tiles[y][x] == 1:  # Wall
-                    if self.destroyable_walls[y][x] and level and level.destroyable_wall_textures:
+                    # Check if this is a destroyable wall
+                    if hasattr(self, 'destroyable_walls') and y < len(self.destroyable_walls) and x < len(self.destroyable_walls[y]) and self.destroyable_walls[y][x]:
                         # Check if this is the special fire sword chest
-                        is_fire_sword_chest = self.has_fire_sword_chest and x == self.fire_sword_chest_x and y == self.fire_sword_chest_y
+                        is_fire_sword_chest = hasattr(self, 'has_fire_sword_chest') and hasattr(self, 'fire_sword_chest_x') and hasattr(self, 'fire_sword_chest_y') and self.has_fire_sword_chest and x == self.fire_sword_chest_x and y == self.fire_sword_chest_y
                         
                         # Randomly select a destroyable wall texture if not already cached
                         # We'll use a consistent hash based on the coordinates to keep the same texture
                         # for the same wall tile within a session
-                        texture_index = hash(f"{self.grid_x}_{self.grid_y}_{x}_{y}") % len(level.destroyable_wall_textures)
-                        destroyable_wall_texture = level.destroyable_wall_textures[texture_index]
-                        
-                        try:
-                            # Load and draw the destroyable wall texture
-                            if os.path.exists(destroyable_wall_texture):
-                                if is_fire_sword_chest:
-                                    # Scale up by 150% for fire sword chest
-                                    scaled_size = int(TILE_SIZE * 1.5)
-                                    texture = level.asset_manager.load_image(destroyable_wall_texture, scale=(scaled_size, scaled_size))
-                                    # Draw centered at the tile position
-                                    offset = (scaled_size - TILE_SIZE) // 2
-                                    surface.blit(texture, (tile_x - offset, tile_y - offset))
+                        if hasattr(level, 'destroyable_wall_textures') and level.destroyable_wall_textures:
+                            texture_index = hash(f"{self.grid_x}_{self.grid_y}_{x}_{y}") % len(level.destroyable_wall_textures)
+                            destroyable_wall_texture = level.destroyable_wall_textures[texture_index]
+                            
+                            try:
+                                # Load and draw the destroyable wall texture
+                                if os.path.exists(destroyable_wall_texture):
+                                    if is_fire_sword_chest:
+                                        # Scale up by 150% for fire sword chest
+                                        scaled_size = int(TILE_SIZE * 1.5)
+                                        texture = level.asset_manager.load_image(destroyable_wall_texture, scale=(scaled_size, scaled_size))
+                                        # Draw centered at the tile position
+                                        offset = (scaled_size - TILE_SIZE) // 2
+                                        surface.blit(texture, (tile_x - offset, tile_y - offset))
+                                    else:
+                                        # Regular destroyable wall
+                                        texture = level.asset_manager.load_image(destroyable_wall_texture, scale=(TILE_SIZE, TILE_SIZE))
+                                        surface.blit(texture, (tile_x, tile_y))
                                 else:
-                                    # Regular destroyable wall
-                                    texture = level.asset_manager.load_image(destroyable_wall_texture, scale=(TILE_SIZE, TILE_SIZE))
-                                    surface.blit(texture, (tile_x, tile_y))
-                            else:
-                                # Fallback to regular wall if texture loading fails
+                                    # Fallback to regular wall if texture loading fails
+                                    surface.blit(tile_images['wall'], (tile_x, tile_y))
+                            except Exception as e:
+                                print(f"Error loading destroyable wall texture: {e}")
                                 surface.blit(tile_images['wall'], (tile_x, tile_y))
-                        except Exception as e:
-                            print(f"Error loading destroyable wall texture: {e}")
-                            surface.blit(tile_images['wall'], (tile_x, tile_y))
+                        else:
+                            # Fallback if no destroyable wall textures are available
+                            surface.blit(tile_images['destroyable_wall'] if 'destroyable_wall' in tile_images else tile_images['wall'], (tile_x, tile_y))
                     else:
                         # Regular wall
                         surface.blit(tile_images['wall'], (tile_x, tile_y))
                 elif self.tiles[y][x] == 2:  # Door
-                    surface.blit(tile_images['door'], (tile_x, tile_y))
+                    # Determine which door to show based on position
+                    door_type = 'door'  # Default door
+                    
+                    # Check position to determine door direction
+                    if x == 0:  # West door
+                        door_type = 'door_west'
+                    elif x == self.width - 1:  # East door
+                        door_type = 'door_east'
+                    elif y == 0:  # North door
+                        door_type = 'door_north'
+                    elif y == self.height - 1:  # South door
+                        door_type = 'door_south'
+                    
+                    if door_type in tile_images:
+                        surface.blit(tile_images[door_type], (tile_x, tile_y))
+                    else:
+                        # Fallback to generic door if specific direction not available
+                        surface.blit(tile_images['door'], (tile_x, tile_y))
                 elif self.tiles[y][x] == EXIT_DOOR_TILE:  # Exit door
                     # Store position to draw glow later on top of everything
                     exit_door_positions.append((x, y))
@@ -1211,37 +1233,59 @@ class Room:
 
         # Draw key if dropped
         if self.key_dropped and self.key_position:
-            # Draw a more visible key with glow effect
-            # First draw a glow effect
-            glow_size = TILE_SIZE * 1.5
-            # Make the glow pulse based on time
-            pulse_factor = 0.5 + 0.5 * abs(math.sin(pygame.time.get_ticks() / 200))
-            glow_color = (255, 255, 100, int(150 * pulse_factor))
-            glow_surface = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
-            pygame.draw.circle(glow_surface, glow_color, (glow_size/2, glow_size/2), glow_size/2)
-            surface.blit(glow_surface, (self.key_position[0] - glow_size/2, self.key_position[1] - glow_size/2))
+            # Load the key image using absolute path
+            key_path = "/home/marklar/Mud/Mud_dungeon_crawler/assets/icons/key.png"
             
-            # Then draw the key
-            key_surface = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
-            # Key body
-            pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//4, 0, TILE_SIZE//2, TILE_SIZE//4))
-            # Key stem
-            pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//3, TILE_SIZE//4, TILE_SIZE//3, TILE_SIZE//2))
-            # Key teeth
-            pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//6, TILE_SIZE//2, TILE_SIZE*2//3, TILE_SIZE//4))
-            surface.blit(key_surface, (self.key_position[0] - TILE_SIZE//2, self.key_position[1] - TILE_SIZE//2))
+            try:
+                # Make the key pulse based on time
+                pulse_factor = 0.5 + 0.5 * abs(math.sin(pygame.time.get_ticks() / 200))
+                key_size = TILE_SIZE * pulse_factor
+                
+                # First draw a glow effect
+                glow_size = TILE_SIZE * 2 * pulse_factor
+                glow_color = (255, 215, 0, int(100 * pulse_factor))  # Golden glow with pulsing alpha
+                glow_surface = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
+                pygame.draw.circle(glow_surface, glow_color, (glow_size/2, glow_size/2), glow_size/2)
+                surface.blit(glow_surface, (self.key_position[0] - glow_size/2, self.key_position[1] - glow_size/2))
+                
+                # If asset manager is available, use it to load the key image
+                if hasattr(self, 'asset_manager') and self.asset_manager:
+                    # Use the asset manager to load and scale the key image
+                    key_image = self.asset_manager.load_image(key_path, scale=(key_size, key_size))
+                    key_rect = key_image.get_rect(center=self.key_position)
+                    surface.blit(key_image, key_rect)
+                else:
+                    # Direct load without asset manager
+                    if os.path.exists(key_path):
+                        key_image = pygame.image.load(key_path).convert_alpha()
+                        key_image = pygame.transform.scale(key_image, (int(key_size), int(key_size)))
+                        key_rect = key_image.get_rect(center=self.key_position)
+                        surface.blit(key_image, key_rect)
+                    else:
+                        # Fallback to drawing a key shape if the image file doesn't exist
+                        print(f"Key file not found: {key_path}")
+                        # Draw the key shape (fallback)
+                        key_surface = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
+                        # Key body
+                        pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//4, 0, TILE_SIZE//2, TILE_SIZE//4))
+                        # Key stem
+                        pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//3, TILE_SIZE//4, TILE_SIZE//3, TILE_SIZE//2))
+                        # Key teeth
+                        pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//6, TILE_SIZE//2, TILE_SIZE*2//3, TILE_SIZE//4))
+                        surface.blit(key_surface, (self.key_position[0] - TILE_SIZE//2, self.key_position[1] - TILE_SIZE//2))
+            except Exception as e:
+                print(f"Error drawing key: {e}")
+                # Fallback to the original key drawing
+                key_surface = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
+                # Key body
+                pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//4, 0, TILE_SIZE//2, TILE_SIZE//4))
+                # Key stem
+                pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//3, TILE_SIZE//4, TILE_SIZE//3, TILE_SIZE//2))
+                # Key teeth
+                pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//6, TILE_SIZE//2, TILE_SIZE*2//3, TILE_SIZE//4))
+                surface.blit(key_surface, (self.key_position[0] - TILE_SIZE//2, self.key_position[1] - TILE_SIZE//2))
             
             # Show a message for 5 seconds after the key is dropped
-            if hasattr(self, 'key_drop_time'):
-                time_since_drop = pygame.time.get_ticks() - self.key_drop_time
-                if time_since_drop < 5000:  # Show for 5 seconds
-                    # Flashing message
-                    flash_factor = abs(math.sin(pygame.time.get_ticks() / 250))  # Faster flash
-                    if flash_factor > 0.5:  # Only show during the "on" part of the flash
-                        font = pygame.font.Font(None, 32)
-                        message = font.render("A KEY HAS APPEARED!", True, (255, 255, 0))
-                        message_rect = message.get_rect(center=(WINDOW_WIDTH//2, 50))
-                        surface.blit(message, message_rect)
 
     def add_exit_door(self):
         """Add an exit door to the room at a random location along a wall"""
@@ -2014,33 +2058,19 @@ class Level:
                     pulse = 0.7 + 0.3 * abs(math.sin(time_elapsed / 200))
                     
                     try:
-                        # Try to use a nice font
-                        font_path = os.path.join(ASSET_PATH, "fonts/PixelatedEleganceRegular-ovyAA.ttf")
-                        font = pygame.font.Font(font_path, 16)
-                    except:
-                        # Fallback to system font
+                        # Create background for better readability
                         font = pygame.font.Font(None, 32)
+                        text = font.render(self.notification_text, True, self.notification_color)
+                        text_rect = text.get_rect(center=(WINDOW_WIDTH//2, 50))
                         
-                    # Create text surface
-                    text = font.render(self.notification_text, True, self.notification_color)
-                    text_rect = text.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2))  # Center of the screen
-                    
-                    # Create background for better readability
-                    bg_rect = text_rect.inflate(40, 20)
-                    bg_surf = pygame.Surface((bg_rect.width, bg_rect.height), pygame.SRCALPHA)
-                    pygame.draw.rect(bg_surf, (0, 0, 0, 180), bg_surf.get_rect(), 0, 10)
-                    surface.blit(bg_surf, bg_rect)
-                    
-                    # Apply pulse effect to text
-                    if pulse < 1.0:
-                        # Scale alpha based on pulse
-                        alpha = int(255 * pulse)
-                        alpha_surf = pygame.Surface(text.get_size(), pygame.SRCALPHA)
-                        alpha_surf.fill((255, 255, 255, alpha))
-                        text.blit(alpha_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-                    
-                    # Draw the text
-                    surface.blit(text, text_rect)
+                        # Draw background
+                        bg_rect = text_rect.inflate(20, 10)
+                        pygame.draw.rect(surface, (0, 0, 0, 150), bg_rect, border_radius=5)
+                        
+                        # Draw the text
+                        surface.blit(text, text_rect)
+                    except Exception as e:
+                        print(f"Error drawing notification: {e}")
                 else:
                     # Clear notification after duration expires
                     self.notification_text = None

@@ -140,15 +140,17 @@ class HealthPickup(BasePickup):
 class KeyPickup(BasePickup):
     """Key pickup that unlocks doors"""
     def __init__(self, x, y):
-        super().__init__(x, y)
+        super().__init__(x, y, size=TILE_SIZE)  # Increased size for better visibility
         
         # Try to load key texture
         try:
-            key_path = os.path.join(WEAPON_SPRITES_PATH, "key.png")
+            key_path = "/home/marklar/Mud/Mud_dungeon_crawler/assets/icons/key.png"  # Correct path to key.png in assets/icons
             if os.path.exists(key_path):
                 self.key_texture = self.asset_manager.load_image(key_path, scale=(self.size, self.size))
+                print("Successfully loaded key texture for ground pickup")
             else:
                 self.key_texture = None
+                print("Key texture path does not exist:", key_path)
         except Exception as e:
             print(f"Failed to load key texture: {e}")
             self.key_texture = None
@@ -169,6 +171,9 @@ class KeyPickup(BasePickup):
                 # Draw centered at pickup position
                 rect = scaled_texture.get_rect(center=(self.x, self.y))
                 surface.blit(scaled_texture, rect)
+                # Debug output to verify key texture is being drawn
+                if pygame.time.get_ticks() % 60 == 0:  # Print once a second
+                    print(f"Drawing key texture at ({self.x}, {self.y}) with size {size}")
             else:
                 # Draw a fallback key shape if texture isn't available
                 # Draw a gold key shape
@@ -177,6 +182,10 @@ class KeyPickup(BasePickup):
                 
                 # Add teeth to the key
                 pygame.draw.rect(surface, (255, 215, 0), (self.x, self.y + size//8, size//4, size//8))  # Tooth 1
+                
+                # Debug output to indicate fallback is being used
+                if pygame.time.get_ticks() % 60 == 0:  # Print once a second
+                    print("Using fallback key drawing - texture not available")
                 
             # Add a glow effect
             glow_surf = pygame.Surface((size * 3, size * 3), pygame.SRCALPHA)

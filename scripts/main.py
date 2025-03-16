@@ -577,9 +577,6 @@ class Game:
                     # Enable fire sword
                     self.weapon_manager.enable_fire_sword()
                     
-                    # Show notification about fire sword
-                    self.level.show_notification("FIRE SWORD ACQUIRED!", (255, 100, 0), 3000)
-                    
                     # Create particles effect for pickup
                     self.particle_system.create_fire_effect(
                         self.player.rect.centerx,

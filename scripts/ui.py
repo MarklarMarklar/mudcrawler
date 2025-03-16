@@ -584,6 +584,7 @@ class HUD:
         self.bow_icon = None
         self.sound_off_icon = None
         self.key_icon = None
+        self.fire_sword_icon = None
         
         # Health bar dimensions
         self.health_bar_width = 240  # Width of the health bar graphic
@@ -633,9 +634,18 @@ class HUD:
         except Exception as e:
             print(f"Failed to load bow icon: {e}")
             
+        # Try to load fire sword icon
+        try:
+            fire_sword_icon_path = "/home/marklar/Mud/Mud_dungeon_crawler/assets/icons/fire_sword_icon.png"
+            if os.path.exists(fire_sword_icon_path):
+                self.fire_sword_icon = self.asset_manager.load_image(fire_sword_icon_path, scale=(32, 32))
+                print("Successfully loaded fire sword icon")
+        except Exception as e:
+            print(f"Failed to load fire sword icon: {e}")
+            
         # Try to load key icon from UI sprites
         try:
-            key_icon_path = os.path.join(UI_SPRITES_PATH, "key_icon.png")
+            key_icon_path = "/home/marklar/Mud/Mud_dungeon_crawler/assets/icons/key.png"  # Correct path to key.png in assets/icons
             if os.path.exists(key_icon_path):
                 self.key_icon = self.asset_manager.load_image(key_icon_path, scale=(32, 32))
                 print("Successfully loaded key icon")
@@ -1033,6 +1043,70 @@ class HUD:
             key_text = small_font.render("KEY", True, (255, 255, 255))
             key_text_rect = key_text.get_rect(center=(key_x + key_size//2, key_y + key_size + 8))
             self.screen.blit(key_text, key_text_rect)
+        
+        # Draw fire sword icon if player has it
+        if hasattr(player, 'game') and player.game and hasattr(player.game, 'weapon_manager') and player.game.weapon_manager.has_fire_sword:
+            # Calculate fire sword position (right side of key or health bar)
+            fire_sword_size = 32
+            
+            # Position depends on whether key is shown
+            if level and hasattr(level, 'has_key') and level.has_key:
+                # Position to right of key
+                if self.use_custom_health_bar and self.health_bar_bg and self.health_bar_rect:
+                    fire_sword_x = bar_x + self.health_bar_width + 10 + fire_sword_size + 20  # Key width + spacing
+                    fire_sword_y = bar_y + (self.health_bar_height // 2) - (fire_sword_size // 2)
+                else:
+                    fire_sword_x = bar_x + std_bar_width + 20 + fire_sword_size + 20
+                    fire_sword_y = bar_y
+            else:
+                # No key, position to right of health bar
+                if self.use_custom_health_bar and self.health_bar_bg and self.health_bar_rect:
+                    fire_sword_x = bar_x + self.health_bar_width + 10
+                    fire_sword_y = bar_y + (self.health_bar_height // 2) - (fire_sword_size // 2)
+                else:
+                    fire_sword_x = bar_x + std_bar_width + 20
+                    fire_sword_y = bar_y
+            
+            # Draw fire sword background glow with pulsing effect
+            pulse = 0.5 + 0.5 * abs(math.sin(pygame.time.get_ticks() / 200))
+            bg_size = fire_sword_size * 1.5
+            bg_x = fire_sword_x - (bg_size - fire_sword_size) / 2
+            bg_y = fire_sword_y - (bg_size - fire_sword_size) / 2
+            
+            # Create glowing background (orange/red for fire)
+            bg_color = (255, 100, 0, int(100 * pulse))  # Fire glow with alpha
+            bg_surface = pygame.Surface((bg_size, bg_size), pygame.SRCALPHA)
+            pygame.draw.circle(bg_surface, bg_color, (bg_size//2, bg_size//2), bg_size//2)
+            self.screen.blit(bg_surface, (bg_x, bg_y))
+            
+            # Draw the fire sword icon if available
+            if self.fire_sword_icon:
+                self.screen.blit(self.fire_sword_icon, (fire_sword_x, fire_sword_y))
+            else:
+                # Draw a custom fire sword icon if no image is available
+                sword_icon = pygame.Surface((fire_sword_size, fire_sword_size), pygame.SRCALPHA)
+                sword_icon.fill((0, 0, 0, 0))  # Transparent background
+                
+                # Draw sword body (vertical line)
+                pygame.draw.rect(sword_icon, (200, 150, 50), (fire_sword_size//2-2, fire_sword_size//4, 4, fire_sword_size//2))
+                
+                # Draw sword hilt
+                pygame.draw.rect(sword_icon, (150, 100, 50), (fire_sword_size//2-6, fire_sword_size//4+fire_sword_size//2, 12, 5))
+                
+                # Draw fire effect at the tip
+                pygame.draw.polygon(sword_icon, (255, 100, 0), [
+                    (fire_sword_size//2-4, fire_sword_size//4),
+                    (fire_sword_size//2, fire_sword_size//8),
+                    (fire_sword_size//2+4, fire_sword_size//4)
+                ])
+                
+                self.screen.blit(sword_icon, (fire_sword_x, fire_sword_y))
+            
+            # Add fire sword label
+            small_font = pygame.font.Font(None, 18)
+            sword_text = small_font.render("FIRE", True, (255, 100, 0))
+            sword_text_rect = sword_text.get_rect(center=(fire_sword_x + fire_sword_size//2, fire_sword_y + fire_sword_size + 8))
+            self.screen.blit(sword_text, sword_text_rect)
         
         # Draw minimap if level is provided
         if level:
