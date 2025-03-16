@@ -51,12 +51,12 @@ class Room:
         # Room properties
         self.level_number = level_number
         self.room_type = room_type  # 'normal', 'start', 'boss', 'treasure'
+        
+        # Room dimensions in tiles
         self.width = ROOM_WIDTH
         self.height = ROOM_HEIGHT
-        self.tiles = []
-        self.destroyable_walls = []  # Track destroyable walls
         
-        # Doors - each can be True (open) or False (closed/no door)
+        # Doorways to adjacent rooms
         self.doors = {
             'north': False,
             'east': False,
@@ -64,39 +64,50 @@ class Room:
             'west': False
         }
         
-        # Enemy spawning
-        self.enemies = pygame.sprite.Group()
-        self.boss = None
-        self.cleared = False  # Room is cleared when all enemies are defeated
+        # Tiles - 2D array where 0 = floor, 1 = wall
+        self.tiles = [[1 for _ in range(self.width)] for _ in range(self.height)]
         
-        # Level exit
+        # Environmental features
+        self.pillars = []
+        self.torches = []
+        self.chests = []
+        self.destroyable_walls = []  # Positions of destroyable walls
+        
+        # Asset manager for loading images
+        self.asset_manager = get_asset_manager()
+        
+        # Enemy and item spawns
+        self.enemies = pygame.sprite.Group()
+        self.resurrectible_minions = pygame.sprite.Group()  # Special group for level 3 boss minions
+        self.health_pickups = []
+        self.arrow_pickups = []
+        self.weapon_pickups = []
+        self.boss = None
         self.has_exit = False
         self.exit_position = None
         
-        # Key drop
+        # Key pickup related attributes
         self.key_dropped = False
         self.key_position = None
-        self.key_picked_up = False  # New flag to track if key was already picked up
+        self.key_picked_up = False  # Flag to track if key was picked up
         
-        # Health pickups
-        self.health_pickups = []
-        self.arrow_pickups = []
-        
-        # Weapon pickups (including fire sword)
-        self.weapon_pickups = []
-        
-        # Track if fire sword has been dropped from boss
-        self.fire_sword_dropped = False
-        
-        # Blood puddles
+        # Blood puddles to show where enemies died
         self.blood_puddles = []
+        
+        # Fire sword pickup (for level 2 boss)
+        self.fire_sword_pickup = None
+        self.fire_sword_dropped = False
         
         # Special flags for fire sword chest
         self.fire_sword_chest_x = None
         self.fire_sword_chest_y = None
         self.has_fire_sword_chest = False
         
-        # Generate room layout
+        # Track dead resurrectible minions for level 3 boss room
+        # Each entry is (x, y, time_to_respawn, texture_info)
+        self.dead_minions = []
+        
+        # Generate the room layout
         self.generate_room()
         
     def generate_room(self):
@@ -889,9 +900,94 @@ class Room:
             if self.level_number == 2:
                 self.drop_fire_sword()
             
+            # For level 3 boss - resurrection mechanic is now implemented in the Boss class
+            if self.level_number == 3:
+                # Clear any pending respawns when boss dies
+                self.dead_minions = []
+        
+        # Handle resurrection of dead minions in level 3 boss room
+        if self.level_number == 3 and self.room_type == 'boss' and self.boss and self.boss.health > 0:
+            current_time = pygame.time.get_ticks()
+            
+            # Check for minions that need to be respawned
+            for i in range(len(self.dead_minions) - 1, -1, -1):  # Iterate backwards to safely remove items
+                x, y, respawn_time, texture_info = self.dead_minions[i]
+                
+                if current_time >= respawn_time:
+                    # Respawn the minion
+                    print(f"Resurrecting minion at ({x}, {y})")
+                    
+                    # Create a new minion at the death location
+                    # Use 'ghost' as the enemy_type for level 3
+                    new_enemy = Enemy(x, y, 'level3', self.level_number, player.level)
+                    
+                    # Apply texture info if available
+                    if texture_info and hasattr(player.level, 'selected_ghost_texture'):
+                        # Temporarily set the selected texture to ensure this enemy gets the right texture
+                        original_texture = player.level.selected_ghost_texture
+                        player.level.selected_ghost_texture = texture_info
+                        
+                        # Reload animations with the correct texture
+                        new_enemy.animations = {
+                            'idle': {},
+                            'walk': {},
+                            'attack': {}
+                        }
+                        
+                        # This will trigger texture loading with our override
+                        for direction in ['down', 'up', 'left', 'right']:
+                            enemy_name = 'ghost'
+                            base_path = os.path.join(ENEMY_SPRITES_PATH, enemy_name)
+                            
+                            # Create placeholder first
+                            placeholder = pygame.Surface((TILE_SIZE, TILE_SIZE))
+                            placeholder.fill(RED)
+                            font = pygame.font.Font(None, 16)
+                            text = font.render(enemy_name[:8], True, WHITE)
+                            text_rect = text.get_rect(center=(TILE_SIZE//2, TILE_SIZE//2))
+                            placeholder.blit(text, text_rect)
+                            
+                            # Set default animations to placeholder
+                            new_enemy.animations['idle'][direction] = [placeholder]
+                            new_enemy.animations['walk'][direction] = [placeholder]
+                            new_enemy.animations['attack'][direction] = [placeholder]
+                            
+                            # Load the custom texture
+                            if os.path.exists(texture_info):
+                                try:
+                                    texture = new_enemy.asset_manager.load_image(texture_info, scale=(TILE_SIZE, TILE_SIZE))
+                                    # Use the same texture for all animation states and directions
+                                    new_enemy.animations['idle'][direction] = [texture]
+                                    new_enemy.animations['walk'][direction] = [texture]
+                                    new_enemy.animations['attack'][direction] = [texture]
+                                    print(f"Applied custom texture to resurrected minion: {os.path.basename(texture_info)}")
+                                except Exception as e:
+                                    print(f"Error loading custom texture for resurrected minion: {e}")
+                        
+                        # Restore original texture selection
+                        player.level.selected_ghost_texture = original_texture
+                        
+                        # Set current animation frame
+                        new_enemy.current_state = 'idle'
+                        new_enemy.facing = 'down'
+                        new_enemy.image = new_enemy.animations[new_enemy.current_state][new_enemy.facing][0]
+                    
+                    # Add to both enemy groups
+                    self.enemies.add(new_enemy)
+                    self.resurrectible_minions.add(new_enemy)
+                    
+                    # Remove from dead minions list
+                    self.dead_minions.pop(i)
+                    
+                    # Create visual effect
+                    for _ in range(3):
+                        offset_x = random.randint(-TILE_SIZE//3, TILE_SIZE//3)
+                        offset_y = random.randint(-TILE_SIZE//3, TILE_SIZE//3)
+                        pygame.draw.circle(pygame.display.get_surface(), (150, 0, 255), (x + offset_x, y + offset_y), random.randint(5, 15))
+        
         # Check for enemy deaths
         for enemy in list(self.enemies):
-            if enemy.health <= 0:
+            if enemy.health <= 0 and not enemy.is_dead:  # Only process enemies that just died but aren't in blood puddle state
                 pickup_roll = random.random()
                 
                 # 10% chance to drop a health pickup when enemy dies
@@ -906,11 +1002,16 @@ class Room:
                 elif pickup_roll < 0.20 and self.level_number >= 2:
                     self.weapon_pickups.append(WeaponPickup(enemy.rect.centerx, enemy.rect.centery, "fire_sword"))
                     print(f"Room: Fire sword spawned from defeated enemy at {enemy.rect.centerx}, {enemy.rect.centery}")
-                    
-                # Always create a blood puddle when an enemy dies
-                self.blood_puddles.append(BloodPuddle(enemy.rect.centerx, enemy.rect.centery))
                 
-                enemy.kill()
+                # If this is a resurrectible minion in the level 3 boss room, enter blood puddle state
+                if enemy in self.resurrectible_minions and self.level_number == 3 and self.room_type == 'boss' and self.boss and self.boss.health > 0:
+                    # Enter blood puddle state
+                    enemy.enter_blood_puddle_state()
+                    print(f"Resurrectible minion at ({enemy.rect.centerx}, {enemy.rect.centery}) entered blood puddle state")
+                else:
+                    # Regular death - create a blood puddle and remove the enemy
+                    self.blood_puddles.append(BloodPuddle(enemy.rect.centerx, enemy.rect.centery))
+                    enemy.kill()
                 
         # Update pickups
         for pickup in self.health_pickups:
@@ -1040,45 +1141,11 @@ class Room:
                     indicator.fill((255, 215, 0))
                     indicator.set_alpha(50)
                     surface.blit(indicator, (tile_x, tile_y))
-                    
-        # Draw key if dropped
-        if self.key_dropped and self.key_position:
-            # Draw a more visible key with glow effect
-            # First draw a glow effect
-            glow_size = TILE_SIZE * 1.5
-            # Make the glow pulse based on time
-            pulse_factor = 0.5 + 0.5 * abs(math.sin(pygame.time.get_ticks() / 200))
-            glow_color = (255, 255, 100, int(150 * pulse_factor))
-            glow_surface = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
-            pygame.draw.circle(glow_surface, glow_color, (glow_size/2, glow_size/2), glow_size/2)
-            surface.blit(glow_surface, (self.key_position[0] - glow_size/2, self.key_position[1] - glow_size/2))
-            
-            # Then draw the key
-            key_surface = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
-            # Key body
-            pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//4, 0, TILE_SIZE//2, TILE_SIZE//4))
-            # Key stem
-            pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//3, TILE_SIZE//4, TILE_SIZE//3, TILE_SIZE//2))
-            # Key teeth
-            pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//6, TILE_SIZE//2, TILE_SIZE*2//3, TILE_SIZE//4))
-            surface.blit(key_surface, (self.key_position[0] - TILE_SIZE//2, self.key_position[1] - TILE_SIZE//2))
-            
-            # Show a message for 5 seconds after the key is dropped
-            if hasattr(self, 'key_drop_time'):
-                time_since_drop = pygame.time.get_ticks() - self.key_drop_time
-                if time_since_drop < 5000:  # Show for 5 seconds
-                    # Flashing message
-                    flash_factor = abs(math.sin(pygame.time.get_ticks() / 250))  # Faster flash
-                    if flash_factor > 0.5:  # Only show during the "on" part of the flash
-                        font = pygame.font.Font(None, 32)
-                        message = font.render("A KEY HAS APPEARED!", True, (255, 255, 0))
-                        message_rect = message.get_rect(center=(WINDOW_WIDTH//2, 50))
-                        surface.blit(message, message_rect)
-                    
+        
         # Draw blood puddles
-        for puddle in self.blood_puddles:
-            puddle.draw(surface)
-            
+        for blood_puddle in self.blood_puddles:
+            blood_puddle.draw(surface)
+        
         # Draw health pickups
         for pickup in self.health_pickups:
             if not pickup.collected:
@@ -1141,6 +1208,40 @@ class Room:
                     glow_y = tile_y + TILE_SIZE // 2 - glow_surface.get_height() // 2
                     
                     surface.blit(glow_surface, (glow_x, glow_y))
+
+        # Draw key if dropped
+        if self.key_dropped and self.key_position:
+            # Draw a more visible key with glow effect
+            # First draw a glow effect
+            glow_size = TILE_SIZE * 1.5
+            # Make the glow pulse based on time
+            pulse_factor = 0.5 + 0.5 * abs(math.sin(pygame.time.get_ticks() / 200))
+            glow_color = (255, 255, 100, int(150 * pulse_factor))
+            glow_surface = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
+            pygame.draw.circle(glow_surface, glow_color, (glow_size/2, glow_size/2), glow_size/2)
+            surface.blit(glow_surface, (self.key_position[0] - glow_size/2, self.key_position[1] - glow_size/2))
+            
+            # Then draw the key
+            key_surface = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
+            # Key body
+            pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//4, 0, TILE_SIZE//2, TILE_SIZE//4))
+            # Key stem
+            pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//3, TILE_SIZE//4, TILE_SIZE//3, TILE_SIZE//2))
+            # Key teeth
+            pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//6, TILE_SIZE//2, TILE_SIZE*2//3, TILE_SIZE//4))
+            surface.blit(key_surface, (self.key_position[0] - TILE_SIZE//2, self.key_position[1] - TILE_SIZE//2))
+            
+            # Show a message for 5 seconds after the key is dropped
+            if hasattr(self, 'key_drop_time'):
+                time_since_drop = pygame.time.get_ticks() - self.key_drop_time
+                if time_since_drop < 5000:  # Show for 5 seconds
+                    # Flashing message
+                    flash_factor = abs(math.sin(pygame.time.get_ticks() / 250))  # Faster flash
+                    if flash_factor > 0.5:  # Only show during the "on" part of the flash
+                        font = pygame.font.Font(None, 32)
+                        message = font.render("A KEY HAS APPEARED!", True, (255, 255, 0))
+                        message_rect = message.get_rect(center=(WINDOW_WIDTH//2, 50))
+                        surface.blit(message, message_rect)
 
     def add_exit_door(self):
         """Add an exit door to the room at a random location along a wall"""
@@ -1592,7 +1693,17 @@ class Level:
             # Determine number of enemies based on room type
             if room.room_type == 'boss':
                 room.spawn_boss(self)
-                num_enemies = self.max_enemies_per_room // 2  # Fewer regular enemies in boss room
+                
+                # For level 3 boss, always spawn exactly 2 minions for resurrection mechanic
+                if self.level_number == 3:
+                    # Spawn exactly 2 enemies for the resurrection mechanic
+                    room.resurrectible_minions = pygame.sprite.Group()
+                    self._spawn_resurrectible_minions(room, 2)
+                    print(f"Spawned 2 resurrectible minions in level 3 boss room")
+                    # Set num_enemies to 0 since we already spawned the special minions
+                    num_enemies = 0
+                else:
+                    num_enemies = self.max_enemies_per_room // 2  # Fewer regular enemies in boss room
             elif room.room_type == 'treasure':
                 num_enemies = self.max_enemies_per_room // 3  # Fewer enemies in treasure room
             else:
@@ -1609,6 +1720,53 @@ class Level:
         exit_room_coords = random.choice(list(self.rooms.keys()))
         self.rooms[exit_room_coords].add_exit_door()
         print(f"Exit door placed in room at {exit_room_coords}")
+        
+    def _spawn_resurrectible_minions(self, room, num_minions):
+        """Spawn special minions in the level 3 boss room that can be resurrected"""
+        attempts = 0
+        max_attempts = 100  # Prevent infinite loops
+        
+        for _ in range(num_minions):
+            spawned = False
+            attempts = 0
+            
+            while not spawned and attempts < max_attempts:
+                # Try to place minions at a good distance from the boss
+                # Start with boss position (or room center if no boss)
+                if room.boss:
+                    center_x = room.boss.rect.centerx // TILE_SIZE
+                    center_y = room.boss.rect.centery // TILE_SIZE
+                else:
+                    center_x = room.width // 2
+                    center_y = room.height // 2
+                
+                # Choose a spot at a good distance from the center
+                radius = random.randint(3, 5)  # 3-5 tiles away from center
+                angle = random.uniform(0, 2 * math.pi)  # Random angle
+                
+                # Convert polar to cartesian coordinates
+                offset_x = int(radius * math.cos(angle))
+                offset_y = int(radius * math.sin(angle))
+                
+                tile_x = center_x + offset_x
+                tile_y = center_y + offset_y
+                
+                # Ensure position is within room bounds
+                tile_x = max(1, min(tile_x, room.width - 2))
+                tile_y = max(1, min(tile_y, room.height - 2))
+                
+                # Only spawn on floor tiles away from doors
+                if room.tiles[tile_y][tile_x] == 0 and not room.near_door(tile_x, tile_y):
+                    # Create the minion
+                    minion = Enemy(tile_x * TILE_SIZE, tile_y * TILE_SIZE, None, self.level_number, self)
+                    
+                    # Store in both the regular enemies group and special resurrectible group
+                    room.enemies.add(minion)
+                    room.resurrectible_minions.add(minion)
+                    spawned = True
+                    print(f"Spawned resurrectible minion at ({tile_x}, {tile_y})")
+                
+                attempts += 1
         
     def get_valid_player_start_position(self):
         """Get a valid position for the player to start in the first room"""

@@ -58,7 +58,7 @@ class SoundManager:
         self.music_tracks = {
             'menu': os.path.join(self.sound_dir, "welcome_screen.mp3"),
             'game': os.path.join(self.sound_dir, "game_music.mp3"),
-            'level3': os.path.join(self.sound_dir, "level_3-4.mp3"),
+            'level3': os.path.join(self.sound_dir, "level3_music.mp3"),
             # 'game_over': os.path.join(self.sound_dir, "game_over.mp3"),  # To be added later
         }
         

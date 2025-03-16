@@ -268,7 +268,7 @@ class Player(pygame.sprite.Sprite):
         current_time = pygame.time.get_ticks()
         
         # Add cooldown to prevent dodge spam
-        if hasattr(self, 'last_dodge_time') and current_time - self.last_dodge_time < 500:  # 500ms cooldown
+        if hasattr(self, 'last_dodge_time') and current_time - self.last_dodge_time < 1500:  # 1500ms cooldown
             return False
             
         # Set the last dodge time

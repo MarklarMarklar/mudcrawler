@@ -3,6 +3,7 @@ import math
 import random
 import os
 import heapq
+import glob
 from config import *
 from asset_manager import get_asset_manager
 from sound_manager import get_sound_manager
@@ -222,6 +223,13 @@ class Enemy(pygame.sprite.Sprite):
         # Movement
         self.velocity_x = 0
         self.velocity_y = 0
+        
+        # Respawn mechanic for level 3 minions
+        self.is_dead = False  # Whether the enemy is in "dead" state (blood puddle)
+        self.resurrection_time = 0  # When the enemy will resurrect
+        self.original_texture = None  # Store the original texture for restoration
+        self.blood_puddle_texture = None  # Blood puddle texture when "dead"
+        self.max_health = self.health  # Store max health for restoration
         
     def take_damage(self, amount):
         self.health -= amount
@@ -537,6 +545,46 @@ class Enemy(pygame.sprite.Sprite):
             self.current_state = 'walk'
     
     def update(self, player):
+        # Check if in blood puddle state and ready to resurrect
+        if self.is_dead:
+            current_time = pygame.time.get_ticks()
+            
+            # Add visual effects while in blood puddle state
+            if current_time % 20 == 0:  # Add particles occasionally
+                # Calculate progress (0 to 1, where 0 = just died and 1 = about to respawn)
+                time_left = self.resurrection_time - current_time
+                progress = 1.0 - (time_left / 4000.0)  # 4000 = respawn time
+                
+                # Add more particle effects as resurrection gets closer
+                if progress > 0.5 and random.random() < progress * 0.3:
+                    # Create pulsing glow effect
+                    pulse_size = TILE_SIZE * (0.3 + 0.5 * progress + 0.2 * math.sin(current_time / 100))
+                    alpha = int(50 + 100 * progress)
+                    glow_color = (100 + int(50 * progress), 0, 180 + int(75 * progress), alpha)
+                    
+                    # Draw directly to the screen for simplicity
+                    # Create a surface with the glow
+                    glow_surface = pygame.Surface((pulse_size * 2, pulse_size * 2), pygame.SRCALPHA)
+                    pygame.draw.circle(glow_surface, glow_color, (pulse_size, pulse_size), pulse_size)
+                    
+                    # Draw the glow
+                    screen = pygame.display.get_surface()
+                    screen.blit(glow_surface, (self.rect.centerx - pulse_size, self.rect.centery - pulse_size), 
+                               special_flags=pygame.BLEND_RGBA_ADD)
+            
+            # If it's time to resurrect
+            if current_time >= self.resurrection_time:
+                self.resurrect()
+                # Create visual effect for resurrection
+                for _ in range(5):  # Increased number of particles
+                    offset_x = random.randint(-TILE_SIZE//2, TILE_SIZE//2)
+                    offset_y = random.randint(-TILE_SIZE//2, TILE_SIZE//2)
+                    size = random.randint(5, 15)
+                    pygame.draw.circle(pygame.display.get_surface(), (150, 0, 255), 
+                                      (self.rect.centerx + offset_x, self.rect.centery + offset_y), size)
+            # Skip the rest of the update if still in blood puddle state
+            return
+            
         # Calculate distance to player
         dx = player.rect.centerx - self.rect.centerx
         dy = player.rect.centery - self.rect.centery
@@ -640,14 +688,63 @@ class Enemy(pygame.sprite.Sprite):
     def draw(self, surface):
         surface.blit(self.image, self.rect)
         
-        # Draw health bar
-        health_bar_width = 50
-        health_bar_height = 5
-        health_ratio = self.health / self.enemy_data['health']
-        pygame.draw.rect(surface, RED, (self.rect.x, self.rect.y - 10,
-                                      health_bar_width, health_bar_height))
-        pygame.draw.rect(surface, GREEN, (self.rect.x, self.rect.y - 10,
-                                        health_bar_width * health_ratio, health_bar_height))
+        # Draw health bar only if not in blood puddle state
+        if not self.is_dead:
+            health_bar_width = 50
+            health_bar_height = 5
+            health_ratio = self.health / self.enemy_data['health']
+            pygame.draw.rect(surface, RED, (self.rect.x, self.rect.y - 10,
+                                          health_bar_width, health_bar_height))
+            pygame.draw.rect(surface, GREEN, (self.rect.x, self.rect.y - 10,
+                                            health_bar_width * health_ratio, health_bar_height))
+
+    def enter_blood_puddle_state(self):
+        """Enter the blood puddle state for respawnable minions"""
+        # Store the original texture (current frame of animation)
+        self.original_texture = self.image
+        
+        # Load a random blood puddle texture
+        try:
+            blood_dir = os.path.join(TILE_SPRITES_PATH, "blood")
+            if os.path.exists(blood_dir):
+                blood_files = glob.glob(os.path.join(blood_dir, "*.png"))
+                if blood_files:
+                    selected_blood = random.choice(blood_files)
+                    self.blood_puddle_texture = self.asset_manager.load_image(
+                        selected_blood, scale=(TILE_SIZE, TILE_SIZE)
+                    )
+                    # Set current image to blood puddle
+                    self.image = self.blood_puddle_texture
+        except Exception as e:
+            print(f"Failed to load blood puddle texture: {e}")
+            # Fallback - create a simple red circle
+            self.blood_puddle_texture = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
+            pygame.draw.circle(self.blood_puddle_texture, (120, 0, 0), 
+                               (TILE_SIZE//2, TILE_SIZE//2), TILE_SIZE//2)
+            self.image = self.blood_puddle_texture
+            
+        # Mark as dead and set resurrection time (4 seconds from now)
+        self.is_dead = True
+        self.resurrection_time = pygame.time.get_ticks() + 4000
+        
+    def resurrect(self):
+        """Resurrect the minion after the blood puddle state"""
+        # Restore original texture
+        if self.original_texture:
+            self.image = self.original_texture
+            
+        # Restore animation state
+        self.current_state = 'idle'
+        self.facing = 'down'
+        self.frame = 0
+        self.animation_time = 0
+        
+        # Restore health to full
+        self.health = self.max_health
+        
+        # No longer dead
+        self.is_dead = False
+        self.resurrection_time = 0
 
 class Boss(Enemy):
     def __init__(self, x, y, level, level_instance=None):
@@ -851,6 +948,18 @@ class Boss(Enemy):
         
         # Projectiles for level 2 boss
         self.projectiles = pygame.sprite.Group()
+        
+        # Resurrection functionality for level 3 boss
+        if level == 3:
+            self.resurrection_enabled = True
+            self.resurrection_cooldown = 4000  # 4 seconds between resurrections
+            self.last_resurrection_time = 0
+            self.resurrection_in_progress = False
+            self.resurrection_target = None
+            self.resurrection_animation_time = 0
+            print("Level 3 boss initialized with resurrection abilities")
+        else:
+            self.resurrection_enabled = False
         
     def move_towards_player(self, player):
         """Move towards player using simplified movement for more reliable chasing"""
@@ -1084,6 +1193,46 @@ class Boss(Enemy):
         return False
         
     def update(self, player):
+        # Check if in blood puddle state and ready to resurrect
+        if self.is_dead:
+            current_time = pygame.time.get_ticks()
+            
+            # Add visual effects while in blood puddle state
+            if current_time % 20 == 0:  # Add particles occasionally
+                # Calculate progress (0 to 1, where 0 = just died and 1 = about to respawn)
+                time_left = self.resurrection_time - current_time
+                progress = 1.0 - (time_left / 4000.0)  # 4000 = respawn time
+                
+                # Add more particle effects as resurrection gets closer
+                if progress > 0.5 and random.random() < progress * 0.3:
+                    # Create pulsing glow effect
+                    pulse_size = TILE_SIZE * (0.3 + 0.5 * progress + 0.2 * math.sin(current_time / 100))
+                    alpha = int(50 + 100 * progress)
+                    glow_color = (100 + int(50 * progress), 0, 180 + int(75 * progress), alpha)
+                    
+                    # Draw directly to the screen for simplicity
+                    # Create a surface with the glow
+                    glow_surface = pygame.Surface((pulse_size * 2, pulse_size * 2), pygame.SRCALPHA)
+                    pygame.draw.circle(glow_surface, glow_color, (pulse_size, pulse_size), pulse_size)
+                    
+                    # Draw the glow
+                    screen = pygame.display.get_surface()
+                    screen.blit(glow_surface, (self.rect.centerx - pulse_size, self.rect.centery - pulse_size), 
+                               special_flags=pygame.BLEND_RGBA_ADD)
+            
+            # If it's time to resurrect
+            if current_time >= self.resurrection_time:
+                self.resurrect()
+                # Create visual effect for resurrection
+                for _ in range(5):  # Increased number of particles
+                    offset_x = random.randint(-TILE_SIZE//2, TILE_SIZE//2)
+                    offset_y = random.randint(-TILE_SIZE//2, TILE_SIZE//2)
+                    size = random.randint(5, 15)
+                    pygame.draw.circle(pygame.display.get_surface(), (150, 0, 255), 
+                                      (self.rect.centerx + offset_x, self.rect.centery + offset_y), size)
+            # Skip the rest of the update if still in blood puddle state
+            return
+            
         # Calculate distance to player
         dx = player.rect.centerx - self.rect.centerx
         dy = player.rect.centery - self.rect.centery
@@ -1158,8 +1307,8 @@ class Boss(Enemy):
         # Update animation
         self.animation_time += self.animation_speed
         
-        # If attack animation is done, go back to previous state
-        if self.current_state == 'attack' and self.animation_time >= len(self.animations[self.current_state][self.facing]):
+        # If attack or special animation is done, go back to previous state
+        if (self.current_state == 'attack' or self.current_state == 'special') and self.animation_time >= len(self.animations[self.current_state][self.facing]):
             self.current_state = 'idle' if self.state == 'idle' else 'walk'
             self.animation_time = 0
             
@@ -1250,7 +1399,7 @@ class Boss(Enemy):
                 
                 # Blit the dot to the main surface
                 surface.blit(dot_surface, (hist_x - size//2, hist_y - size//2))
-                
+        
         # Draw projectiles for level 2 boss
         if self.level == 2:
             for projectile in self.projectiles:
@@ -1259,16 +1408,17 @@ class Boss(Enemy):
         # Uncomment to show boss hitbox for debugging
         # pygame.draw.rect(surface, (255, 0, 0), self.rect, 1)
         
-        # Draw health bar
-        health_bar_width = 60  # Wider than regular enemies
-        health_bar_height = 6
-        health_ratio = self.health / self.enemy_data['health']
-        
-        # Position health bar relative to the visual representation
-        health_bar_x = draw_x + (self.image.get_width() - health_bar_width) // 2
-        health_bar_y = draw_y - 12
-        
-        pygame.draw.rect(surface, RED, (health_bar_x, health_bar_y,
-                                      health_bar_width, health_bar_height))
-        pygame.draw.rect(surface, GREEN, (health_bar_x, health_bar_y,
-                                        health_bar_width * health_ratio, health_bar_height)) 
+        # Draw health bar only if not in blood puddle state
+        if not self.is_dead:
+            health_bar_width = 60  # Wider than regular enemies
+            health_bar_height = 6
+            health_ratio = self.health / self.enemy_data['health']
+            
+            # Position health bar relative to the visual representation
+            health_bar_x = draw_x + (self.image.get_width() - health_bar_width) // 2
+            health_bar_y = draw_y - 12
+            
+            pygame.draw.rect(surface, RED, (health_bar_x, health_bar_y,
+                                          health_bar_width, health_bar_height))
+            pygame.draw.rect(surface, GREEN, (health_bar_x, health_bar_y,
+                                            health_bar_width * health_ratio, health_bar_height)) 
