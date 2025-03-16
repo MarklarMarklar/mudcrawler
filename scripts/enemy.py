@@ -610,11 +610,9 @@ class Enemy(pygame.sprite.Sprite):
             self.current_state = 'walk'
             self.move_towards_player(player)
         else:
-            # Idle state - enemies don't patrol, they stand still until they see the player
-            self.state = 'idle'
-            self.current_state = 'idle'
-            self.velocity_x = 0
-            self.velocity_y = 0
+            # Patrol state - patrol around until they spot the player
+            self.state = 'patrol'
+            self.patrol()
         
         # Store the old position to revert if collision happens
         old_rect = self.rect.copy()
