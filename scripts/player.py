@@ -429,6 +429,12 @@ class Player(pygame.sprite.Sprite):
             
             # Create sword hitbox based on facing direction with 30% increased range (15% + 15%)
             attack_size = int(TILE_SIZE * 1.32)  # 32% larger than normal tile size (1.15 * 1.15 ≈ 1.32)
+            
+            # Check if this is a fire sword attack and adjust range if needed
+            if hasattr(self, 'game') and self.game and hasattr(self.game, 'weapon_manager') and self.game.weapon_manager.has_fire_sword:
+                # Make fire sword 20% larger range than normal sword
+                attack_size = int(attack_size * 1.2)
+                
             hitbox = pygame.Rect(self.rect.x, self.rect.y, attack_size, attack_size)
             if self.facing == 'right':
                 hitbox.x += TILE_SIZE

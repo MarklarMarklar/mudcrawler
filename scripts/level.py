@@ -683,8 +683,8 @@ class Room:
             self.tiles[y][x] = 0
             self.destroyable_walls[y][x] = False
             
-            # Check if this is the special fire sword chest
-            if self.has_fire_sword_chest and x == self.fire_sword_chest_x and y == self.fire_sword_chest_y:
+            # Check if this is the special fire sword chest in level 2
+            if self.has_fire_sword_chest and x == self.fire_sword_chest_x and y == self.fire_sword_chest_y and self.level_number == 2:
                 # This is the fire sword chest - spawn the fire sword with a larger scale
                 center_x = x * TILE_SIZE + TILE_SIZE // 2
                 center_y = y * TILE_SIZE + TILE_SIZE // 2
@@ -692,6 +692,9 @@ class Room:
                 # Create a fire sword pickup with a 50% larger scale
                 fire_sword = WeaponPickup(center_x, center_y, "fire_sword", scale=1.5)
                 self.weapon_pickups.append(fire_sword)
+                
+                # Create a burst of particles for dramatic effect
+                self.create_chest_sparkle_burst(center_x, center_y)
                 
                 print(f"Room: Fire sword chest destroyed! Fire sword spawned at {center_x}, {center_y}")
                 return True
@@ -998,10 +1001,7 @@ class Room:
                 elif pickup_roll < 0.18:
                     self.arrow_pickups.append(ArrowPickup(enemy.rect.centerx, enemy.rect.centery))
                     print(f"Arrow pickup spawned from defeated enemy at {enemy.rect.centerx}, {enemy.rect.centery}")
-                # 2% chance to drop a fire sword in levels 2+
-                elif pickup_roll < 0.20 and self.level_number >= 2:
-                    self.weapon_pickups.append(WeaponPickup(enemy.rect.centerx, enemy.rect.centery, "fire_sword"))
-                    print(f"Room: Fire sword spawned from defeated enemy at {enemy.rect.centerx}, {enemy.rect.centery}")
+                # Remove the fire sword drop from regular enemies
                 
                 # If this is a resurrectible minion in the level 3 boss room, enter blood puddle state
                 if enemy in self.resurrectible_minions and self.level_number == 3 and self.room_type == 'boss' and self.boss and self.boss.health > 0:
@@ -1027,6 +1027,41 @@ class Room:
         if len(self.enemies) == 0 and (not self.boss or self.boss.health <= 0):
             self.cleared = True
             
+        # Update sparkle effect for fire sword chest
+        if self.has_fire_sword_chest and hasattr(self, 'sparkle_timer'):
+            self.sparkle_timer += 1
+            
+            # Create new sparkle particles periodically
+            if self.sparkle_timer % 10 == 0:  # Every 10 frames
+                if not hasattr(self, 'sparkle_particles'):
+                    self.sparkle_particles = []
+                
+                # Add a new sparkle at a random position around the chest
+                chest_x = self.fire_sword_chest_x * TILE_SIZE + TILE_SIZE // 2
+                chest_y = self.fire_sword_chest_y * TILE_SIZE + TILE_SIZE // 2
+                
+                # Random offset within the chest tile
+                offset_x = random.randint(-TILE_SIZE//3, TILE_SIZE//3)
+                offset_y = random.randint(-TILE_SIZE//3, TILE_SIZE//3)
+                
+                # Add the sparkle particle
+                self.sparkle_particles.append({
+                    'x': chest_x + offset_x,
+                    'y': chest_y + offset_y,
+                    'size': random.uniform(1, 3),
+                    'life': random.randint(20, 40),  # Frames to live
+                    'alpha': 255,  # Start fully opaque
+                    'color': (255, 215, 0)  # Gold color
+                })
+            
+            # Update existing sparkle particles
+            for sparkle in self.sparkle_particles[:]:
+                sparkle['life'] -= 1
+                sparkle['alpha'] = int(255 * (sparkle['life'] / 40))  # Fade out
+                
+                if sparkle['life'] <= 0:
+                    self.sparkle_particles.remove(sparkle)
+        
     def check_collision(self, rect):
         """Check if a rectangle collides with walls in this room"""
         tile_x1 = max(0, rect.left // TILE_SIZE)
@@ -1096,17 +1131,16 @@ class Room:
                             try:
                                 # Load and draw the destroyable wall texture
                                 if os.path.exists(destroyable_wall_texture):
+                                    # Regular destroyable wall
+                                    texture = level.asset_manager.load_image(destroyable_wall_texture, scale=(TILE_SIZE, TILE_SIZE))
+                                    surface.blit(texture, (tile_x, tile_y))
+                                    
+                                    # Add glowing effect for fire sword chest
                                     if is_fire_sword_chest:
-                                        # Scale up by 150% for fire sword chest
-                                        scaled_size = int(TILE_SIZE * 1.5)
-                                        texture = level.asset_manager.load_image(destroyable_wall_texture, scale=(scaled_size, scaled_size))
-                                        # Draw centered at the tile position
-                                        offset = (scaled_size - TILE_SIZE) // 2
-                                        surface.blit(texture, (tile_x - offset, tile_y - offset))
-                                    else:
-                                        # Regular destroyable wall
-                                        texture = level.asset_manager.load_image(destroyable_wall_texture, scale=(TILE_SIZE, TILE_SIZE))
-                                        surface.blit(texture, (tile_x, tile_y))
+                                        # Store the chest position for later glow rendering
+                                        # We'll render the glow at the end to ensure it's on top of everything
+                                        if not hasattr(self, 'fire_sword_chest_position'):
+                                            self.fire_sword_chest_position = (tile_x, tile_y, texture)
                                 else:
                                     # Fallback to regular wall if texture loading fails
                                     surface.blit(tile_images['wall'], (tile_x, tile_y))
@@ -1287,6 +1321,34 @@ class Room:
             
             # Show a message for 5 seconds after the key is dropped
 
+        # Draw sparkles for fire sword chest - moved to the end to ensure they render on top of everything
+        if hasattr(self, 'sparkle_particles') and self.has_fire_sword_chest:
+            for sparkle in self.sparkle_particles:
+                # Create a small surface for the sparkle with alpha
+                sparkle_size = int(sparkle['size'])
+                if sparkle_size < 1:
+                    sparkle_size = 1
+                sparkle_surf = pygame.Surface((sparkle_size*2, sparkle_size*2), pygame.SRCALPHA)
+                
+                # Draw the sparkle as a small circle with alpha value
+                color_with_alpha = (*sparkle['color'], sparkle['alpha'])
+                pygame.draw.circle(sparkle_surf, color_with_alpha, (sparkle_size, sparkle_size), sparkle_size)
+                
+                # Blit the sparkle onto the main surface
+                surface.blit(sparkle_surf, (sparkle['x'] - sparkle_size, sparkle['y'] - sparkle_size))
+        
+        # Draw chest glow on top of everything
+        if hasattr(self, 'fire_sword_chest_position') and self.has_fire_sword_chest:
+            tile_x, tile_y, texture = self.fire_sword_chest_position
+            
+            # Draw a subtle glow over the chest
+            glow_surf = pygame.Surface((TILE_SIZE*1.5, TILE_SIZE*1.5), pygame.SRCALPHA)
+            pulse_value = 0.5 + 0.5 * math.sin(pygame.time.get_ticks() / 200)  # Pulsing effect
+            alpha = int(150 * pulse_value)  # Pulsing alpha (increased for visibility)
+            pygame.draw.circle(glow_surf, (255, 215, 0, alpha), (TILE_SIZE*1.5//2, TILE_SIZE*1.5//2), TILE_SIZE*1.5//2)
+            glow_rect = glow_surf.get_rect(center=(tile_x + TILE_SIZE//2, tile_y + TILE_SIZE//2))
+            surface.blit(glow_surf, glow_rect)
+    
     def add_exit_door(self):
         """Add an exit door to the room at a random location along a wall"""
         # Choose a random wall position that is not a door or corner
@@ -1340,6 +1402,7 @@ class Room:
             
     def drop_fire_sword(self):
         """Drop a fire sword when the level 2 boss is defeated"""
+        # Make sure this ONLY happens in level 2
         if self.room_type == 'boss' and self.boss and self.boss.health <= 0 and self.level_number == 2 and not self.fire_sword_dropped:
             # Instead of dropping the fire sword directly, create a treasure chest in the middle of the room
             
@@ -1354,8 +1417,14 @@ class Room:
             # Store the position of this special chest
             self.fire_sword_chest_x = center_x
             self.fire_sword_chest_y = center_y
+            
+            # Store that this is a special chest with sparkle effects
             self.has_fire_sword_chest = True
             self.fire_sword_dropped = True
+            
+            # Initialize sparkle timer and particles for visual effect
+            self.sparkle_timer = 0
+            self.sparkle_particles = []
             
             print(f"Level 2 boss defeated! A treasure chest has appeared in the center of the room at {center_x}, {center_y}")
             
@@ -1393,6 +1462,25 @@ class Room:
                 print(f"Weapon pickup collected: {pickup.weapon_type}")
                 return pickup.weapon_type
         return None
+
+    def create_chest_sparkle_burst(self, x, y):
+        """Create a burst of sparkle particles when chest is destroyed"""
+        try:
+            # Add this directly to the level's particle system for rendering
+            if hasattr(self, 'level_instance') and self.level_instance and hasattr(self.level_instance, 'particle_system'):
+                particle_system = self.level_instance.particle_system
+                # Create a burst of golden particles
+                particle_system.create_particles(
+                    x, y, 
+                    count=20, 
+                    color=(255, 215, 0),  # Gold color
+                    velocity_range=(1, 3),
+                    lifetime_range=(60, 120),
+                    size_range=(2, 5),
+                    gravity=0.1
+                )
+        except Exception as e:
+            print(f"Error creating chest sparkle burst: {e}")
 
 class Level:
     """Represents an entire dungeon level composed of multiple rooms"""

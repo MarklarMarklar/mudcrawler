@@ -636,7 +636,7 @@ class HUD:
             
         # Try to load fire sword icon
         try:
-            fire_sword_icon_path = "/home/marklar/Mud/Mud_dungeon_crawler/assets/icons/fire_sword_icon.png"
+            fire_sword_icon_path = os.path.join(ASSET_PATH, "icons/fire_sword_icon.png")
             if os.path.exists(fire_sword_icon_path):
                 self.fire_sword_icon = self.asset_manager.load_image(fire_sword_icon_path, scale=(32, 32))
                 print("Successfully loaded fire sword icon")
@@ -645,7 +645,7 @@ class HUD:
             
         # Try to load key icon from UI sprites
         try:
-            key_icon_path = "/home/marklar/Mud/Mud_dungeon_crawler/assets/icons/key.png"  # Correct path to key.png in assets/icons
+            key_icon_path = os.path.join(ASSET_PATH, "icons/key.png")
             if os.path.exists(key_icon_path):
                 self.key_icon = self.asset_manager.load_image(key_icon_path, scale=(32, 32))
                 print("Successfully loaded key icon")
