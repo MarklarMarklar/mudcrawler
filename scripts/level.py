@@ -1831,13 +1831,16 @@ class Level:
             if room.room_type == 'boss':
                 room.spawn_boss(self)
                 
-                # For level 3 boss, always spawn exactly 2 minions for resurrection mechanic
+                # For level 3 boss, spawn special minions that can be resurrected
                 if self.level_number == 3:
                     # Spawn exactly 2 enemies for the resurrection mechanic
                     room.resurrectible_minions = pygame.sprite.Group()
                     self._spawn_resurrectible_minions(room, 2)
                     print(f"Spawned 2 resurrectible minions in level 3 boss room")
                     # Set num_enemies to 0 since we already spawned the special minions
+                    num_enemies = 0
+                elif self.level_number == 4:
+                    # For level 4 boss, don't spawn any additional enemies
                     num_enemies = 0
                 else:
                     num_enemies = self.max_enemies_per_room // 2  # Fewer regular enemies in boss room

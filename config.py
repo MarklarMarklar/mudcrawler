@@ -58,10 +58,10 @@ ENEMY_TYPES = {
 
 # Boss Settings
 BOSS_TYPES = {
-    'level1': {'name': 'King Slime', 'health': 200, 'damage': 30, 'speed': 1.5},
+    'level1': {'name': 'King Slime', 'health': 200, 'damage': 20, 'speed': 1.5},
     'level2': {'name': 'Skeleton Lord', 'health': 250, 'damage': 25, 'speed': 1.5},
-    'level3': {'name': 'Phantom King', 'health': 300, 'damage': 40, 'speed': 1.5},
-    'level4': {'name': 'Goblin Chief', 'health': 350, 'damage': 45, 'speed': 3},
+    'level3': {'name': 'Phantom King', 'health': 300, 'damage': 25, 'speed': 1.5},
+    'level4': {'name': 'Goblin Chief', 'health': 350, 'damage': 25, 'speed': 2},
     'level5': {'name': 'Dark Champion', 'health': 400, 'damage': 50, 'speed': 3},
     'level6': {'name': 'Arch Wizard', 'health': 450, 'damage': 55, 'speed': 2},
     'level7': {'name': 'Demon Lord', 'health': 500, 'damage': 60, 'speed': 3},

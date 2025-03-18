@@ -724,12 +724,57 @@ class Game:
                     current_room.boss.take_damage(damage)
                     current_room.boss.has_been_hit_this_swing = True  # Mark as hit for this swing
                     
+                    # Check if damage was reflected by level 4 boss in defensive mode
+                    if hasattr(current_room.boss, 'reflected_damage') and current_room.boss.reflected_damage > 0:
+                        reflected = current_room.boss.reflected_damage
+                        # Add debug logging
+                        print(f"Processing reflected damage: {reflected}, boss defensive mode: {getattr(current_room.boss, 'defensive_mode', False)}")
+                        
+                        # Apply reflected damage to player
+                        self.player.take_damage(reflected)
+                        # Create visual effect to show damage reflection
+                        self.particle_system.create_particle(
+                            self.player.rect.centerx, 
+                            self.player.rect.centery,
+                            color=(0, 100, 255),  # Blue reflection particles
+                            size=random.randint(4, 8),
+                            speed=random.uniform(1.0, 2.0),
+                            lifetime=random.randint(20, 30)
+                        )
+                        # Reset reflected damage
+                        current_room.boss.reflected_damage = 0
+                        # Show feedback message
+                        self.display_message(f"Boss reflected {int(reflected)} damage!", (0, 100, 255))
+                    
                 # Check arrow collisions with boss
                 arrows_to_remove = []
                 for arrow in self.weapon_manager.bow.arrows:
                     try:
                         if arrow.rect.colliderect(current_room.boss.damage_hitbox):
                             current_room.boss.take_damage(BOW_DAMAGE)
+                            
+                            # Check if damage was reflected by level 4 boss in defensive mode
+                            if hasattr(current_room.boss, 'reflected_damage') and current_room.boss.reflected_damage > 0:
+                                reflected = current_room.boss.reflected_damage
+                                # Add debug logging
+                                print(f"Processing reflected damage: {reflected}, boss defensive mode: {getattr(current_room.boss, 'defensive_mode', False)}")
+                                
+                                # Apply reflected damage to player
+                                self.player.take_damage(reflected)
+                                # Create visual effect to show damage reflection
+                                self.particle_system.create_particle(
+                                    self.player.rect.centerx, 
+                                    self.player.rect.centery,
+                                    color=(0, 100, 255),  # Blue reflection particles
+                                    size=random.randint(4, 8),
+                                    speed=random.uniform(1.0, 2.0),
+                                    lifetime=random.randint(20, 30)
+                                )
+                                # Reset reflected damage
+                                current_room.boss.reflected_damage = 0
+                                # Show feedback message
+                                self.display_message(f"Boss reflected {int(reflected)} damage!", (0, 100, 255))
+                            
                             arrows_to_remove.append(arrow)
                             break
                     except Exception as e:

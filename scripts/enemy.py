@@ -841,6 +841,32 @@ class Boss(Enemy):
         # Increase attack cooldown to give player more time between attacks
         self.attack_cooldown = 1200  # 1.2 seconds between attacks
         
+        # Level 4 boss defensive mode attributes
+        self.defensive_mode = False
+        self.defensive_mode_cooldown = 8000  # 8 seconds between defensive mode activations
+        self.defensive_mode_duration = 3000  # 3 seconds in defensive mode
+        self.last_defensive_mode_time = 0
+        self.defensive_mode_engaged = False
+        self.in_combat = False  # Track if boss has engaged in combat
+        self.combat_start_time = 0  # When combat started
+        self.last_defensive_sound_time = 0  # Track when defensive sound was last played
+        self.reflected_damage = 0  # Track damage to reflect during defensive mode
+        
+        # Load defensive state image for level 4 boss
+        self.defensive_image = None
+        if level == 4:
+            try:
+                defensive_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_4_def.png")
+                if os.path.exists(defensive_img_path):
+                    print(f"Loading defensive image from: {defensive_img_path}")
+                    self.defensive_image = self.asset_manager.load_image(
+                        defensive_img_path, scale=(TILE_SIZE*2.2, TILE_SIZE*2.2))
+                    print(f"Loaded defensive image for level 4 boss: {id(self.defensive_image)}")
+                else:
+                    print(f"Defensive image not found at: {defensive_img_path}")
+            except Exception as e:
+                print(f"Failed to load defensive image for level 4 boss: {e}")
+        
         # Level 2 boss uses projectiles
         self.projectiles = pygame.sprite.Group()
         self.projectile_cooldown = 0
@@ -1221,6 +1247,24 @@ class Boss(Enemy):
         """Override the parent take_damage method to make boss aggressive when hit"""
         # Set the has_spotted_player flag to True when boss takes damage
         self.has_spotted_player = True
+        
+        # Clear any lingering reflected damage to prevent bugs
+        if self.level == 4:
+            # Always reset reflection when taking damage
+            if not self.defensive_mode:
+                self.reflected_damage = 0  # Ensure no reflection when not in defensive mode
+        
+        # Level 4 boss damage reflection during defensive mode
+        if self.level == 4 and self.defensive_mode:
+            # Get the current game instance to access the player
+            # We need to reflect damage, but since we don't have direct access to the player,
+            # we'll store the reflected damage amount so the game can apply it later
+            self.reflected_damage = amount * 0.5  # Reflect 50% of damage
+            print(f"Level 4 boss reflecting {self.reflected_damage} damage!")
+            
+            # Don't take damage during defensive mode
+            return False
+            
         # Call the parent method to handle the actual damage
         return super().take_damage(amount)
         
@@ -1371,6 +1415,60 @@ class Boss(Enemy):
         
         if distance <= detection_range:
             self.has_spotted_player = True
+            
+            # Start combat timer for level 4 boss
+            if self.level == 4 and not self.in_combat:
+                self.in_combat = True
+                self.combat_start_time = current_time
+                # Set the initial last_defensive_mode_time to the current time
+                # This ensures the boss doesn't immediately enter defensive mode
+                self.last_defensive_mode_time = current_time
+                print("Level 4 boss engaging in combat - chase phase starting")
+        
+        # Level 4 boss defensive mode logic
+        if self.level == 4 and self.in_combat:
+            # Calculate time since combat started
+            if not self.defensive_mode_engaged:
+                # Check if it's time to activate defensive mode
+                time_since_last_defensive = current_time - self.last_defensive_mode_time
+                if time_since_last_defensive >= self.defensive_mode_cooldown:
+                    # Activate defensive mode
+                    self.defensive_mode_engaged = True
+                    self.defensive_mode = True
+                    self.last_defensive_mode_time = current_time
+                    
+                    # Store the current image to restore later
+                    self.normal_image = self.image
+                    
+                    # Switch to defensive image if available
+                    if self.defensive_image:
+                        self.image = self.defensive_image
+                        # Force it to be used immediately
+                        print(f"Switching to defensive image: {id(self.defensive_image)}")
+                    
+                    # Play defensive sound
+                    self.sound_manager.play_sound("effects/boss_4_def")
+                    print(f"Level 4 boss entering defensive mode at time {current_time}!")
+                else:
+                    # Debug output to track the defensive mode cooldown
+                    if current_time % 1000 < 20:  # Only print once per second approximately
+                        print(f"Time until defensive mode: {self.defensive_mode_cooldown - time_since_last_defensive} ms")
+            else:
+                # Already in defensive mode, check if it's time to deactivate
+                time_in_defensive_mode = current_time - self.last_defensive_mode_time
+                if time_in_defensive_mode >= self.defensive_mode_duration:
+                    # Deactivate defensive mode
+                    self.defensive_mode_engaged = False
+                    self.defensive_mode = False
+                    
+                    # Restore normal image
+                    if hasattr(self, 'normal_image') and self.normal_image:
+                        self.image = self.normal_image
+                    
+                    # Ensure reflected damage is reset when leaving defensive mode
+                    self.reflected_damage = 0
+                        
+                    print(f"Level 4 boss leaving defensive mode at time {current_time}!")
         
         # Level 2 boss: use special attack when player is in range but not in melee range
         # (to avoid spamming when in close combat)
@@ -1384,18 +1482,25 @@ class Boss(Enemy):
             self.velocity_x = 0
             self.velocity_y = 0
             self.attack(player)
-        elif self.has_spotted_player:
-            # Chase state - always chase once spotted
+        elif self.has_spotted_player and not (self.level == 4 and self.defensive_mode):
+            # Chase state - always chase once spotted (unless level 4 boss in defensive mode)
             self.state = 'chase'
             self.current_state = 'walk'
             self.move_towards_player(player)
         else:
-            # Idle state - stand still until player is spotted
+            # Idle state - stand still until player is spotted or if level 4 boss in defensive mode
             self.state = 'idle'
             self.current_state = 'idle'
             self.velocity_x = 0
             self.velocity_y = 0
         
+        # If level 4 boss is in defensive mode, ensure it doesn't move
+        if self.level == 4 and self.defensive_mode:
+            self.velocity_x = 0
+            self.velocity_y = 0
+            self.state = 'idle'
+            self.current_state = 'idle'
+            
         # Store old position to handle collisions
         old_rect = self.rect.copy()
         
@@ -1443,7 +1548,10 @@ class Boss(Enemy):
             
         # Calculate current frame
         self.frame = int(self.animation_time) % len(self.animations[self.current_state][self.facing])
-        self.image = self.animations[self.current_state][self.facing][self.frame]
+        
+        # Only update image from animation frames if not in defensive mode (for level 4 boss)
+        if not (self.level == 4 and self.defensive_mode):
+            self.image = self.animations[self.current_state][self.facing][self.frame]
         
         # Update projectiles
         if self.level == 2:
@@ -1593,6 +1701,63 @@ class Boss(Enemy):
             
             # Draw boss character (drawn AFTER the trail)
             surface.blit(self.image, (draw_x, draw_y))
+            
+            # Draw defensive mode effect for level 4 boss
+            if self.level == 4 and self.defensive_mode:
+                current_time = pygame.time.get_ticks()
+                
+                # Create a pulsing shield effect
+                shield_size = self.image.get_width() * 1.2  # Slightly larger than boss
+                shield_pulse = 0.1 * math.sin(current_time / 100)  # Subtle pulsing effect
+                shield_radius = int(shield_size / 2 * (1 + shield_pulse))
+                
+                # Create a transparent surface for the shield
+                shield_surface = pygame.Surface((shield_radius * 2, shield_radius * 2), pygame.SRCALPHA)
+                
+                # Blue shield color with pulsing opacity
+                shield_alpha = int(100 + 50 * math.sin(current_time / 150))
+                
+                # Change shield color if damage was just reflected - make it brighter
+                if hasattr(self, 'reflected_damage') and self.reflected_damage > 0:
+                    shield_color = (50, 150, 255, shield_alpha + 50)  # Brighter blue shield
+                    # Also add an extra outer ring to show reflection
+                    reflection_radius = shield_radius + 10
+                    pygame.draw.circle(shield_surface, (255, 255, 255, shield_alpha // 2), 
+                                      (shield_radius, shield_radius), reflection_radius, 3)
+                else:
+                    shield_color = (0, 128, 255, shield_alpha)  # Regular blue shield
+                
+                # Draw shield
+                center = (shield_radius, shield_radius)
+                pygame.draw.circle(shield_surface, shield_color, center, shield_radius, 5)  # Outline shield
+                
+                # Draw energy lines within the shield
+                for i in range(8):  # 8 energy lines
+                    angle = i * math.pi / 4 + current_time / 500  # Rotate over time
+                    start_x = center[0] + math.cos(angle) * (shield_radius * 0.3)
+                    start_y = center[1] + math.sin(angle) * (shield_radius * 0.3)
+                    end_x = center[0] + math.cos(angle) * (shield_radius * 0.9)
+                    end_y = center[1] + math.sin(angle) * (shield_radius * 0.9)
+                    
+                    line_color = (100, 200, 255, shield_alpha)
+                    pygame.draw.line(shield_surface, line_color, (start_x, start_y), (end_x, end_y), 2)
+                
+                # Draw energy particles
+                for _ in range(5):  # Add 5 particles
+                    angle = random.uniform(0, math.pi * 2)
+                    dist = random.uniform(shield_radius * 0.5, shield_radius * 0.9)
+                    particle_x = center[0] + math.cos(angle) * dist
+                    particle_y = center[1] + math.sin(angle) * dist
+                    particle_size = random.randint(2, 4)
+                    
+                    particle_color = (150, 220, 255, 200)
+                    pygame.draw.circle(shield_surface, particle_color, 
+                                      (int(particle_x), int(particle_y)), particle_size)
+                
+                # Position and draw the shield
+                shield_x = draw_x + self.image.get_width()//2 - shield_radius
+                shield_y = draw_y + self.image.get_height()//2 - shield_radius
+                surface.blit(shield_surface, (shield_x, shield_y))
             
             # Draw projectiles for level 2 boss
             if self.level == 2:
