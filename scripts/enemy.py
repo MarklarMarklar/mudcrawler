@@ -810,6 +810,10 @@ class Boss(Enemy):
         # Store the original rect which represents the full sprite size
         self.original_rect = self.rect.copy()
         
+        # Calculate expected sprite dimensions (typically 2x tile size for bosses)
+        expected_width = TILE_SIZE * 2
+        expected_height = TILE_SIZE * 2
+        
         # Use a smaller hitbox for movement and collision detection
         # Make it ~65% of the visual size (down from 75%)
         small_size = int(TILE_SIZE * 0.65)  # Even smaller for fairness
@@ -819,8 +823,23 @@ class Boss(Enemy):
         hitbox_y = self.rect.centery - small_size // 2
         self.rect = pygame.Rect(hitbox_x, hitbox_y, small_size, small_size)
         
-        # Create a damage hitbox that uses the full sprite size for easier hit detection
-        self.damage_hitbox = self.original_rect.copy()
+        # Visual offset tracks the difference between the rect position and where
+        # the sprite is actually drawn
+        self.visual_offset_x = (expected_width - small_size) // 2
+        self.visual_offset_y = (expected_height - small_size) // 2
+        
+        # Create a damage hitbox that covers most of the visual sprite
+        # Using a size that's 90% of the expected boss sprite dimensions
+        damage_width = int(expected_width * 0.9)  # 90% of visual width
+        damage_height = int(expected_height * 0.9)  # 90% of visual height
+        
+        # Create damage hitbox centered properly on the visual sprite
+        self.damage_hitbox = pygame.Rect(
+            self.rect.centerx - damage_width // 2,
+            self.rect.centery - damage_height // 2,
+            damage_width,
+            damage_height
+        )
         
         # Initialize health to the boss-specific value
         self.health = self.enemy_data['health']
@@ -1540,8 +1559,25 @@ class Boss(Enemy):
         self.rect.clamp_ip(pygame.display.get_surface().get_rect())
         
         # Update the damage hitbox to match the new position of the movement hitbox
-        # Position the damage hitbox (which is full-sized) so it's centered on the movement hitbox
-        self.damage_hitbox.center = self.rect.center
+        # Position the damage hitbox so it's properly aligned with the visual sprite
+        
+        # Calculate the expected dimensions based on the current image
+        expected_width = self.image.get_width()
+        expected_height = self.image.get_height()
+        
+        # Update visual offset based on current image size
+        self.visual_offset_x = (expected_width - self.rect.width) // 2
+        self.visual_offset_y = (expected_height - self.rect.height) // 2
+        
+        # Calculate damage hitbox dimensions (90% of visual sprite)
+        damage_width = int(expected_width * 0.9)
+        damage_height = int(expected_height * 0.9)
+        
+        # Position the damage hitbox to properly cover the visual sprite
+        self.damage_hitbox.width = damage_width
+        self.damage_hitbox.height = damage_height
+        self.damage_hitbox.centerx = self.rect.centerx
+        self.damage_hitbox.centery = self.rect.centery
         
         # Update animation
         self.animation_time += self.animation_speed
@@ -1709,6 +1745,13 @@ class Boss(Enemy):
             
             # Draw boss character (drawn AFTER the trail)
             surface.blit(self.image, (draw_x, draw_y))
+            
+            # Debug: Draw hitboxes to visualize them if in debug mode
+            if DEBUG_MODE:
+                # Draw movement hitbox in yellow
+                pygame.draw.rect(surface, (255, 255, 0), self.rect, 2)
+                # Draw damage hitbox in red - draw it at the proper visual position
+                pygame.draw.rect(surface, (255, 0, 0), self.damage_hitbox, 2)
             
             # Draw defensive mode effect for level 4 boss
             if self.level == 4 and self.defensive_mode:
