@@ -666,10 +666,16 @@ class Game:
                 
         # Check enemy collisions with weapons
         try:
+            # Get the current attack hitbox
+            sword_hitbox = None
+            if self.weapon_manager.sword.active:
+                # Get the hitbox without triggering an attack
+                sword_hitbox = self.player.get_attack_hitbox()
+
             for enemy in current_room.enemies:
-                # Check sword collisions
+                # Check sword collisions using the directional attack hitbox
                 if (self.weapon_manager.sword.active and 
-                    self.weapon_manager.sword.rect.colliderect(enemy.rect) and
+                    sword_hitbox and sword_hitbox.colliderect(enemy.rect) and
                     not enemy.has_been_hit_this_swing):  # Add check for hit tracking
                     # Apply fire sword damage bonus if active
                     damage = SWORD_DAMAGE
@@ -709,7 +715,7 @@ class Game:
         try:
             if current_room.boss and current_room.boss.health > 0:
                 if (self.weapon_manager.sword.active and 
-                    self.weapon_manager.sword.rect.colliderect(current_room.boss.damage_hitbox) and
+                    sword_hitbox and sword_hitbox.colliderect(current_room.boss.damage_hitbox) and
                     not current_room.boss.has_been_hit_this_swing):  # Add check for hit tracking
                     # Apply fire sword damage bonus if active
                     damage = SWORD_DAMAGE

@@ -1,6 +1,7 @@
 import pygame
 import math
 import os
+import random
 from config import *
 from asset_manager import get_asset_manager
 from sound_manager import get_sound_manager
@@ -434,16 +435,41 @@ class Player(pygame.sprite.Sprite):
             if hasattr(self, 'game') and self.game and hasattr(self.game, 'weapon_manager') and self.game.weapon_manager.has_fire_sword:
                 # Make fire sword 20% larger range than normal sword
                 attack_size = int(attack_size * 1.2)
-                
-            hitbox = pygame.Rect(self.rect.x, self.rect.y, attack_size, attack_size)
+            
+            # Create directional hitboxes that only extend in the facing direction
             if self.facing == 'right':
-                hitbox.x += TILE_SIZE
+                # Right attack - create a wide but short rectangle extending to the right
+                hitbox = pygame.Rect(
+                    self.rect.right,  # Start at right edge
+                    self.rect.centery - attack_size // 3,  # Centered vertically
+                    attack_size,  # Full length horizontally
+                    attack_size * 2 // 3  # Shorter height for more precise hits
+                )
             elif self.facing == 'left':
-                hitbox.x -= TILE_SIZE
+                # Left attack - create a wide but short rectangle extending to the left
+                hitbox = pygame.Rect(
+                    self.rect.left - attack_size,  # Start attack_size pixels to the left
+                    self.rect.centery - attack_size // 3,  # Centered vertically
+                    attack_size,  # Full length horizontally
+                    attack_size * 2 // 3  # Shorter height for more precise hits
+                )
             elif self.facing == 'up':
-                hitbox.y -= TILE_SIZE
+                # Up attack - create a tall but narrow rectangle extending upward
+                hitbox = pygame.Rect(
+                    self.rect.centerx - attack_size // 3,  # Centered horizontally
+                    self.rect.top - attack_size,  # Start attack_size pixels above
+                    attack_size * 2 // 3,  # Shorter width for more precise hits
+                    attack_size  # Full length vertically
+                )
             elif self.facing == 'down':
-                hitbox.y += TILE_SIZE
+                # Down attack - create a tall but narrow rectangle extending downward
+                hitbox = pygame.Rect(
+                    self.rect.centerx - attack_size // 3,  # Centered horizontally
+                    self.rect.bottom,  # Start at bottom edge
+                    attack_size * 2 // 3,  # Shorter width for more precise hits
+                    attack_size  # Full length vertically
+                )
+                
             return hitbox
         return None
         
@@ -713,6 +739,22 @@ class Player(pygame.sprite.Sprite):
         # Then draw the player
         surface.blit(self.image, self.rect)
         
+        # Draw attack range for debugging
+        if DEBUG_MODE:
+            # Draw player hitbox in green
+            pygame.draw.rect(surface, (0, 255, 0), self.rect, 2)
+            
+            # Draw current attack range in blue
+            attack_box = self.get_attack_hitbox()
+            
+            # Draw attack range hitbox in blue with some transparency
+            attack_surface = pygame.Surface((attack_box.width, attack_box.height), pygame.SRCALPHA)
+            pygame.draw.rect(attack_surface, (0, 100, 255, 100), attack_surface.get_rect())
+            surface.blit(attack_surface, attack_box)
+            
+            # Draw attack range outline in bright blue
+            pygame.draw.rect(surface, (0, 150, 255), attack_box, 2)
+        
         # Draw dodge cooldown indicator (small blue bar above player's head)
         if hasattr(self, 'last_dodge_time'):
             current_time = pygame.time.get_ticks()
@@ -742,3 +784,49 @@ class Player(pygame.sprite.Sprite):
         # pygame.draw.rect(surface, (0, 255, 0), self.hitbox, 1)
         
         # Health bar removed - already displayed in HUD 
+    
+    def get_attack_hitbox(self):
+        """Creates and returns the current attack hitbox without triggering an attack or cooldown check"""
+        # Create sword hitbox based on facing direction with 30% increased range (15% + 15%)
+        attack_size = int(TILE_SIZE * 1.32)  # 32% larger than normal tile size (1.15 * 1.15 ≈ 1.32)
+        
+        # Check if this is a fire sword attack and adjust range if needed
+        if hasattr(self, 'game') and self.game and hasattr(self.game, 'weapon_manager') and self.game.weapon_manager.has_fire_sword:
+            # Make fire sword 20% larger range than normal sword
+            attack_size = int(attack_size * 1.2)
+        
+        # Create directional hitboxes that only extend in the facing direction
+        if self.facing == 'right':
+            # Right attack - create a wide but short rectangle extending to the right
+            hitbox = pygame.Rect(
+                self.rect.right,  # Start at right edge
+                self.rect.centery - attack_size // 3,  # Centered vertically
+                attack_size,  # Full length horizontally
+                attack_size * 2 // 3  # Shorter height for more precise hits
+            )
+        elif self.facing == 'left':
+            # Left attack - create a wide but short rectangle extending to the left
+            hitbox = pygame.Rect(
+                self.rect.left - attack_size,  # Start attack_size pixels to the left
+                self.rect.centery - attack_size // 3,  # Centered vertically
+                attack_size,  # Full length horizontally
+                attack_size * 2 // 3  # Shorter height for more precise hits
+            )
+        elif self.facing == 'up':
+            # Up attack - create a tall but narrow rectangle extending upward
+            hitbox = pygame.Rect(
+                self.rect.centerx - attack_size // 3,  # Centered horizontally
+                self.rect.top - attack_size,  # Start attack_size pixels above
+                attack_size * 2 // 3,  # Shorter width for more precise hits
+                attack_size  # Full length vertically
+            )
+        elif self.facing == 'down':
+            # Down attack - create a tall but narrow rectangle extending downward
+            hitbox = pygame.Rect(
+                self.rect.centerx - attack_size // 3,  # Centered horizontally
+                self.rect.bottom,  # Start at bottom edge
+                attack_size * 2 // 3,  # Shorter width for more precise hits
+                attack_size  # Full length vertically
+            )
+            
+        return hitbox 
