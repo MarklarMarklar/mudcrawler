@@ -1124,7 +1124,7 @@ class Boss(Enemy):
             self.movement_failed_counter >= 2 or
             (self.last_target_position and 
              ((abs(self.last_target_position[0] - target_pos[0]) > TILE_SIZE) or 
-              (abs(self.last_target_position[1] - target_pos[1]) > TILE_SIZE)))
+              (abs(self.last_target_position[1] - target_pos[1]) > TILE_SIZE))))
         )
         
         if should_update_path and hasattr(player, 'level'):

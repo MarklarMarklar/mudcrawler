@@ -1505,6 +1505,11 @@ class Level:
         self.selected_ghost_texture = None
         if level_number == 3:
             self.selected_ghost_texture = self.get_random_enemy_texture('ghost')
+            
+        # Add goblin texture selection for level 4
+        self.selected_goblin_texture = None
+        if level_number == 4:
+            self.selected_goblin_texture = self.get_random_enemy_texture('goblins')
         
         # Load tile textures
         self.tiles = self.load_tile_textures()

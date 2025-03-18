@@ -124,12 +124,38 @@ class Enemy(pygame.sprite.Sprite):
                     selected_texture = self.level_instance.selected_slime_texture
                 elif enemy_name == 'ghost':
                     selected_texture = self.level_instance.selected_ghost_texture
-                elif enemy_name == 'goblin':
-                    selected_texture = self.level_instance.selected_goblin_texture
                     
                 if selected_texture:
                     custom_texture_path = selected_texture
                     print(f"Using custom {enemy_name} texture: {os.path.basename(custom_texture_path)}")
+            
+            # Special handling for level 4 enemies (goblins)
+            if level == 4:
+                goblin_base_path = os.path.join(ENEMY_SPRITES_PATH, "goblins")
+                if os.path.exists(goblin_base_path):
+                    try:
+                        # Use goblin sprites for idle
+                        idle_path = os.path.join(goblin_base_path, f"idle_{direction}")
+                        if os.path.exists(idle_path):
+                            self.animations['idle'][direction] = self.asset_manager.load_animation(
+                                idle_path, "idle_", 4, scale=(TILE_SIZE, TILE_SIZE))
+                                
+                        # Use goblin sprites for walk
+                        walk_path = os.path.join(goblin_base_path, f"walk_{direction}")
+                        if os.path.exists(walk_path):
+                            self.animations['walk'][direction] = self.asset_manager.load_animation(
+                                walk_path, "walk_", 4, scale=(TILE_SIZE, TILE_SIZE))
+                                
+                        # Use goblin sprites for attack
+                        attack_path = os.path.join(goblin_base_path, f"attack_{direction}")
+                        if os.path.exists(attack_path):
+                            self.animations['attack'][direction] = self.asset_manager.load_animation(
+                                attack_path, "attack_", 4, scale=(TILE_SIZE, TILE_SIZE))
+                                
+                        print(f"Loaded goblin sprites for level 4 enemy {direction}")
+                        continue  # Skip the rest of this iteration
+                    except Exception as e:
+                        print(f"Error loading goblin sprites for level 4 enemy: {e}")
             
             # If we have a custom texture, use it
             if custom_texture_path and os.path.exists(custom_texture_path):
@@ -156,7 +182,7 @@ class Enemy(pygame.sprite.Sprite):
                                 idle_path, "idle_", 4, scale=(TILE_SIZE, TILE_SIZE))
                 except Exception as e:
                     print(f"Could not load idle animation for {enemy_name} {direction}: {e}")
-                    
+            
                 try:
                     if os.path.exists(base_path):
                         walk_path = os.path.join(base_path, f"walk_{direction}")
@@ -166,7 +192,7 @@ class Enemy(pygame.sprite.Sprite):
                 except Exception as e:
                     print(f"Could not load walk animation for {enemy_name} {direction}: {e}")
                     # Fallback already set above
-                    
+            
                 try:
                     if os.path.exists(base_path):
                         attack_path = os.path.join(base_path, f"attack_{direction}")
@@ -982,7 +1008,7 @@ class Boss(Enemy):
                             idle_path, "idle_", 4, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
             except Exception as e:
                 print(f"Could not load idle animation for boss {boss_name} {direction}: {e}")
-                
+            
             try:
                 if os.path.exists(base_path):
                     walk_path = os.path.join(base_path, f"walk_{direction}")
@@ -991,7 +1017,7 @@ class Boss(Enemy):
                             walk_path, "walk_", 4, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
             except Exception as e:
                 print(f"Could not load walk animation for boss {boss_name} {direction}: {e}")
-                
+            
             try:
                 if os.path.exists(base_path):
                     attack_path = os.path.join(base_path, f"attack_{direction}")
@@ -1000,7 +1026,7 @@ class Boss(Enemy):
                             attack_path, "attack_", 4, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
             except Exception as e:
                 print(f"Could not load attack animation for boss {boss_name} {direction}: {e}")
-                
+            
             try:
                 if os.path.exists(base_path):
                     special_path = os.path.join(base_path, f"special_{direction}")
