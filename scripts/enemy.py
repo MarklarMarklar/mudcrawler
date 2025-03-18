@@ -1467,6 +1467,11 @@ class Boss(Enemy):
                     
                     # Ensure reflected damage is reset when leaving defensive mode
                     self.reflected_damage = 0
+                    
+                    # Play the boss voice when leaving defensive mode
+                    voice_file = f"effects/boss_{self.level}_voice"
+                    self.sound_manager.play_sound(voice_file)
+                    self.last_voice_time = current_time
                         
                     print(f"Level 4 boss leaving defensive mode at time {current_time}!")
         
@@ -1570,7 +1575,10 @@ class Boss(Enemy):
                 self.sound_manager.play_sound(voice_file)
                 self.has_seen_player = True
                 self.last_voice_time = current_time
-            elif current_time - self.last_voice_time >= self.voice_cooldown:
+                print(f"Level {self.level} boss spotted player - playing initial voice")
+            # Only play the voice on cooldown for bosses other than level 4
+            # For level 4 boss, we'll play it when exiting defensive mode instead
+            elif self.level != 4 and current_time - self.last_voice_time >= self.voice_cooldown:
                 voice_file = f"effects/boss_{self.level}_voice"
                 self.sound_manager.play_sound(voice_file)
                 self.last_voice_time = current_time
