@@ -165,6 +165,149 @@ class ParticleSystem:
             }
             self.particles.append(particle)
             
+    def create_lightning_effect(self, x, y, amount=15):
+        """Create a lightning effect at the specified position"""
+        # Create several lightning bolt strikes instead of simple particles
+        for _ in range(min(3, amount)):  # Limit to 3 main bolts for performance (reduced from 5)
+            # Create a zigzag lightning bolt
+            
+            # Shorter length - 1.5 tiles instead of longer bolts
+            bolt_length = random.randint(20, 30)  # Reduced length significantly
+            
+            # Random angle but more focused in a narrower cone (less random)
+            angle = random.uniform(-math.pi/4, math.pi/4)  # Narrower angle range - just 90 degrees total
+            
+            # Random starting position near the hit point (reduced variation)
+            start_x = x + random.randint(-5, 5)  # Less variation
+            start_y = y + random.randint(-5, 5)  # Less variation
+            
+            # Direction vector
+            dx = math.cos(angle)
+            dy = math.sin(angle)
+            
+            # Create a zigzag path with multiple segments
+            segments = random.randint(3, 5)  # Fewer segments (was 5-10)
+            segment_length = bolt_length / segments
+            
+            points = [(start_x, start_y)]
+            current_x, current_y = start_x, start_y
+            
+            # Generate zigzag pattern
+            for i in range(segments):
+                # Alternate zigzag by using multiplier
+                zigzag_multiplier = 1 if i % 2 == 0 else -1
+                
+                # Reduced jitter amplitude for tighter zigzags
+                perp_x = -dy * random.randint(3, 8) * zigzag_multiplier  # Less jitter (was 5-15)
+                perp_y = dx * random.randint(3, 8) * zigzag_multiplier   # Less jitter (was 5-15)
+                
+                # Calculate next point with zigzag
+                next_x = current_x + (dx * segment_length) + perp_x
+                next_y = current_y + (dy * segment_length) + perp_y
+                
+                points.append((next_x, next_y))
+                current_x, current_y = next_x, next_y
+            
+            # Choose a blue color for the bolt
+            blue_intensity = random.randint(180, 255)
+            color = (100, 150, blue_intensity)  # Blue color
+            
+            # Create the particle object with the bolt path
+            bolt_particle = {
+                'points': points,
+                'color': color,
+                'thickness': random.randint(2, 3),  # Slightly thinner (was 2-4)
+                'lifetime': random.randint(8, 12),  # Shorter lifetime (was 10-20)
+                'alpha': 255,
+                'fade_speed': random.uniform(12, 18),  # Faster fade for shorter effect
+                'is_lightning_bolt': True  # Mark as lightning bolt
+            }
+            self.particles.append(bolt_particle)
+            
+            # Add fewer branch bolts
+            if random.random() < 0.5:  # 50% chance for branches (was 70%)
+                # Only add 1-2 branches per bolt (was 1-3)
+                for _ in range(random.randint(1, 2)):
+                    if len(points) < 3:
+                        continue
+                        
+                    # Choose a random point on the main bolt to branch from
+                    branch_start_idx = random.randint(1, len(points) - 2)
+                    branch_start_x = points[branch_start_idx][0]
+                    branch_start_y = points[branch_start_idx][1]
+                    
+                    # Random branch direction but more controlled
+                    branch_angle = angle + random.uniform(-math.pi/3, math.pi/3)  # Narrower angle
+                    branch_dx = math.cos(branch_angle)
+                    branch_dy = math.sin(branch_angle)
+                    
+                    # Shorter branch length
+                    branch_length = bolt_length * random.uniform(0.3, 0.5)  # Shorter branches
+                    branch_segments = random.randint(2, 3)  # Fewer segments (was 3-5)
+                    branch_segment_length = branch_length / branch_segments
+                    
+                    # Create branch points
+                    branch_points = [(branch_start_x, branch_start_y)]
+                    branch_x, branch_y = branch_start_x, branch_start_y
+                    
+                    for i in range(branch_segments):
+                        # Zigzag pattern for branch
+                        zigzag_multiplier = 1 if i % 2 == 0 else -1
+                        
+                        # Add perpendicular jitter - smaller for branches
+                        perp_x = -branch_dy * random.randint(2, 5) * zigzag_multiplier  # Smaller jitter
+                        perp_y = branch_dx * random.randint(2, 5) * zigzag_multiplier   # Smaller jitter
+                        
+                        branch_x += branch_dx * branch_segment_length + perp_x
+                        branch_y += branch_dy * branch_segment_length + perp_y
+                        
+                        branch_points.append((branch_x, branch_y))
+                    
+                    # Create branch bolt with slightly different color
+                    branch_color = (120, 180, blue_intensity - 20)
+                    branch_particle = {
+                        'points': branch_points,
+                        'color': branch_color,
+                        'thickness': random.randint(1, 2),  # Thinner branches
+                        'lifetime': random.randint(5, 8),  # Shorter lifetime
+                        'alpha': 255,
+                        'fade_speed': random.uniform(15, 20),  # Faster fade
+                        'is_lightning_bolt': True
+                    }
+                    self.particles.append(branch_particle)
+        
+        # Add fewer spark particles
+        for _ in range(amount // 2):  # Fewer sparks
+            # Lightning has more erratic movement
+            speed = random.uniform(1.0, 3.0)  # Lower max speed
+            angle = random.uniform(0, 2 * math.pi)
+            velocity_x = math.cos(angle) * speed
+            velocity_y = math.sin(angle) * speed
+            lifetime = random.randint(3, 8)  # Shorter lifetime
+            size = random.randint(1, 3)  # Smaller particles
+            
+            # Lightning colors: white, blue, light blue
+            lightning_colors = [
+                (255, 255, 255),   # White
+                (200, 235, 255),   # Light blue white
+                (150, 200, 255),   # Light blue
+            ]
+            
+            # Create a spark particle
+            particle = {
+                'x': x + random.randint(-5, 5),  # Less spread
+                'y': y + random.randint(-5, 5),  # Less spread
+                'velocity_x': velocity_x,
+                'velocity_y': velocity_y,
+                'color': random.choice(lightning_colors),
+                'size': size,
+                'lifetime': lifetime,
+                'alpha': 255,
+                'gravity': 0,  # No gravity
+                'fade_speed': random.uniform(10, 15)  # Faster fade
+            }
+            self.particles.append(particle)
+    
     def create_blood_pool(self, x, y, amount=5, size_range=(4, 10)):
         """Create a slow-spreading blood pool effect for death sequence"""
         min_size, max_size = size_range
@@ -216,43 +359,61 @@ class ParticleSystem:
             else:
                 # For dictionary-based particles
                 # Update position
-                particle['x'] += particle['velocity_x']
-                particle['y'] += particle['velocity_y']
-                
-                # Apply gravity if present
-                if 'gravity' in particle:
-                    particle['velocity_y'] += particle['gravity']
-                
-                # Apply drag to velocity
-                particle['velocity_x'] *= 0.95
-                particle['velocity_y'] *= 0.95
-                
-                # Special handling for blood pool particles
-                if particle.get('is_pool', False):
-                    # Blood pools grow slightly as they spread
-                    if particle['lifetime'] > 60:  # Only grow during initial phase
-                        growth_rate = 0.03
-                        particle['size'] += growth_rate
+                if 'points' in particle and particle.get('is_lightning_bolt', False):
+                    # Lightning bolts don't move, just decrease lifetime
+                    particle['lifetime'] -= 1
+                    # Make bolts fade by reducing alpha
+                    if 'alpha' in particle:
+                        particle['alpha'] = max(0, particle['alpha'] - particle.get('fade_speed', 10))
+                        if particle['alpha'] <= 0:
+                            particles_to_remove.append(i)
+                else:
+                    # Regular particles
+                    if 'x' in particle and 'y' in particle:
+                        particle['x'] += particle.get('velocity_x', 0)
+                        particle['y'] += particle.get('velocity_y', 0)
                     
-                    # Make pool particles stick to the ground faster
-                    particle['velocity_x'] *= 0.8
-                    particle['velocity_y'] *= 0.8
-                
-                # Update lifetime
-                particle['lifetime'] -= 1
-                
-                # Shrink particles as they age
-                if 'fade_speed' in particle:
-                    # Blood pools fade slower
+                    # Apply gravity if present
+                    if 'gravity' in particle and 'velocity_y' in particle:
+                        particle['velocity_y'] += particle['gravity']
+                    
+                    # Apply drag to velocity
+                    if 'velocity_x' in particle:
+                        particle['velocity_x'] *= 0.95
+                    if 'velocity_y' in particle:
+                        particle['velocity_y'] *= 0.95
+                    
+                    # Special handling for blood pool particles
                     if particle.get('is_pool', False):
-                        # Only start shrinking in the last third of lifetime
-                        if particle['lifetime'] < particle.get('lifetime', 30) / 3:
-                            particle['size'] -= particle['fade_speed'] * 0.025
-                    else:
-                        particle['size'] -= particle['fade_speed'] * 0.05
+                        # Blood pools grow slightly as they spread
+                        if particle['lifetime'] > 60:  # Only grow during initial phase
+                            growth_rate = 0.03
+                            particle['size'] += growth_rate
+                        
+                        # Make pool particles stick to the ground faster
+                        if 'velocity_x' in particle:
+                            particle['velocity_x'] *= 0.8
+                        if 'velocity_y' in particle:
+                            particle['velocity_y'] *= 0.8
+                    
+                    # Update lifetime
+                    if 'lifetime' in particle:
+                        particle['lifetime'] -= 1
+                    
+                    # Shrink particles as they age
+                    if 'fade_speed' in particle and 'size' in particle:
+                        # Blood pools fade slower
+                        if particle.get('is_pool', False):
+                            # Only start shrinking in the last third of lifetime
+                            if particle['lifetime'] < particle.get('lifetime', 30) / 3:
+                                particle['size'] -= particle['fade_speed'] * 0.025
+                        else:
+                            particle['size'] -= particle['fade_speed'] * 0.05
                 
                 # Mark dead particles
-                if particle['lifetime'] <= 0 or particle['size'] <= 0:
+                if 'lifetime' in particle and particle['lifetime'] <= 0:
+                    particles_to_remove.append(i)
+                elif 'size' in particle and particle['size'] <= 0:
                     particles_to_remove.append(i)
         
         # Remove dead particles - in reverse order to avoid index issues
@@ -273,10 +434,79 @@ class ParticleSystem:
             if isinstance(particle, Particle):
                 # For Particle class objects
                 particle.draw(surface, camera_offset)
+            elif particle.get('is_lightning_bolt', False):
+                # For lightning bolt particles
+                if particle['lifetime'] <= 0:
+                    continue
+                
+                # Get the points of the bolt
+                points = particle['points']
+                if not points or len(points) < 2:
+                    continue
+                
+                # Apply camera offset to all points
+                offset_points = [(p[0] - camera_offset[0], p[1] - camera_offset[1]) for p in points]
+                
+                # Draw the main bolt
+                color = particle['color']
+                thickness = particle['thickness']
+                alpha = particle.get('alpha', 255)
+                
+                if alpha < 255:
+                    # Create alpha version of color
+                    color = (*color, alpha)
+                    
+                    # Create a surface with alpha channel
+                    bolt_surf = pygame.Surface((800, 600), pygame.SRCALPHA)  # Adjusted size for rendering
+                    
+                    # Draw the bolt on this surface
+                    for i in range(len(offset_points) - 1):
+                        pygame.draw.line(
+                            bolt_surf,
+                            color,
+                            (int(offset_points[i][0]), int(offset_points[i][1])),
+                            (int(offset_points[i+1][0]), int(offset_points[i+1][1])),
+                            thickness
+                        )
+                    
+                    # Draw a brighter center for the glow effect
+                    for i in range(len(offset_points) - 1):
+                        pygame.draw.line(
+                            bolt_surf,
+                            (*color[:3], min(255, alpha + 50)),  # Brighter center
+                            (int(offset_points[i][0]), int(offset_points[i][1])),
+                            (int(offset_points[i+1][0]), int(offset_points[i+1][1])),
+                            max(1, thickness // 2)
+                        )
+                    
+                    # Blit the surface onto the main surface
+                    surface.blit(bolt_surf, (0, 0))
+                else:
+                    # Draw the bolt directly on the surface
+                    for i in range(len(offset_points) - 1):
+                        pygame.draw.line(
+                            surface,
+                            color,
+                            (int(offset_points[i][0]), int(offset_points[i][1])),
+                            (int(offset_points[i+1][0]), int(offset_points[i+1][1])),
+                            thickness
+                        )
+                    
+                    # Draw a brighter center for the glow effect
+                    for i in range(len(offset_points) - 1):
+                        pygame.draw.line(
+                            surface,
+                            (min(255, color[0] + 50), min(255, color[1] + 50), min(255, color[2] + 50)),
+                            (int(offset_points[i][0]), int(offset_points[i][1])),
+                            (int(offset_points[i+1][0]), int(offset_points[i+1][1])),
+                            max(1, thickness // 2)
+                        )
             else:
                 # For dictionary-based particles
                 # Only draw if alive
-                if particle['lifetime'] <= 0 or particle['size'] <= 0:
+                if 'lifetime' in particle and particle['lifetime'] <= 0:
+                    continue
+                if 'size' in particle and particle['size'] <= 0:
                     continue
                 
                 # Apply camera offset
@@ -414,4 +644,156 @@ class ParticleSystem:
                     size = max(1, int(particle['size']))
                     pygame.draw.circle(surface, particle['color'], (draw_x, draw_y), size)
                 except Exception as e:
-                    print(f"Error drawing regular particle: {e}") 
+                    print(f"Error drawing regular particle: {e}")
+    
+    def create_directional_lightning(self, x, y, angle, amount=10):
+        """Create a lightning effect that goes in a specific direction from the source point
+        
+        Args:
+            x, y: Starting position of the lightning
+            angle: Direction in radians (0 = right, π = left, π/2 = down, -π/2 = up)
+            amount: Number of particles to create
+        """
+        # Create a few lightning bolts in the specified direction
+        for _ in range(min(2, amount)):  # Only 2 main bolts max for cleaner look
+            # Create a zigzag lightning bolt with fixed direction
+            
+            # Use a fixed length of 1.5 tiles (based on TILE_SIZE)
+            from config import TILE_SIZE
+            bolt_length = TILE_SIZE * 1.5
+            
+            # Use the provided angle but add a small random variation
+            final_angle = angle + random.uniform(-math.pi/12, math.pi/12)  # Small variation (±15 degrees)
+            
+            # Small random starting position variation
+            start_x = x + random.randint(-3, 3)
+            start_y = y + random.randint(-3, 3)
+            
+            # Direction vector based on the angle
+            dx = math.cos(final_angle)
+            dy = math.sin(final_angle)
+            
+            # Create a zigzag path with multiple segments
+            segments = random.randint(3, 5)
+            segment_length = bolt_length / segments
+            
+            points = [(start_x, start_y)]
+            current_x, current_y = start_x, start_y
+            
+            # Generate zigzag pattern
+            for i in range(segments):
+                # Alternate zigzag by using multiplier
+                zigzag_multiplier = 1 if i % 2 == 0 else -1
+                
+                # Calculate perpendicular vector for zigzag effect
+                # We need the perpendicular to the direction vector (dx, dy)
+                # The perpendicular is (-dy, dx)
+                perp_x = -dy * random.randint(3, 6) * zigzag_multiplier
+                perp_y = dx * random.randint(3, 6) * zigzag_multiplier
+                
+                # Calculate next point with zigzag
+                next_x = current_x + (dx * segment_length) + perp_x
+                next_y = current_y + (dy * segment_length) + perp_y
+                
+                points.append((next_x, next_y))
+                current_x, current_y = next_x, next_y
+            
+            # Choose a blue color for the bolt
+            blue_intensity = random.randint(180, 255)
+            color = (100, 150, blue_intensity)  # Blue color
+            
+            # Create the particle object with the bolt path
+            bolt_particle = {
+                'points': points,
+                'color': color,
+                'thickness': random.randint(2, 3),
+                'lifetime': random.randint(8, 12),
+                'alpha': 255,
+                'fade_speed': random.uniform(12, 18),
+                'is_lightning_bolt': True  # Mark as lightning bolt
+            }
+            self.particles.append(bolt_particle)
+            
+            # Add a branch in 50% of cases
+            if random.random() < 0.5:
+                # Choose a random point on the main bolt to branch from
+                if len(points) >= 3:
+                    branch_start_idx = random.randint(1, len(points) - 2)
+                    branch_start_x = points[branch_start_idx][0]
+                    branch_start_y = points[branch_start_idx][1]
+                    
+                    # Branch angle should stay somewhat in the same direction
+                    # but with more variation than the main bolt
+                    branch_angle = final_angle + random.uniform(-math.pi/4, math.pi/4)
+                    branch_dx = math.cos(branch_angle)
+                    branch_dy = math.sin(branch_angle)
+                    
+                    # Shorter branch
+                    branch_length = bolt_length * 0.4  # 40% of main bolt length
+                    branch_segments = random.randint(2, 3)
+                    branch_segment_length = branch_length / branch_segments
+                    
+                    # Create branch points
+                    branch_points = [(branch_start_x, branch_start_y)]
+                    branch_x, branch_y = branch_start_x, branch_start_y
+                    
+                    for i in range(branch_segments):
+                        # Zigzag pattern for branch
+                        zigzag_multiplier = 1 if i % 2 == 0 else -1
+                        
+                        # Add perpendicular jitter - smaller for branches
+                        perp_x = -branch_dy * random.randint(2, 4) * zigzag_multiplier
+                        perp_y = branch_dx * random.randint(2, 4) * zigzag_multiplier
+                        
+                        branch_x += branch_dx * branch_segment_length + perp_x
+                        branch_y += branch_dy * branch_segment_length + perp_y
+                        
+                        branch_points.append((branch_x, branch_y))
+                    
+                    # Create branch bolt with slightly different color
+                    branch_color = (120, 180, blue_intensity - 20)
+                    branch_particle = {
+                        'points': branch_points,
+                        'color': branch_color,
+                        'thickness': random.randint(1, 2),  # Thinner than main
+                        'lifetime': random.randint(5, 8),
+                        'alpha': 255,
+                        'fade_speed': random.uniform(15, 20),
+                        'is_lightning_bolt': True
+                    }
+                    self.particles.append(branch_particle)
+        
+        # Add a few spark particles
+        for _ in range(amount // 2):
+            # Create sparks that generally follow the main direction
+            speed = random.uniform(1.0, 2.5)
+            
+            # Spark angle should be close to the main direction but with some variation
+            spark_angle = angle + random.uniform(-math.pi/3, math.pi/3)  # ±60° variation
+            velocity_x = math.cos(spark_angle) * speed
+            velocity_y = math.sin(spark_angle) * speed
+            
+            lifetime = random.randint(3, 8)
+            size = random.randint(1, 2)  # Smaller particles
+            
+            # Lightning colors
+            lightning_colors = [
+                (255, 255, 255),   # White
+                (200, 235, 255),   # Light blue white
+                (150, 200, 255),   # Light blue
+            ]
+            
+            # Create a spark particle
+            particle = {
+                'x': x + random.randint(-3, 3),  # Very small spread
+                'y': y + random.randint(-3, 3),  # Very small spread
+                'velocity_x': velocity_x,
+                'velocity_y': velocity_y,
+                'color': random.choice(lightning_colors),
+                'size': size,
+                'lifetime': lifetime,
+                'alpha': 255,
+                'gravity': 0,
+                'fade_speed': random.uniform(10, 15)
+            }
+            self.particles.append(particle) 

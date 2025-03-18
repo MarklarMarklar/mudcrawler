@@ -255,6 +255,20 @@ class WeaponPickup(BasePickup):
                         pygame.draw.circle(surface, fire_colors[i], 
                                         (self.x + offset, self.y - size//3), 
                                         fire_size * pulse)
+                elif self.weapon_type == "lightning_sword":
+                    # Draw a blue/white sword
+                    pygame.draw.rect(surface, (100, 150, 255), (self.x - size//8, self.y - size//3, size//4, size//1.5))  # Blade
+                    pygame.draw.rect(surface, (150, 150, 200), (self.x - size//4, self.y + size//6, size//2, size//6))  # Handle
+                    
+                    # Add some lightning effect
+                    lightning_colors = [(200, 200, 255), (150, 150, 255), (100, 100, 255)]
+                    for i in range(3):
+                        offset_x = random.randint(-5, 5)
+                        offset_y = random.randint(-5, 5)
+                        pygame.draw.line(surface, lightning_colors[i],
+                                        (self.x, self.y - size//3),
+                                        (self.x + offset_x, self.y - size//3 + offset_y),
+                                        2)
                 else:
                     # Generic weapon
                     pygame.draw.rect(surface, (200, 200, 200), (self.x - size//8, self.y - size//3, size//4, size//1.5))
@@ -265,6 +279,8 @@ class WeaponPickup(BasePickup):
             
             if self.weapon_type == "fire_sword":
                 glow_color = (255, 100, 0, 100)  # Orange/red glow for fire sword
+            elif self.weapon_type == "lightning_sword":
+                glow_color = (100, 150, 255, 100)  # Blue glow for lightning sword
             else:
                 glow_color = (100, 100, 255, 100)  # Blue glow for other weapons
                 
@@ -281,6 +297,22 @@ class WeaponPickup(BasePickup):
                     ember_size = random.randint(2, 5) * pulse
                     ember_color = random.choice([(255, 0, 0), (255, 100, 0), (255, 200, 0)])
                     pygame.draw.circle(surface, ember_color, (ember_x, ember_y), ember_size)
+            elif self.weapon_type == "lightning_sword":
+                # Add some electricity particles for lightning effect
+                for _ in range(4):
+                    # Create small lightning bolts in random directions
+                    bolt_start_x = self.x + random.randint(-size//3, size//3)
+                    bolt_start_y = self.y + random.randint(-size//3, size//3)
+                    bolt_end_x = bolt_start_x + random.randint(-size//2, size//2)
+                    bolt_end_y = bolt_start_y + random.randint(-size//2, size//2)
+                    bolt_color = random.choice([(200, 200, 255), (150, 150, 255), (100, 100, 255)])
                     
+                    # Draw zigzag line for lightning effect
+                    mid_x = (bolt_start_x + bolt_end_x) // 2 + random.randint(-size//6, size//6)
+                    mid_y = (bolt_start_y + bolt_end_y) // 2 + random.randint(-size//6, size//6)
+                    
+                    pygame.draw.line(surface, bolt_color, (bolt_start_x, bolt_start_y), (mid_x, mid_y), 1)
+                    pygame.draw.line(surface, bolt_color, (mid_x, mid_y), (bolt_end_x, bolt_end_y), 1)
+                
         except Exception as e:
             print(f"Error rendering {self.weapon_type} pickup: {e}") 

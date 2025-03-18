@@ -103,6 +103,15 @@ class Room:
         self.fire_sword_chest_y = None
         self.has_fire_sword_chest = False
         
+        # Lightning sword pickup (for level 4 boss)
+        self.lightning_sword_pickup = None
+        self.lightning_sword_dropped = False
+        
+        # Special flags for lightning sword chest
+        self.lightning_sword_chest_x = None
+        self.lightning_sword_chest_y = None
+        self.has_lightning_sword_chest = False
+        
         # Track dead resurrectible minions for level 3 boss room
         # Each entry is (x, y, time_to_respawn, texture_info)
         self.dead_minions = []
@@ -696,7 +705,23 @@ class Room:
                 # Create a burst of particles for dramatic effect
                 self.create_chest_sparkle_burst(center_x, center_y)
                 
-                print(f"Room: Fire sword chest destroyed! Fire sword spawned at {center_x}, {center_y}")
+                print("Fire sword chest opened!")
+                return True
+                
+            # Check if this is the special lightning sword chest in level 4
+            elif self.has_lightning_sword_chest and x == self.lightning_sword_chest_x and y == self.lightning_sword_chest_y and self.level_number == 4:
+                # This is the lightning sword chest - spawn the lightning sword with a larger scale
+                center_x = x * TILE_SIZE + TILE_SIZE // 2
+                center_y = y * TILE_SIZE + TILE_SIZE // 2
+                
+                # Create a lightning sword pickup with a 50% larger scale
+                lightning_sword = WeaponPickup(center_x, center_y, "lightning_sword", scale=1.5)
+                self.weapon_pickups.append(lightning_sword)
+                
+                # Create a burst of particles for dramatic effect
+                self.create_chest_sparkle_burst(center_x, center_y)
+                
+                print("Lightning sword chest opened!")
                 return True
             
             # Regular destroyable wall - normal loot drop logic
@@ -902,6 +927,10 @@ class Room:
             # For level 2 boss, drop the fire sword
             if self.level_number == 2:
                 self.drop_fire_sword()
+            
+            # For level 4 boss, drop the lightning sword
+            if self.level_number == 4:
+                self.drop_lightning_sword()
             
             # For level 3 boss - resurrection mechanic is now implemented in the Boss class
             if self.level_number == 3:
@@ -1424,10 +1453,32 @@ class Room:
             
             # Initialize sparkle timer and particles for visual effect
             self.sparkle_timer = 0
-            self.sparkle_particles = []
             
-            print(f"Level 2 boss defeated! A treasure chest has appeared in the center of the room at {center_x}, {center_y}")
+    def drop_lightning_sword(self):
+        """Drop a lightning sword when the level 4 boss is defeated"""
+        # Make sure this ONLY happens in level 4
+        if self.room_type == 'boss' and self.boss and self.boss.health <= 0 and self.level_number == 4 and not self.lightning_sword_dropped:
+            # Instead of dropping the lightning sword directly, create a treasure chest in the middle of the room
             
+            # Calculate the center of the room in tile coordinates
+            center_x = self.width // 2
+            center_y = self.height // 2
+            
+            # Mark this position as a destroyable wall (treasure chest)
+            self.tiles[center_y][center_x] = 1  # Wall tile
+            self.destroyable_walls[center_y][center_x] = True  # Destroyable
+            
+            # Store the position of this special chest
+            self.lightning_sword_chest_x = center_x
+            self.lightning_sword_chest_y = center_y
+            
+            # Store that this is a special chest with sparkle effects
+            self.has_lightning_sword_chest = True
+            self.lightning_sword_dropped = True
+            
+            # Initialize sparkle timer and particles for visual effect
+            self.sparkle_timer = 0
+        
     def check_exit_collision(self, rect):
         """Check if player is touching the exit door"""
         if not self.has_exit:

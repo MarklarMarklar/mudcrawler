@@ -1,7 +1,7 @@
-import pygame
-import math
 import os
+import pygame
 import random
+import math
 from config import *
 from asset_manager import get_asset_manager
 from sound_manager import get_sound_manager
@@ -134,9 +134,16 @@ class Sword(pygame.sprite.Sprite):
         self.fire_sword_images = {}
         self.fire_animation_frames = {}
         
-        # Track if this is a fire sword
+        # Lightning sword images and animations
+        self.lightning_sword_images = {}
+        self.lightning_animation_frames = {}
+        
+        # Track sword type
         self.is_fire_sword = False
+        self.is_lightning_sword = False
+        
         self.flame_particles = []
+        self.lightning_particles = []
         
         for direction in ['down', 'up', 'left', 'right']:
             # Create a simple sword shape
@@ -178,18 +185,17 @@ class Sword(pygame.sprite.Sprite):
             normal_sword_path = os.path.join(WEAPON_SPRITES_PATH, "normal_sword.png")
             if os.path.exists(normal_sword_path):
                 # Scale based on size ratio between sword and player - aim for ~0.675x player width (10% smaller than previous 0.75x)
-                sword_scale_factor = 0.675  # Reduced by 10% from 0.75 to make the sword smaller
+                sword_scale_factor = 0.675
                 sword_width = int(TILE_SIZE * sword_scale_factor)
-                sword_height = int(sword_width * 1.5)  # Keep aspect ratio
+                sword_height = int(sword_width * 1.5)  # Height is 1.5x the width
                 
-                # Load the up-facing sword (the default orientation in the image)
                 up_sword = self.asset_manager.load_image(normal_sword_path, scale=(sword_width, sword_height))
-                self.sword_images['up'] = up_sword
                 
-                # Create animation frames for up direction with rotation around bottom center
+                # Store the base up-facing sword
+                self.sword_images['up'] = up_sword
                 self.animation_frames['up'] = self._create_animation_frames(up_sword, 'up')
                 
-                # Rotate for other directions
+                # Create rotated versions for other directions
                 # Down: 180 degrees from up
                 down_sword = pygame.transform.rotate(up_sword, 180)
                 self.sword_images['down'] = down_sword
@@ -207,34 +213,42 @@ class Sword(pygame.sprite.Sprite):
                 
                 print("Successfully loaded normal_sword.png for all directions")
             else:
-                print("normal_sword.png not found - using directional images if available")
-                # Fall back to checking for direction-specific images
+                print("Using simple sword graphics - normal_sword.png not found")
+                # We'll use the simple shapes defined above if the PNG isn't available
+                
+                # Create animation frames for each direction
                 for direction in ['down', 'up', 'left', 'right']:
-                    try:
-                        sword_path = os.path.join(WEAPON_SPRITES_PATH, f"sword_{direction}.png")
-                        if os.path.exists(sword_path):
-                            sword_img = self.asset_manager.load_image(
-                                sword_path, scale=(TILE_SIZE, TILE_SIZE//2))
-                            self.sword_images[direction] = sword_img
-                            self.animation_frames[direction] = self._create_animation_frames(sword_img, direction)
-                    except Exception as e:
-                        print(f"Failed to load sword_{direction}.png: {e}")
+                    self.animation_frames[direction] = self._create_animation_frames(self.sword_images[direction], direction)
         except Exception as e:
-            print(f"Failed to load normal_sword.png: {e}")
-            # Fall back to direction-specific images
+            print(f"Error loading normal sword: {e}")
+            # Still create animation frames for the simple shapes
             for direction in ['down', 'up', 'left', 'right']:
-                try:
-                    sword_path = os.path.join(WEAPON_SPRITES_PATH, f"sword_{direction}.png")
-                    if os.path.exists(sword_path):
-                        sword_img = self.asset_manager.load_image(
-                            sword_path, scale=(TILE_SIZE, TILE_SIZE//2))
-                        self.sword_images[direction] = sword_img
-                        self.animation_frames[direction] = self._create_animation_frames(sword_img, direction)
-                except Exception as e:
-                    print(f"Failed to load sword_{direction}.png: {e}")
+                self.animation_frames[direction] = self._create_animation_frames(self.sword_images[direction], direction)
+                
+        # Try to load sword graphics for each direction separately
+        # This is a fallback if the normal_sword.png isn't available or doesn't load properly
+        for direction in ['down', 'up', 'left', 'right']:
+            try:
+                sword_path = os.path.join(WEAPON_SPRITES_PATH, f"sword_{direction}.png")
+                if os.path.exists(sword_path):
+                    # Use the same scale factor for consistency
+                    sword_scale_factor = 0.675
+                    sword_width = int(TILE_SIZE * sword_scale_factor)
+                    sword_height = int(sword_width * 1.5)
                     
+                    # Load and scale the specific direction image
+                    sword_img = self.asset_manager.load_image(
+                        sword_path, scale=(TILE_SIZE, TILE_SIZE//2))
+                    self.sword_images[direction] = sword_img
+                    self.animation_frames[direction] = self._create_animation_frames(sword_img, direction)
+            except Exception as e:
+                print(f"Failed to load sword_{direction}.png: {e}")
+                
         # Load fire sword images and create animation frames
         self._load_fire_sword_images()
+        
+        # Load lightning sword images and create animation frames
+        self._load_lightning_sword_images()
         
         # Set initial image and animation frame
         self.image = self.sword_images['right']
@@ -285,14 +299,58 @@ class Sword(pygame.sprite.Sprite):
                 print("Successfully loaded fire_sword.png for all directions")
             else:
                 print("fire_sword.png not found - using normal sword images for fire sword")
-                # If fire sword image doesn't exist, just use the normal sword images
+                # Use normal sword images as fallback
                 self.fire_sword_images = self.sword_images.copy()
                 self.fire_animation_frames = self.animation_frames.copy()
         except Exception as e:
             print(f"Failed to load fire_sword.png: {e}")
-            # Fall back to normal sword images
+            # Use normal sword images as fallback
             self.fire_sword_images = self.sword_images.copy()
             self.fire_animation_frames = self.animation_frames.copy()
+        
+    def _load_lightning_sword_images(self):
+        """Load the lightning sword images and create animation frames for all directions"""
+        try:
+            # Load the lightning_sword.png (which is in the up position)
+            lightning_sword_path = os.path.join(WEAPON_SPRITES_PATH, "lightning_sword.png")
+            if os.path.exists(lightning_sword_path):
+                # Use the same scale as the normal sword
+                sword_scale_factor = 0.675
+                sword_width = int(TILE_SIZE * sword_scale_factor)
+                sword_height = int(sword_width * 1.5)
+                
+                # Load the up-facing lightning sword
+                up_lightning_sword = self.asset_manager.load_image(lightning_sword_path, scale=(sword_width, sword_height))
+                self.lightning_sword_images['up'] = up_lightning_sword
+                
+                # Create animation frames for up direction
+                self.lightning_animation_frames['up'] = self._create_animation_frames(up_lightning_sword, 'up')
+                
+                # Rotate for other directions
+                # Down: 180 degrees from up
+                down_lightning_sword = pygame.transform.rotate(up_lightning_sword, 180)
+                self.lightning_sword_images['down'] = down_lightning_sword
+                self.lightning_animation_frames['down'] = self._create_animation_frames(down_lightning_sword, 'down')
+                
+                # Right: 270 degrees from up (90 degrees clockwise)
+                right_lightning_sword = pygame.transform.rotate(up_lightning_sword, 270)
+                self.lightning_sword_images['right'] = right_lightning_sword
+                self.lightning_animation_frames['right'] = self._create_animation_frames(right_lightning_sword, 'right')
+                
+                # Left: 90 degrees from up (90 degrees counterclockwise)
+                left_lightning_sword = pygame.transform.rotate(up_lightning_sword, 90)
+                self.lightning_sword_images['left'] = left_lightning_sword
+                self.lightning_animation_frames['left'] = self._create_animation_frames(left_lightning_sword, 'left')
+                
+                print("Successfully loaded lightning_sword.png for all directions")
+            else:
+                print("lightning_sword.png not found - using normal sword images for lightning sword")
+                # Use normal sword images as fallback
+                self.lightning_sword_images = self.sword_images.copy()
+        except Exception as e:
+            print(f"Failed to load lightning_sword.png: {e}")
+            # Use normal sword images as fallback
+            self.lightning_sword_images = self.sword_images.copy()
         
     def _create_animation_frames(self, base_image, direction):
         """Create 4 animation frames by rotating the sword around its handle."""
@@ -351,62 +409,215 @@ class Sword(pygame.sprite.Sprite):
         
     def set_fire_sword(self, enabled=True):
         """Enable or disable fire sword effect"""
+        # Toggle fire mode
         self.is_fire_sword = enabled
-        print(f"Fire sword {'enabled' if enabled else 'disabled'}")
         
-        # Make sure fire sword images are loaded
+        # Disable lightning sword mode if fire sword mode is enabled
+        if enabled:
+            self.is_lightning_sword = False
+            
+        # Make sure we have fire sword images if enabling
         if enabled and not self.fire_sword_images:
             self._load_fire_sword_images()
             
-        # Play sound effect when fire sword is activated
+    def set_lightning_sword(self, enabled=True):
+        """Enable or disable lightning sword effect"""
+        # Toggle lightning mode
+        self.is_lightning_sword = enabled
+        
+        # Disable fire sword mode if lightning sword mode is enabled
         if enabled:
-            self.sound_manager.play_sound("effects/power_up")
+            self.is_fire_sword = False
+            
+        # Make sure we have lightning sword images if enabling
+        if enabled and not self.lightning_sword_images:
+            self._load_lightning_sword_images()
             
     def update_flame_particles(self):
         """Update flame particles for fire sword effect"""
+        # Only update if fire sword is active
         if not self.is_fire_sword:
             self.flame_particles = []
             return
             
-        # Remove old particles
+        # Remove expired particles
         self.flame_particles = [p for p in self.flame_particles if p['lifetime'] > 0]
         
-        # Add new particles if active
-        if self.active:
-            # Add 1-3 new particles each frame when sword is active
-            for _ in range(random.randint(1, 3)):
-                # Get sword position based on player position and facing
-                if self.player.facing == 'right':
-                    x = self.rect.right - random.randint(0, self.rect.width//2)
-                    y = self.rect.centery + random.randint(-self.rect.height//3, self.rect.height//3)
-                elif self.player.facing == 'left':
-                    x = self.rect.left + random.randint(0, self.rect.width//2)
-                    y = self.rect.centery + random.randint(-self.rect.height//3, self.rect.height//3)
-                elif self.player.facing == 'up':
-                    x = self.rect.centerx + random.randint(-self.rect.width//3, self.rect.width//3)
-                    y = self.rect.top + random.randint(0, self.rect.height//2)
-                else:  # down
-                    x = self.rect.centerx + random.randint(-self.rect.width//3, self.rect.width//3)
-                    y = self.rect.bottom - random.randint(0, self.rect.height//2)
+        # Add new particles when needed
+        if len(self.flame_particles) < 10 and random.random() < 0.4:  # 40% chance each frame
+            # Get the tip position of the sword based on player's facing direction
+            if self.player.facing == 'right':
+                tip_x = self.player.rect.centerx + TILE_SIZE // 2
+                tip_y = self.player.rect.centery
+            elif self.player.facing == 'left':
+                tip_x = self.player.rect.centerx - TILE_SIZE // 2
+                tip_y = self.player.rect.centery
+            elif self.player.facing == 'up':
+                tip_x = self.player.rect.centerx
+                tip_y = self.player.rect.top - TILE_SIZE // 4
+            else:  # down
+                tip_x = self.player.rect.centerx
+                tip_y = self.player.rect.bottom + TILE_SIZE // 4
                 
-                # Create new particle
-                particle = {
-                    'x': x,
-                    'y': y,
-                    'vx': random.uniform(-0.5, 0.5),
-                    'vy': random.uniform(-1.5, -0.5),  # Flames always rise
-                    'size': random.randint(3, 8),
-                    'color': random.choice([(255, 100, 0), (255, 50, 0), (255, 200, 0)]),
-                    'lifetime': random.randint(15, 30)  # frames
-                }
-                self.flame_particles.append(particle)
-        
+            # Create a new fire particle
+            new_particle = {
+                'x': tip_x + random.randint(-5, 5),
+                'y': tip_y + random.randint(-5, 5),
+                'color': (255, random.randint(100, 200), 0),  # Orange-yellow color
+                'size': random.randint(2, 6),
+                'lifetime': random.randint(10, 30),
+                'speed_x': random.uniform(-0.5, 0.5),
+                'speed_y': random.uniform(-1.0, -0.2)  # Fire particles move upward
+            }
+            self.flame_particles.append(new_particle)
+            
         # Update existing particles
         for particle in self.flame_particles:
-            particle['x'] += particle['vx']
-            particle['y'] += particle['vy']
-            particle['size'] -= 0.1
+            # Move the particle
+            particle['x'] += particle['speed_x']
+            particle['y'] += particle['speed_y']
+            
+            # Decrease lifetime
             particle['lifetime'] -= 1
+        
+    def update_lightning_particles(self):
+        """Update lightning particles for lightning sword effect"""
+        # Only update if lightning sword is active
+        if not self.is_lightning_sword:
+            self.lightning_particles = []
+            return
+            
+        # Remove expired particles
+        self.lightning_particles = [p for p in self.lightning_particles if p['lifetime'] > 0]
+        
+        # ALWAYS generate a lightning strike when the sword is active
+        if self.active:
+            # Clear existing particles to prevent overlap and ensure new lightning is visible
+            self.lightning_particles = [p for p in self.lightning_particles if not 'points' in p]
+            
+            # Add multiple lightning beams for a more dramatic effect
+            num_beams = 3  # Always create 3 beams per swing
+            
+            for _ in range(num_beams):
+                # Get the tip position of the sword based on player's facing direction
+                # Calculate beam start point (sword tip)
+                if self.player.facing == 'right':
+                    start_x = self.rect.right
+                    start_y = self.rect.centery
+                    beam_length = TILE_SIZE * 4  # Even longer beam
+                    beam_direction = (1, 0)
+                elif self.player.facing == 'left':
+                    start_x = self.rect.left
+                    start_y = self.rect.centery
+                    beam_length = TILE_SIZE * 4  # Even longer beam
+                    beam_direction = (-1, 0)
+                elif self.player.facing == 'up':
+                    start_x = self.rect.centerx
+                    start_y = self.rect.top
+                    beam_length = TILE_SIZE * 4  # Even longer beam
+                    beam_direction = (0, -1)
+                else:  # down
+                    start_x = self.rect.centerx
+                    start_y = self.rect.bottom
+                    beam_length = TILE_SIZE * 4  # Even longer beam
+                    beam_direction = (0, 1)
+                    
+                # Generate a lightning beam with many segments for extreme zigzag
+                segments = random.randint(8, 12)  # More segments for extreme zigzagging
+                segment_length = beam_length / segments
+                
+                points = [(start_x, start_y)]
+                current_x, current_y = start_x, start_y
+                
+                # Create extreme zigzag pattern for the beam
+                for i in range(segments):
+                    # Calculate next point with extreme randomness for zigzag appearance
+                    # Alternate direction of jitter to create zigzag pattern
+                    zigzag_multiplier = 1 if i % 2 == 0 else -1
+                    
+                    if beam_direction[1] != 0:  # Vertical beam
+                        jitter_x = random.randint(25, 40) * zigzag_multiplier  # Exaggerated horizontal zigzag
+                        jitter_y = 0
+                    else:  # Horizontal beam
+                        jitter_x = 0
+                        jitter_y = random.randint(25, 40) * zigzag_multiplier  # Exaggerated vertical zigzag
+                    
+                    next_x = current_x + (beam_direction[0] * segment_length) + jitter_x
+                    next_y = current_y + (beam_direction[1] * segment_length) + jitter_y
+                    
+                    points.append((next_x, next_y))
+                    current_x, current_y = next_x, next_y
+                
+                # Create a new lightning beam with multiple segments - bright blue color
+                new_particle = {
+                    'points': points,
+                    'color': (50, 120, 255),  # Even more blue color for lightning
+                    'thickness': random.randint(4, 8),  # Thicker beam
+                    'lifetime': random.randint(15, 20),  # Longer lifetime so it's visible
+                    'start_time': pygame.time.get_ticks(),
+                    'beam_direction': beam_direction,
+                    'is_main_beam': True  # Mark as main beam
+                }
+                self.lightning_particles.append(new_particle)
+                
+                # Add secondary beams that branch off from random points on the main beam
+                for i in range(random.randint(2, 4)):  # 2-4 branches per main beam
+                    if len(points) < 2:
+                        continue
+                        
+                    # Choose a random point on the main beam to branch from
+                    branch_start_idx = random.randint(0, len(points) - 2)
+                    branch_start_x = points[branch_start_idx][0]
+                    branch_start_y = points[branch_start_idx][1]
+                    
+                    # Create a short zigzag branch
+                    branch_points = [(branch_start_x, branch_start_y)]
+                    branch_segments = random.randint(3, 5)
+                    branch_length = TILE_SIZE * 1.5
+                    segment_length = branch_length / branch_segments
+                    
+                    # Random direction for branch
+                    branch_angle = random.uniform(0, 2 * math.pi)
+                    branch_direction = (math.cos(branch_angle), math.sin(branch_angle))
+                    
+                    current_x, current_y = branch_start_x, branch_start_y
+                    
+                    for j in range(branch_segments):
+                        # Alternate zigzag pattern
+                        zigzag_multiplier = 1 if j % 2 == 0 else -1
+                        
+                        # Add some perpendicular jitter for zigzag effect
+                        perp_x = -branch_direction[1] * random.randint(10, 20) * zigzag_multiplier
+                        perp_y = branch_direction[0] * random.randint(10, 20) * zigzag_multiplier
+                        
+                        next_x = current_x + (branch_direction[0] * segment_length) + perp_x
+                        next_y = current_y + (branch_direction[1] * segment_length) + perp_y
+                        
+                        branch_points.append((next_x, next_y))
+                        current_x, current_y = next_x, next_y
+                    
+                    # Add branch as a separate particle
+                    branch_particle = {
+                        'points': branch_points,
+                        'color': (100, 150, 255),  # Slightly different blue
+                        'thickness': random.randint(2, 4),  # Thinner than main beam
+                        'lifetime': random.randint(10, 15),  # Shorter than main beam
+                        'start_time': pygame.time.get_ticks(),
+                        'beam_direction': branch_direction,
+                        'is_main_beam': False  # Mark as branch
+                    }
+                    self.lightning_particles.append(branch_particle)
+        
+        # Update existing particles
+        for particle in self.lightning_particles:
+            # For beam particles, we don't need to move them, just decrease lifetime
+            if 'points' in particle:
+                particle['lifetime'] -= 1
+            else:
+                # For ambient discharge particles
+                particle['x'] += particle['speed_x'] + random.uniform(-0.3, 0.3)
+                particle['y'] += particle['speed_y'] + random.uniform(-0.3, 0.3)
+                particle['lifetime'] -= 1
         
     def draw_flame_particles(self, surface):
         """Draw flame particles for fire sword effect"""
@@ -427,6 +638,98 @@ class Sword(pygame.sprite.Sprite):
             
             # Draw actual particle
             pygame.draw.circle(surface, particle['color'], (int(particle['x']), int(particle['y'])), size)
+        
+    def draw_lightning_particles(self, surface):
+        """Draw lightning particles for lightning sword effect"""
+        if not self.lightning_particles:
+            return
+            
+        for particle in self.lightning_particles:
+            if 'points' in particle:  # This is a beam particle
+                # Draw the main beam segments
+                points = particle['points']
+                thickness = particle['thickness']
+                color = particle['color']
+                
+                # Draw a glow behind the lightning for better visibility
+                if particle.get('is_main_beam', False):
+                    glow_color = (color[0], color[1], color[2], 50)  # Semi-transparent
+                    glow_thickness = thickness * 3
+                    
+                    for i in range(len(points) - 1):
+                        # Create a surface for the glow
+                        line_length = int(math.sqrt((points[i+1][0] - points[i][0])**2 + 
+                                                   (points[i+1][1] - points[i][1])**2))
+                        
+                        # Draw the glowing backdrop for more visibility
+                        pygame.draw.line(
+                            surface, 
+                            glow_color,
+                            (int(points[i][0]), int(points[i][1])),
+                            (int(points[i+1][0]), int(points[i+1][1])),
+                            glow_thickness
+                        )
+                
+                # Draw each segment of the beam
+                for i in range(len(points) - 1):
+                    pygame.draw.line(
+                        surface, 
+                        color,
+                        (int(points[i][0]), int(points[i][1])),
+                        (int(points[i+1][0]), int(points[i+1][1])),
+                        thickness
+                    )
+                    
+                # Draw a glowing effect for the beam
+                for i in range(len(points) - 1):
+                    # Draw a thinner, brighter line on top
+                    pygame.draw.line(
+                        surface, 
+                        (200, 220, 255),  # Bright blue-white for inner glow
+                        (int(points[i][0]), int(points[i][1])),
+                        (int(points[i+1][0]), int(points[i+1][1])),
+                        max(1, thickness // 2)
+                    )
+                    
+                    # Draw an even thinner white center for extra brightness
+                    pygame.draw.line(
+                        surface, 
+                        (255, 255, 255),  # Pure white for center
+                        (int(points[i][0]), int(points[i][1])),
+                        (int(points[i+1][0]), int(points[i+1][1])),
+                        max(1, thickness // 3)
+                    )
+                    
+                # Draw small sparks at each point junction for extra effect
+                for point in points:
+                    spark_size = random.randint(1, 3)
+                    pygame.draw.circle(
+                        surface,
+                        (200, 220, 255),  # Bright blue-white
+                        (int(point[0]), int(point[1])),
+                        spark_size
+                    )
+                    
+            else:  # This is an ambient discharge particle (small sparks)
+                # Draw a small spark
+                size = int(particle['size'])
+                if size <= 0:
+                    continue
+                
+                # Draw the spark as a small circle
+                pygame.draw.circle(
+                    surface, 
+                    particle['color'], 
+                    (int(particle['x']), int(particle['y'])), 
+                    size
+                )
+                
+                # Add a small glow effect
+                glow_size = size * 2
+                glow_surf = pygame.Surface((glow_size * 2, glow_size * 2), pygame.SRCALPHA)
+                glow_color = (*particle['color'][:3], 100)  # Semi-transparent
+                pygame.draw.circle(glow_surf, glow_color, (glow_size, glow_size), glow_size)
+                surface.blit(glow_surf, (particle['x'] - glow_size, particle['y'] - glow_size))
         
     def update(self):
         """Update the sword state"""
@@ -452,22 +755,56 @@ class Sword(pygame.sprite.Sprite):
         # Update flame particles for fire sword
         self.update_flame_particles()
         
+        # Update lightning particles for lightning sword
+        self.update_lightning_particles()
+        
     def draw(self, surface):
         """Draw the sword and any effects"""
         if not self.active:
+            # Draw flame particles even when sword is inactive for fire sword
+            if self.is_fire_sword:
+                self.draw_flame_particles(surface)
+            # Draw lightning particles even when sword is inactive for lightning sword
+            if self.is_lightning_sword:
+                self.draw_lightning_particles(surface)
             return
             
-        # Draw the sword
-        surface.blit(self.image, self.rect)
+        # Get appropriate animation frames based on sword type
+        if self.is_fire_sword:
+            animation_frames = self.fire_animation_frames
+        elif self.is_lightning_sword:
+            animation_frames = self.lightning_animation_frames
+        else:
+            animation_frames = self.animation_frames
+            
+        # Get the current frame for the current direction
+        frames = animation_frames.get(self.player.facing, [])
+        if not frames or self.current_frame >= len(frames):
+            return  # No frames to draw or invalid frame
+            
+        # Get the current frame image
+        frame_img = frames[min(self.current_frame, len(frames)-1)]
         
-        # Draw flame particles if fire sword
+        # Blit the current frame at the sword's position
+        surface.blit(frame_img, self.rect)
+        
+        # Draw flame particles for fire sword
         if self.is_fire_sword:
             self.draw_flame_particles(surface)
             
+        # Draw lightning particles for lightning sword
+        if self.is_lightning_sword:
+            self.draw_lightning_particles(surface)
+        
     def update_position(self):
         """Update sword position and animation frame based on player facing direction"""
-        # Use the fire sword frames if enabled, otherwise use normal sword frames
-        animation_frames = self.fire_animation_frames if self.is_fire_sword else self.animation_frames
+        # Use the appropriate animation frames based on sword type
+        if self.is_lightning_sword:
+            animation_frames = self.lightning_animation_frames
+        elif self.is_fire_sword:
+            animation_frames = self.fire_animation_frames
+        else:
+            animation_frames = self.animation_frames
         
         if self.player.facing == 'right':
             self.image = animation_frames['right'][self.current_frame]
@@ -584,8 +921,9 @@ class WeaponManager:
         self.weapon_sprites = pygame.sprite.Group()
         self.weapon_sprites.add(self.sword)
         
-        # Track if fire sword is active
+        # Track special sword types
         self.has_fire_sword = False
+        self.has_lightning_sword = False
         
     def update(self):
         # Update all weapons
@@ -624,7 +962,14 @@ class WeaponManager:
     def enable_fire_sword(self):
         """Enable fire sword for the player"""
         self.has_fire_sword = True
+        self.has_lightning_sword = False  # Turn off lightning sword if fire sword is enabled
         self.sword.set_fire_sword(True)
+        
+    def enable_lightning_sword(self):
+        """Enable lightning sword for the player"""
+        self.has_lightning_sword = True
+        self.has_fire_sword = False  # Turn off fire sword if lightning sword is enabled
+        self.sword.set_lightning_sword(True)
         
     def attack_sword(self):
         """Attack with sword and play sound effect"""
@@ -635,6 +980,8 @@ class WeaponManager:
             # Play appropriate sword sound
             if self.has_fire_sword:
                 self.sound_manager.play_sound("effects/fire_sword")
+            elif self.has_lightning_sword:
+                self.sound_manager.play_sound("effects/lightning_sword")
             else:
                 self.sound_manager.play_sound("effects/sword_attack")
             

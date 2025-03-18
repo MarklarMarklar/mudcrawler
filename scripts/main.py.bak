@@ -684,41 +684,6 @@ class Game:
             if self.weapon_manager.sword.active:
                 # Get the hitbox without triggering an attack
                 sword_hitbox = self.player.get_attack_hitbox()
-                
-                # Create lightning effect on sword swing if using lightning sword
-                if self.weapon_manager.has_lightning_sword:
-                    # Get the position at the end of the sword in the attack direction
-                    if self.player.facing == 'right':
-                        effect_x = self.player.rect.right + TILE_SIZE // 4  # Closer to player (was TILE_SIZE // 2)
-                        effect_y = self.player.rect.centery
-                    elif self.player.facing == 'left':
-                        effect_x = self.player.rect.left - TILE_SIZE // 4  # Closer to player
-                        effect_y = self.player.rect.centery
-                    elif self.player.facing == 'up':
-                        effect_x = self.player.rect.centerx
-                        effect_y = self.player.rect.top - TILE_SIZE // 4  # Closer to player
-                    else:  # down
-                        effect_x = self.player.rect.centerx
-                        effect_y = self.player.rect.bottom + TILE_SIZE // 4  # Closer to player
-                        
-                    # Create the lightning effect at this position, passing player's facing direction
-                    # to ensure lightning goes in the correct direction
-                    if self.player.facing == 'right':
-                        angle = 0  # 0 radians = right
-                    elif self.player.facing == 'left':
-                        angle = math.pi  # π radians = left
-                    elif self.player.facing == 'up':
-                        angle = -math.pi/2  # -π/2 radians = up
-                    else:  # down
-                        angle = math.pi/2  # π/2 radians = down
-                        
-                    # Create lightning effect with specific angle
-                    self.particle_system.create_directional_lightning(
-                        effect_x, 
-                        effect_y,
-                        angle=angle,
-                        amount=10  # Reduced amount
-                    )
 
             for enemy in current_room.enemies:
                 # Check sword collisions using the directional attack hitbox
@@ -737,7 +702,7 @@ class Game:
                         )
                     elif self.weapon_manager.has_lightning_sword:
                         damage = int(SWORD_DAMAGE * 1.8)  # 80% damage bonus
-                        # Create additional lightning particles at enemy position on hit
+                        # Create lightning particles on hit
                         self.particle_system.create_lightning_effect(
                             enemy.rect.centerx, 
                             enemy.rect.centery,
@@ -983,9 +948,9 @@ class Game:
         if self.weapon_manager.sword.active:
             self.weapon_manager.weapon_sprites.draw(room_surface)
 
-        # Get the view rect (visible portion of room)
+        # Get the visible portion of the room based on camera position
         view_rect = pygame.Rect(
-            int(self.camera.x),
+            int(self.camera.x), 
             int(self.camera.y),
             int(self.camera.view_width), 
             int(self.camera.view_height)

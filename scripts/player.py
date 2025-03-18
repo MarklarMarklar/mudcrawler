@@ -103,6 +103,7 @@ class Player(pygame.sprite.Sprite):
         
         # Player stats
         self.health = PLAYER_START_HEALTH
+        self.max_health = PLAYER_START_HEALTH  # Add max_health property
         self.speed = PLAYER_SPEED
         self.arrow_count = 10  # Start with 10 arrows
         self.max_arrows = 10  # Maximum arrows the player can carry
@@ -610,7 +611,8 @@ class Player(pygame.sprite.Sprite):
                 self.walk_sound_channel = None
         
     def heal(self, amount):
-        self.health = min(self.health + amount, PLAYER_START_HEALTH)
+        """Heal the player by the given amount, capped at max health"""
+        self.health = min(self.health + amount, self.max_health)
         
     def update(self):
         # Update position if not dead

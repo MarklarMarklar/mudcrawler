@@ -585,14 +585,15 @@ class HUD:
         self.sound_off_icon = None
         self.key_icon = None
         self.fire_sword_icon = None
+        self.lightning_sword_icon = None
         
         # Health bar dimensions
         self.health_bar_width = 240  # Width of the health bar graphic
         self.health_bar_height = 80  # Height of the health bar graphic
         
         # Health and arrow bar positions and dimensions from the alpha reference
-        self.health_bar_rect = None
-        self.arrow_bar_rect = None
+        self.health_bar_rect = pygame.Rect(42, 16, 100, 16)  # Default position and size
+        self.arrow_bar_rect = pygame.Rect(42, 42, 100, 8)  # Default position and size
         
         # Minimap settings
         self.minimap_size = 10  # Size of each room on the minimap
@@ -642,6 +643,15 @@ class HUD:
                 print("Successfully loaded fire sword icon")
         except Exception as e:
             print(f"Failed to load fire sword icon: {e}")
+            
+        # Try to load lightning sword icon
+        try:
+            lightning_sword_icon_path = os.path.join(ASSET_PATH, "icons/lightning_sword_icon.png")
+            if os.path.exists(lightning_sword_icon_path):
+                self.lightning_sword_icon = self.asset_manager.load_image(lightning_sword_icon_path, scale=(32, 32))
+                print("Successfully loaded lightning sword icon")
+        except Exception as e:
+            print(f"Failed to load lightning sword icon: {e}")
             
         # Try to load key icon from UI sprites
         try:
@@ -776,6 +786,10 @@ class HUD:
                 self.arrow_bar_rect = pygame.Rect(arrow_x_start, arrow_y, arrow_width, arrow_height)
                 print(f"Found arrow bar rectangle: {self.arrow_bar_rect}")
         
+    def get_health_bar_position(self):
+        """Helper method to get the health bar position for consistent placement"""
+        return (10, 10)  # Standard top-left corner position
+        
     def draw_minimap(self, level):
         """Draw a small map in the upper right corner showing room layout"""
         if not level or not hasattr(level, 'rooms') or not level.rooms:
@@ -872,192 +886,130 @@ class HUD:
         # Draw the level text to the left of the minimap
         self.screen.blit(level_text, level_text_rect)
         
-    def draw(self, player, level_number, audio_available=True, level=None):
-        # Position the health bar in the top-left corner with some margin
-        bar_x = 10
-        bar_y = 10
+    def draw_boss_health_bar(self, boss_health, boss_max_health):
+        """Draw the boss health bar at the top of the screen"""
+        # Draw background bar
+        bar_width = 300
+        bar_height = 20
+        bar_x = (WINDOW_WIDTH - bar_width) // 2
+        bar_y = 20
         
-        # Standard bar dimensions for fallback mode
-        std_bar_width = 200
-        std_bar_height = 20
-        bar_spacing = 10  # Space between health and arrow bars
+        # Background (dark red)
+        pygame.draw.rect(self.screen, (100, 20, 20), (bar_x, bar_y, bar_width, bar_height))
         
-        # Calculate ratios
-        health_ratio = max(0, min(1, player.health / PLAYER_START_HEALTH))
-        arrow_ratio = max(0, min(1, player.arrow_count / player.max_arrows))
+        # Health percentage
+        health_percent = boss_health / boss_max_health
+        health_width = int(bar_width * health_percent)
         
-        # Calculate health bar color based on health ratio
-        # Green (0, 255, 0) when full health
-        # Yellow (255, 255, 0) at around 50% health
-        # Red (255, 0, 0) when health is low
-        if health_ratio > 0.5:
-            # Transition from green to yellow (from 100% to 50%)
-            red = int(255 * (1 - health_ratio) * 2)  # Increases as health decreases
-            green = 255
-            health_color = (red, green, 0)
+        # Health bar color (bright red)
+        health_color = (220, 0, 0)
+        pygame.draw.rect(self.screen, health_color, (bar_x, bar_y, health_width, bar_height))
+        
+        # Draw border
+        pygame.draw.rect(self.screen, (255, 255, 255), (bar_x, bar_y, bar_width, bar_height), 2)
+        
+        # Draw "BOSS" text above the health bar
+        font = pygame.font.Font(None, 24)
+        text = font.render("BOSS", True, (255, 255, 255))
+        text_rect = text.get_rect(center=(WINDOW_WIDTH // 2, bar_y - 10))
+        self.screen.blit(text, text_rect)
+    
+    def draw_player_stats(self, player, level_number, has_key=False):
+        """Draw player stats including health bar, arrow count, and key status"""
+        # Draw health bar background
+        if self.health_bar_bg:
+            self.screen.blit(self.health_bar_bg, (10, 10))
         else:
-            # Transition from yellow to red (from 50% to 0%)
-            red = 255
-            green = int(255 * health_ratio * 2)  # Decreases as health decreases
-            health_color = (red, green, 0)
+            # Fallback if image not available
+            pygame.draw.rect(self.screen, (50, 50, 50), (10, 10, 150, 60))
+            
+        # Create fallback health and arrow bar rects if not already defined
+        if not hasattr(self, 'health_bar_rect') or self.health_bar_rect is None:
+            # Default position and size for health bar
+            self.health_bar_rect = pygame.Rect(42, 16, 100, 16)
+            print("Using fallback health bar rectangle")
+            
+        if not hasattr(self, 'arrow_bar_rect') or self.arrow_bar_rect is None:
+            # Default position and size for arrow bar
+            self.arrow_bar_rect = pygame.Rect(42, 42, 100, 8)
+            print("Using fallback arrow bar rectangle")
+            
+        # Adjust the positions to be relative to the health bar image position (10, 10)
+        health_bar_x = 10 + self.health_bar_rect.x
+        health_bar_y = 10 + self.health_bar_rect.y
         
-        if self.use_custom_health_bar and self.health_bar_bg:
-            # Draw the health bar background
-            self.screen.blit(self.health_bar_bg, (bar_x, bar_y))
+        # Draw health bar
+        health_percent = player.health / player.max_health
+        health_width = int(self.health_bar_rect.width * health_percent)
+        health_color = (0, 255, 0)  # Green
+        if health_percent < 0.5:
+            health_color = (255, 255, 0)  # Yellow
+        if health_percent < 0.25:
+            health_color = (255, 0, 0)  # Red
             
-            # Draw the health and arrow bars based on the alpha reference if available
-            if self.health_bar_rect:
-                # Health bar with dynamic color
-                health_fill_rect = pygame.Rect(
-                    bar_x + self.health_bar_rect.x,
-                    bar_y + self.health_bar_rect.y,
-                    int(self.health_bar_rect.width * health_ratio),
-                    self.health_bar_rect.height
-                )
-                pygame.draw.rect(self.screen, health_color, health_fill_rect)
-            else:
-                # Fallback to estimated position
-                health_bar_x = bar_x + 85
-                health_bar_y = bar_y + 22
-                health_bar_width = int(120 * health_ratio)
-                health_bar_height = 16
-                pygame.draw.rect(self.screen, health_color, 
-                              (health_bar_x, health_bar_y, health_bar_width, health_bar_height))
-            
-            if self.arrow_bar_rect:
-                # Arrow bar (yellow) divided into 10 segments
-                total_width = self.arrow_bar_rect.width
-                segment_width = total_width / player.max_arrows
-                segment_spacing = 2  # Gap between segments
-                adjusted_segment_width = segment_width - segment_spacing
-                
-                # Draw each arrow segment
-                for i in range(min(player.arrow_count, player.max_arrows)):
-                    segment_rect = pygame.Rect(
-                        bar_x + self.arrow_bar_rect.x + (i * segment_width),
-                        bar_y + self.arrow_bar_rect.y,
-                        max(1, adjusted_segment_width),  # Ensure segments are visible
-                        self.arrow_bar_rect.height
-                    )
-                    pygame.draw.rect(self.screen, (255, 255, 0), segment_rect)
-            else:
-                # Fallback to estimated position with segmented arrow bar
-                arrow_bar_x = bar_x + 85
-                arrow_bar_y = bar_y + 46
-                arrow_bar_total_width = 120
-                segment_width = arrow_bar_total_width / player.max_arrows
-                segment_spacing = 2
-                adjusted_segment_width = segment_width - segment_spacing
-                
-                # Draw each arrow segment
-                for i in range(min(player.arrow_count, player.max_arrows)):
-                    segment_rect = pygame.Rect(
-                        arrow_bar_x + (i * segment_width),
-                        arrow_bar_y,
-                        max(1, adjusted_segment_width),
-                        16  # arrow_bar_height
-                    )
-                    pygame.draw.rect(self.screen, (255, 255, 0), segment_rect)
-        else:
-            # Fallback to default drawing if custom health bar not available
-            # Health bar
-            pygame.draw.rect(self.screen, (100, 0, 0),
-                          (bar_x, bar_y, std_bar_width, std_bar_height))
-            pygame.draw.rect(self.screen, health_color,
-                          (bar_x, bar_y, int(std_bar_width * health_ratio), std_bar_height))
-            pygame.draw.rect(self.screen, WHITE,
-                          (bar_x, bar_y, std_bar_width, std_bar_height), 2)
-            
-            # Arrow bar background
-            pygame.draw.rect(self.screen, (100, 100, 0),
-                          (bar_x, bar_y + std_bar_height + bar_spacing, std_bar_width, std_bar_height))
-            
-            # Segmented arrow bar
-            segment_width = std_bar_width / player.max_arrows
-            segment_spacing = 2
-            adjusted_segment_width = segment_width - segment_spacing
-            
-            # Draw each arrow segment
-            for i in range(min(player.arrow_count, player.max_arrows)):
-                segment_rect = pygame.Rect(
-                    bar_x + (i * segment_width),
-                    bar_y + std_bar_height + bar_spacing,
-                    max(1, adjusted_segment_width),
-                    std_bar_height
-                )
-                pygame.draw.rect(self.screen, (255, 255, 0), segment_rect)
-            
-            # Draw outline
-            pygame.draw.rect(self.screen, WHITE,
-                          (bar_x, bar_y + std_bar_height + bar_spacing, std_bar_width, std_bar_height), 2)
+        pygame.draw.rect(self.screen, health_color, 
+                        (health_bar_x, health_bar_y, 
+                        health_width, self.health_bar_rect.height))
         
-        # Draw the key icon if player has a key and we have level
-        if level and hasattr(level, 'has_key') and level.has_key:
-            # Calculate key position (right side of health bar)
-            key_size = 32
-            
-            if self.use_custom_health_bar and self.health_bar_bg and self.health_bar_rect:
-                # Position at the right of the health bar
-                key_x = bar_x + self.health_bar_width + 10
-                key_y = bar_y + (self.health_bar_height // 2) - (key_size // 2)  # Vertically center with health bar
-            else:
-                # Fallback position
-                key_x = bar_x + std_bar_width + 20
-                key_y = bar_y
-            
-            # Draw key background glow with pulsing effect
-            pulse = 0.5 + 0.5 * abs(math.sin(pygame.time.get_ticks() / 200))
-            bg_size = key_size * 1.5
-            bg_x = key_x - (bg_size - key_size) / 2
-            bg_y = key_y - (bg_size - key_size) / 2
-            
-            # Create glowing background
-            bg_color = (255, 215, 0, int(100 * pulse))  # Golden glow with alpha
-            bg_surface = pygame.Surface((bg_size, bg_size), pygame.SRCALPHA)
-            pygame.draw.circle(bg_surface, bg_color, (bg_size//2, bg_size//2), bg_size//2)
-            self.screen.blit(bg_surface, (bg_x, bg_y))
-            
-            # Draw the key icon if available
-            if self.key_icon:
-                self.screen.blit(self.key_icon, (key_x, key_y))
-            else:
-                # Draw a custom key icon if no image is available
-                key_icon = pygame.Surface((key_size, key_size), pygame.SRCALPHA)
-                key_icon.fill((0, 0, 0, 0))  # Transparent background
-                
-                # Key body (circle at top)
-                pygame.draw.circle(key_icon, (255, 215, 0), (key_size//2, key_size//4), key_size//6)
-                # Key stem
-                pygame.draw.rect(key_icon, (255, 215, 0), 
-                              (key_size//2 - key_size//10, key_size//4, key_size//5, key_size//2))
-                # Key teeth
-                pygame.draw.rect(key_icon, (255, 215, 0), 
-                              (key_size//2, key_size//2, key_size//4, key_size//8))
-                pygame.draw.rect(key_icon, (255, 215, 0),
-                              (key_size//2, key_size//2 + key_size//6, key_size//4, key_size//8))
-                
-                self.screen.blit(key_icon, (key_x, key_y))
-            
-            # Add key label
-            small_font = pygame.font.Font(None, 18)
-            key_text = small_font.render("KEY", True, (255, 255, 255))
-            key_text_rect = key_text.get_rect(center=(key_x + key_size//2, key_y + key_size + 8))
-            self.screen.blit(key_text, key_text_rect)
+        # Adjust the arrow bar positions to be relative to the health bar image position (10, 10)
+        arrow_bar_x = 10 + self.arrow_bar_rect.x
+        arrow_bar_y = 10 + self.arrow_bar_rect.y
         
+        # Draw arrow count with yellow/gold color
+        arrow_percent = min(1.0, player.arrow_count / player.max_arrows)
+        arrow_width = int(self.arrow_bar_rect.width * arrow_percent)
+        
+        # Use gold/yellow color for arrow bar
+        pygame.draw.rect(self.screen, (220, 180, 0),  # Gold/yellow color
+                        (arrow_bar_x, arrow_bar_y, 
+                        arrow_width, self.arrow_bar_rect.height))
+        
+        # Draw segmented markers for arrow count (1 segment per arrow)
+        segment_width = 2
+        segment_spacing = self.arrow_bar_rect.width / player.max_arrows
+        for i in range(1, player.max_arrows):
+            segment_x = arrow_bar_x + int(i * segment_spacing)
+            # Only draw segment markers that are within the filled portion
+            if segment_x <= arrow_bar_x + arrow_width:
+                pygame.draw.line(self.screen, (180, 140, 0), 
+                            (segment_x, arrow_bar_y), 
+                            (segment_x, arrow_bar_y + self.arrow_bar_rect.height), 
+                            segment_width)
+        
+        # Draw key icon if player has key
+        if has_key and self.key_icon:
+            self.screen.blit(self.key_icon, (10, 66))
+    
+    def draw_ui(self, player, level_number, boss_health=None, boss_max_health=None, has_key=False, audio_available=True, has_fire_sword=False, has_lightning_sword=False):
+        """Draw all UI elements"""
+        # Draw boss health if provided
+        if boss_health is not None and boss_max_health is not None and boss_health > 0:
+            self.draw_boss_health_bar(boss_health, boss_max_health)
+            
+        # Draw player stats
+        self.draw_player_stats(player, level_number, has_key)
+        
+        # Draw special weapons (fire sword, lightning sword)
+        self.draw_special_weapons(has_fire_sword, has_lightning_sword, has_key)
+            
+        # Draw sound status indicator if sound is disabled
+        if not audio_available and self.sound_off_icon:
+            self.screen.blit(self.sound_off_icon, (10, WINDOW_HEIGHT - 34))
+
+    def draw_special_weapons(self, has_fire_sword=False, has_lightning_sword=False, has_key=False):
+        """Draw special weapon indicators like fire sword"""
         # Draw fire sword icon if player has it
-        if hasattr(player, 'game') and player.game and hasattr(player.game, 'weapon_manager') and player.game.weapon_manager.has_fire_sword:
-            # Calculate fire sword position (right side of key or health bar)
+        if has_fire_sword:
             fire_sword_size = 32
+            std_bar_width = 240  # Standard health bar width
             
-            # Position depends on whether key is shown
-            if level and hasattr(level, 'has_key') and level.has_key:
-                # Position to right of key
-                if self.use_custom_health_bar and self.health_bar_bg and self.health_bar_rect:
-                    fire_sword_x = bar_x + self.health_bar_width + 10 + fire_sword_size + 20  # Key width + spacing
-                    fire_sword_y = bar_y + (self.health_bar_height // 2) - (fire_sword_size // 2)
-                else:
-                    fire_sword_x = bar_x + std_bar_width + 20 + fire_sword_size + 20
-                    fire_sword_y = bar_y
+            # Position the icon based on whether the player has a key
+            bar_x, bar_y = self.get_health_bar_position()
+            
+            if has_key:
+                # If player has key, position to right of key icon
+                fire_sword_x = bar_x + std_bar_width + 80  # Adjust as needed
+                fire_sword_y = bar_y
             else:
                 # No key, position to right of health bar
                 if self.use_custom_health_bar and self.health_bar_bg and self.health_bar_rect:
@@ -1107,17 +1059,92 @@ class HUD:
             sword_text = small_font.render("FIRE", True, (255, 100, 0))
             sword_text_rect = sword_text.get_rect(center=(fire_sword_x + fire_sword_size//2, fire_sword_y + fire_sword_size + 8))
             self.screen.blit(sword_text, sword_text_rect)
-        
-        # Draw minimap if level is provided
+            
+        # Draw lightning sword icon if player has it
+        if has_lightning_sword:
+            lightning_sword_size = 32
+            std_bar_width = 240  # Standard health bar width
+            
+            # Position the icon based on whether the player has other special items
+            bar_x, bar_y = self.get_health_bar_position()
+            
+            if has_fire_sword:
+                # If player has fire sword, position to right of it
+                lightning_sword_x = bar_x + std_bar_width + 130  # Position after fire sword
+                lightning_sword_y = bar_y
+            elif has_key:
+                # If player has key but no fire sword, position to right of key icon
+                lightning_sword_x = bar_x + std_bar_width + 80
+                lightning_sword_y = bar_y
+            else:
+                # No other special items, position to right of health bar
+                if self.use_custom_health_bar and self.health_bar_bg and self.health_bar_rect:
+                    lightning_sword_x = bar_x + self.health_bar_width + 10
+                    lightning_sword_y = bar_y + (self.health_bar_height // 2) - (lightning_sword_size // 2)
+                else:
+                    lightning_sword_x = bar_x + std_bar_width + 20
+                    lightning_sword_y = bar_y
+            
+            # Draw lightning sword background glow with pulsing effect
+            pulse = 0.5 + 0.5 * abs(math.sin(pygame.time.get_ticks() / 150))  # Faster pulsing for lightning
+            bg_size = lightning_sword_size * 1.5
+            bg_x = lightning_sword_x - (bg_size - lightning_sword_size) / 2
+            bg_y = lightning_sword_y - (bg_size - lightning_sword_size) / 2
+            
+            # Create glowing background (blue for lightning)
+            bg_color = (100, 150, 255, int(100 * pulse))  # Blue glow with alpha
+            bg_surface = pygame.Surface((bg_size, bg_size), pygame.SRCALPHA)
+            pygame.draw.circle(bg_surface, bg_color, (bg_size//2, bg_size//2), bg_size//2)
+            self.screen.blit(bg_surface, (bg_x, bg_y))
+            
+            # Draw the lightning sword icon if available
+            if self.lightning_sword_icon:
+                self.screen.blit(self.lightning_sword_icon, (lightning_sword_x, lightning_sword_y))
+            else:
+                # Draw a custom lightning sword icon if no image is available
+                sword_icon = pygame.Surface((lightning_sword_size, lightning_sword_size), pygame.SRCALPHA)
+                sword_icon.fill((0, 0, 0, 0))  # Transparent background
+                
+                # Draw sword body (vertical line)
+                pygame.draw.rect(sword_icon, (200, 200, 220), (lightning_sword_size//2-2, lightning_sword_size//4, 4, lightning_sword_size//2))
+                
+                # Draw sword hilt
+                pygame.draw.rect(sword_icon, (150, 150, 200), (lightning_sword_size//2-6, lightning_sword_size//4+lightning_sword_size//2, 12, 5))
+                
+                # Draw lightning effect at the tip
+                for i in range(3):  # Draw multiple lightning bolts
+                    offset = (i - 1) * 3
+                    pygame.draw.line(sword_icon, (100, 150, 255), 
+                                    (lightning_sword_size//2 + offset, lightning_sword_size//4),
+                                    (lightning_sword_size//2 + offset - 2, lightning_sword_size//8),
+                                    2)
+                    pygame.draw.line(sword_icon, (100, 150, 255), 
+                                    (lightning_sword_size//2 + offset - 2, lightning_sword_size//8),
+                                    (lightning_sword_size//2 + offset + 2, lightning_sword_size//16),
+                                    2)
+                
+                self.screen.blit(sword_icon, (lightning_sword_x, lightning_sword_y))
+            
+            # Add lightning sword label
+            small_font = pygame.font.Font(None, 18)
+            sword_text = small_font.render("LIGHTNING", True, (100, 150, 255))
+            sword_text_rect = sword_text.get_rect(center=(lightning_sword_x + lightning_sword_size//2, lightning_sword_y + lightning_sword_size + 8))
+            self.screen.blit(sword_text, sword_text_rect) 
+
+    def draw(self, player, level_number, audio_available=True, level=None, boss_health=None, boss_max_health=None, has_key=False, has_fire_sword=False, has_lightning_sword=False):
+        """Draw the HUD - compatibility method that calls draw_ui with all parameters"""
+        # Draw the minimap if level is provided
         if level:
             self.draw_minimap(level)
-        else:
-            # If no level but we need to show level number, draw it in the upper right
-            level_text = self.font.render(f"Level: {level_number}", True, WHITE)
-            level_text_rect = level_text.get_rect()
-            level_text_rect.topright = (WINDOW_WIDTH - 10, 10)
-            self.screen.blit(level_text, level_text_rect)
         
-        # Draw sound off icon in bottom left if audio is unavailable
-        if not audio_available and self.sound_off_icon:
-            self.screen.blit(self.sound_off_icon, (10, WINDOW_HEIGHT - 34)) 
+        # Call the new draw_ui method with all parameters
+        self.draw_ui(
+            player,
+            level_number,
+            boss_health,
+            boss_max_health,
+            has_key,
+            audio_available,
+            has_fire_sword,
+            has_lightning_sword
+        ) 
