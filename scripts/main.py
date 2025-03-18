@@ -1287,7 +1287,10 @@ class Game:
         """Helper method to play the appropriate music for the current level"""
         if self.current_level >= 3 and self.current_level <= 4:
             self.sound_manager.play_music('level3')
-            print(f"Playing level 3 music for level {self.current_level}")
+            print(f"Playing level 3-4 music for level {self.current_level}")
+        elif self.current_level >= 5 and self.current_level <= 6:
+            self.sound_manager.play_music('level5')
+            print(f"Playing level 5-6 music for level {self.current_level}")
         else:
             self.sound_manager.play_music('game')
             print(f"Playing standard game music for level {self.current_level}")
