@@ -9,10 +9,79 @@ from asset_manager import get_asset_manager
 from sound_manager import get_sound_manager
 
 class BossProjectile(pygame.sprite.Sprite):
-    def __init__(self, x, y, direction, speed=1.4, damage=25, color=(255, 0, 0)):
+    def __init__(self, x, y, direction, speed=1.4, damage=25, color=(255, 0, 0), is_orbiting=False, orbit_boss=None, orbit_angle=0, orbit_radius=0, orbit_speed=0, become_stationary=False, stationary_time=0):
         super().__init__()
         self.asset_manager = get_asset_manager()
         
+        # For orbiting projectiles, use the ghost sprite instead of a colored ball
+        if is_orbiting:
+            ghost_path = os.path.join(ENEMY_SPRITES_PATH, "ghost", "ghost.png")
+            if os.path.exists(ghost_path):
+                # Load and scale the ghost image
+                self.image = self.asset_manager.load_image(ghost_path, scale=(TILE_SIZE//1.5, TILE_SIZE//1.5))
+                self.original_image = self.image.copy()
+            else:
+                print(f"Ghost image not found at {ghost_path}, using fallback")
+                self.create_projectile_image(color)
+        # For stationary projectiles or those that will become stationary, use energy ball sprite
+        elif become_stationary:
+            energy_ball_path = os.path.join(BOSS_SPRITES_PATH, "energy_ball.png")
+            if os.path.exists(energy_ball_path):
+                # Load and scale the energy ball image
+                self.image = self.asset_manager.load_image(energy_ball_path, scale=(TILE_SIZE//1.5, TILE_SIZE//1.5))
+                self.original_image = self.image.copy()
+            else:
+                print(f"Energy ball image not found at {energy_ball_path}, using fallback")
+                self.create_projectile_image(color)
+        else:
+            # Create a regular projectile image for regular projectiles
+            self.create_projectile_image(color)
+        
+        self.rect = self.image.get_rect()
+        self.rect.centerx = x
+        self.rect.centery = y
+        
+        # Movement properties
+        self.direction = direction  # Tuple (dx, dy) - normalized direction
+        self.speed = speed
+        self.damage = damage
+        self.distance_traveled = 0
+        self.max_distance = TILE_SIZE * 10  # Projectiles disappear after traveling this distance
+        
+        # Orbiting projectile properties
+        self.is_orbiting = is_orbiting
+        self.orbit_boss = orbit_boss      # Reference to the boss object
+        self.orbit_angle = orbit_angle    # Current angle in radians
+        self.orbit_radius = orbit_radius  # Base distance from boss
+        self.base_orbit_radius = orbit_radius  # Store the base radius for pulsing effect
+        self.orbit_speed = orbit_speed    # Angular speed in radians per update
+        self.pulse_time = 0               # Time counter for orbit pulsing
+        
+        # Stationary projectile properties
+        self.become_stationary = become_stationary
+        self.stationary_time = stationary_time  # When to become stationary
+        self.is_stationary = False
+        self.creation_time = pygame.time.get_ticks()
+        self.stationary_duration = 0  # How long to stay stationary (0 = forever)
+        
+        # Trail effect properties
+        self.trail_enabled = True
+        self.position_history = []
+        self.max_trail_length = 8  # Number of previous positions to remember
+        self.trail_update_rate = 2  # Update trail every N frames
+        self.trail_frame_counter = 0
+        
+        # For regular projectiles, add a pulsing effect
+        if not is_orbiting:
+            self.pulse_counter = 0
+            self.pulse_rate = 0.1
+        else:
+            # For ghost projectiles, use a slower pulse rate
+            self.pulse_counter = 0
+            self.pulse_rate = 0.05
+    
+    def create_projectile_image(self, color):
+        """Create a colored ball projectile image"""
         # Create the projectile image - make it larger and more visible
         self.image = pygame.Surface((TILE_SIZE//1.5, TILE_SIZE//1.5), pygame.SRCALPHA)
         
@@ -29,54 +98,138 @@ class BossProjectile(pygame.sprite.Sprite):
         pygame.draw.circle(self.image, lighter_color, (radius, radius), radius-2)  # Lighter inner
         pygame.draw.circle(self.image, lightest_color, (radius, radius), radius-4)  # Even lighter core
         
-        self.rect = self.image.get_rect()
-        self.rect.centerx = x
-        self.rect.centery = y
-        
-        # Movement properties
-        self.direction = direction  # Tuple (dx, dy) - normalized direction
-        self.speed = speed
-        self.damage = damage
-        self.distance_traveled = 0
-        self.max_distance = TILE_SIZE * 10  # Projectiles disappear after traveling this distance
-        
-        # Add a pulsing effect
-        self.pulse_counter = 0
-        self.pulse_rate = 0.1
+        # Store original image for pulsing
         self.original_image = self.image.copy()
-        
+    
     def update(self):
-        # Move the projectile
-        dx = self.direction[0] * self.speed
-        dy = self.direction[1] * self.speed
-        self.rect.x += dx
-        self.rect.y += dy
+        current_time = pygame.time.get_ticks()
         
-        # Track distance traveled
-        self.distance_traveled += math.sqrt(dx*dx + dy*dy)
+        # Update position history for trailing effect
+        if self.trail_enabled:
+            self.trail_frame_counter += 1
+            if self.trail_frame_counter >= self.trail_update_rate:
+                self.trail_frame_counter = 0
+                # Store both position and current sprite image
+                self.position_history.append((
+                    self.rect.x, 
+                    self.rect.y, 
+                    self.image.copy()  # Store a copy of the current sprite
+                ))
+                
+                if len(self.position_history) > self.max_trail_length:
+                    self.position_history.pop(0)
         
-        # Check if the projectile should be destroyed
-        if self.distance_traveled >= self.max_distance:
-            self.kill()
+        # Check if it's time to become stationary
+        if self.become_stationary and not self.is_stationary:
+            if current_time - self.creation_time >= self.stationary_time:
+                self.is_stationary = True
+                
+        # Handle different movement types
+        if self.is_orbiting and self.orbit_boss:
+            # Check if boss is still alive
+            if not self.orbit_boss or self.orbit_boss.health <= 0:
+                self.kill()
+                return
+                
+            # Update orbital position
+            old_angle = self.orbit_angle
+            self.orbit_angle += self.orbit_speed
+            
+            # Update pulsing radius
+            self.pulse_time += 0.02
+            pulse_factor = math.sin(self.pulse_time) * 0.3  # 30% variation in radius
+            current_radius = self.base_orbit_radius * (1 + pulse_factor)
+            
+            # Calculate new position based on boss's current position
+            boss_x = self.orbit_boss.rect.centerx
+            boss_y = self.orbit_boss.rect.centery
+            
+            # Calculate position on the orbital circle with pulsing radius
+            self.rect.centerx = boss_x + math.cos(self.orbit_angle) * current_radius
+            self.rect.centery = boss_y + math.sin(self.orbit_angle) * current_radius
+            
+            # For ghost sprite, rotate to face movement direction
+            if hasattr(self, 'original_image'):
+                # Calculate movement angle (tangent to circle)
+                movement_angle = self.orbit_angle + math.pi/2  # Tangent is 90° to radius
+                
+                # Convert to degrees for rotation
+                rotation_degrees = math.degrees(movement_angle) % 360
+                
+                # Make ghost face the right direction
+                if rotation_degrees > 90 and rotation_degrees < 270:
+                    # Facing left - flip the sprite
+                    rotated = pygame.transform.flip(self.original_image, True, False)
+                else:
+                    # Facing right - use original
+                    rotated = self.original_image.copy()
+                
+                # Update the image with rotation applied
+                self.image = rotated
+        elif not self.is_stationary:
+            # Regular projectile movement for non-orbiting, non-stationary projectiles
+            # Move the projectile
+            dx = self.direction[0] * self.speed
+            dy = self.direction[1] * self.speed
+            self.rect.x += dx
+            self.rect.y += dy
+            
+            # Track distance traveled
+            self.distance_traveled += math.sqrt(dx*dx + dy*dy)
+            
+            # Check if the projectile should be destroyed
+            if self.distance_traveled >= self.max_distance:
+                self.kill()
+        else:
+            # Projectile is stationary - check if it should expire
+            if self.stationary_duration > 0:
+                time_as_stationary = current_time - (self.creation_time + self.stationary_time)
+                if time_as_stationary >= self.stationary_duration:
+                    self.kill()
+                    return
             
         # Update pulsing effect
         self.pulse_counter += self.pulse_rate
         scale_factor = 0.9 + 0.2 * abs(math.sin(self.pulse_counter))  # Oscillate between 0.9 and 1.1 size
         
-        new_width = int(self.original_image.get_width() * scale_factor)
-        new_height = int(self.original_image.get_height() * scale_factor)
+        # Only apply scale pulsing to projectiles with custom sprites if they're not orbiting
+        if not self.is_orbiting and hasattr(self, 'original_image'):
+            # For both energy ball and custom projectiles
+            new_width = int(self.original_image.get_width() * scale_factor)
+            new_height = int(self.original_image.get_height() * scale_factor)
+            
+            # Create a new scaled image for the pulse effect
+            self.image = pygame.transform.scale(self.original_image, (new_width, new_height))
         
-        # Create a new scaled image for the pulse effect
-        self.image = pygame.transform.scale(self.original_image, (new_width, new_height))
+            # Keep the projectile centered
+            old_center = self.rect.center
+            self.rect = self.image.get_rect()
+            self.rect.center = old_center
+    
+    def draw(self, surface):
+        # Draw trailing effect first (under the main sprite)
+        if self.trail_enabled and self.position_history:
+            # Draw position history for trailing effect
+            for i, (x, y, img) in enumerate(reversed(self.position_history)):
+                # Calculate alpha (transparency) based on position in history
+                # Make the oldest ones more transparent
+                alpha = max(30, 150 - (i * 20))
+                
+                # Create a copy of the sprite with alpha transparency
+                ghost_img = img.copy()
+                # Set the alpha of the entire surface
+                ghost_img.set_alpha(alpha)
+                
+                # Draw the ghost sprite at the historical position
+                surface.blit(ghost_img, (x, y))
         
-        # Keep the projectile centered
-        old_center = self.rect.center
-        self.rect = self.image.get_rect()
-        self.rect.center = old_center
+        # Draw the main projectile
+        surface.blit(self.image, self.rect)
         
     def check_collision(self, player_rect):
         """Check if projectile collides with player"""
         if self.rect.colliderect(player_rect):
+            # Always return True for collision detection, but let the caller decide whether to destroy
             return True
         return False
 
@@ -556,10 +709,6 @@ class Enemy(pygame.sprite.Sprite):
         if self.is_dead:
             current_time = pygame.time.get_ticks()
             
-            # Calculate resurrection progress (0 to 1)
-            time_left = self.resurrection_time - current_time
-            progress = 1.0 - (time_left / 4000.0)  # 4000 = respawn time in ms
-            
             # If it's time to resurrect
             if current_time >= self.resurrection_time:
                 self.resurrect()
@@ -891,6 +1040,18 @@ class Boss(Enemy):
         self.projectile_cooldown = 0
         self.projectile_cooldown_time = 90  # frames between projectile attacks
         
+        # Tracking if Boss 5 has already created its orbiting projectiles
+        self.orbiting_projectiles_created = False
+        
+        # Boss 5 casting mode attributes
+        if level == 5:
+            self.casting_mode = False
+            self.casting_mode_cooldown = 6000  # 6 seconds between casts
+            self.casting_mode_duration = 2000  # 2 seconds in casting mode
+            self.last_cast_time = 0
+            self.cast_complete = False
+            self.stationary_projectile_duration = 6000  # How long projectiles stay in place
+        
         # Phase system for special attacks
         self.phase = 0  # 0 = normal, 1 = <60% health, 2 = <30% health
         self.last_special_attack_time = 0
@@ -998,6 +1159,106 @@ class Boss(Enemy):
                     print(f"Failed to load boss_4.png for level 4 boss: {e}")
                     # Continue with the normal animation loading
             
+            # Check for level 5 boss to use boss_5.png
+            elif level == 5:
+                try:
+                    # Try to load the new boss_5.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_5.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image - slightly larger for this boss
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2.2, TILE_SIZE*2.2))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_5.png for level 5 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
+                except Exception as e:
+                    print(f"Failed to load boss_5.png for level 5 boss: {e}")
+                    # Continue with the normal animation loading
+            
+            # Check for level 6 boss to use boss_6.png
+            elif level == 6:
+                try:
+                    # Try to load the new boss_6.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_6.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2.2, TILE_SIZE*2.2))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_6.png for level 6 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
+                except Exception as e:
+                    print(f"Failed to load boss_6.png for level 6 boss: {e}")
+                    # Continue with the normal animation loading
+            
+            # Check for level 7 boss to use boss_7.png
+            elif level == 7:
+                try:
+                    # Try to load the new boss_7.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_7.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2.3, TILE_SIZE*2.3))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_7.png for level 7 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
+                except Exception as e:
+                    print(f"Failed to load boss_7.png for level 7 boss: {e}")
+                    # Continue with the normal animation loading
+            
+            # Check for level 8 boss to use boss_8.png
+            elif level == 8:
+                try:
+                    # Try to load the new boss_8.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_8.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2.3, TILE_SIZE*2.3))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_8.png for level 8 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
+                except Exception as e:
+                    print(f"Failed to load boss_8.png for level 8 boss: {e}")
+                    # Continue with the normal animation loading
+            
+            # Check for level 9 boss to use boss_9.png
+            elif level == 9:
+                try:
+                    # Try to load the new boss_9.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_9.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2.4, TILE_SIZE*2.4))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_9.png for level 9 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
+                except Exception as e:
+                    print(f"Failed to load boss_9.png for level 9 boss: {e}")
+                    # Continue with the normal animation loading
+            
             # Check for level 10 boss to use boss_10.png
             elif level == 10:
                 try:
@@ -1086,14 +1347,16 @@ class Boss(Enemy):
         # Set max_phases based on level
         if level == 2:
             self.max_phases = 1  # Skeleton Lord only has 1 phase
+        elif level == 5:
+            self.max_phases = 1  # Level 5 boss also has 1 phase like Skeleton Lord
         else:
             self.max_phases = 3  # Default value for other bosses
             
         self.special_attack_cooldown = 3000  # 3 seconds
         self.last_special_attack_time = 0
         
-        # For level 2 boss, adjust attack properties
-        if level == 2:
+        # For level 2 and 5 bosses, adjust attack properties
+        if level == 2 or level == 5:
             self.attack_range = TILE_SIZE * 1  # Reduced attack range to 1 tile
             self.attack_cooldown = 1500  # 1.5 seconds between attacks
         
@@ -1295,7 +1558,7 @@ class Boss(Enemy):
             self.current_state = 'special'
             self.frame = 0  # Reset animation frame
             
-            # Level 2 boss has projectile attack
+            # Level 2 boss has cone projectile attack
             if self.level == 2:
                 # Calculate normalized direction vector to player
                 dx = player.rect.centerx - self.rect.centerx
@@ -1377,6 +1640,49 @@ class Boss(Enemy):
                 self.projectiles.add(center_projectile, left_projectile, right_projectile)
                 
                 return False
+                
+            # Level 5 boss - create orbiting projectiles when first spotted
+            elif self.level == 5 and not self.orbiting_projectiles_created:
+                print("Creating orbiting projectiles for Boss 5")
+                
+                # Set the flag so we only create these once
+                self.orbiting_projectiles_created = True
+                
+                # Orbit radius - 3 tiles from the boss
+                orbit_radius = TILE_SIZE * 3
+                
+                # Create 3 projectiles with different colors at evenly spaced angles
+                num_projectiles = 3
+                
+                for i in range(num_projectiles):
+                    # Distribute projectiles evenly in a circle
+                    angle = (i * 2 * math.pi / num_projectiles)
+                    
+                    # Calculate initial position 3 tiles away from boss
+                    spawn_x = self.rect.centerx + math.cos(angle) * orbit_radius
+                    spawn_y = self.rect.centery + math.sin(angle) * orbit_radius
+                    
+                    # Color is ignored for orbiting projectiles which use the ghost sprite
+                    color = (255, 0, 0)  # Placeholder color
+                    
+                    # Create orbiting projectile - reduced damage by 97% to balance the continuous hits
+                    projectile = BossProjectile(
+                        spawn_x, spawn_y,
+                        (0, 0),  # Direction doesn't matter for orbiting projectiles
+                        0,       # Speed is not used for orbiting
+                        self.damage * 0.03,  # Reduced damage to just 3% of base damage
+                        color=color,
+                        is_orbiting=True,
+                        orbit_boss=self,
+                        orbit_angle=angle,
+                        orbit_radius=orbit_radius,
+                        orbit_speed=0.015  # Angular velocity - reduced by 50%
+                    )
+                    
+                    # Add to projectile group
+                    self.projectiles.add(projectile)
+                
+                return True
             else:
                 # Other bosses use the original special attack
                 # Check if player is within attack range before applying damage
@@ -1433,6 +1739,11 @@ class Boss(Enemy):
         detection_range = self.detection_range * 2 if self.level == 2 else self.detection_range
         
         if distance <= detection_range:
+            # If Boss 5 spots the player for the first time, create orbiting projectiles
+            if self.level == 5 and not self.has_spotted_player and not self.orbiting_projectiles_created:
+                print("Boss 5 spotted player, creating orbiting projectiles")
+                self.special_attack(player)
+            
             self.has_spotted_player = True
             
             # Start combat timer for level 4 boss
@@ -1494,6 +1805,33 @@ class Boss(Enemy):
                         
                     print(f"Level 4 boss leaving defensive mode at time {current_time}!")
         
+        # Level 5 boss casting mode logic
+        if self.level == 5 and self.has_spotted_player:
+            if not self.casting_mode:
+                # Check if it's time to activate casting mode
+                time_since_last_cast = current_time - self.last_cast_time
+                if time_since_last_cast >= self.casting_mode_cooldown:
+                    # Activate casting mode
+                    self.casting_mode = True
+                    self.cast_complete = False
+                    self.last_cast_time = current_time
+                    print(f"Boss 5 entering casting mode at time {current_time}")
+            else:
+                # In casting mode
+                time_in_casting = current_time - self.last_cast_time
+                
+                # Fire projectiles when casting starts
+                if not self.cast_complete:
+                    # Create 4 projectiles in random directions
+                    self.cast_projectiles(player)
+                    self.cast_complete = True
+                
+                # Check if casting is complete
+                if time_in_casting >= self.casting_mode_duration:
+                    # Deactivate casting mode
+                    self.casting_mode = False
+                    print(f"Boss 5 leaving casting mode at time {current_time}")
+        
         # Level 2 boss: use special attack when player is in range but not in melee range
         # (to avoid spamming when in close combat)
         if self.level == 2 and self.has_spotted_player and distance > self.attack_range * 2:
@@ -1506,25 +1844,25 @@ class Boss(Enemy):
             self.velocity_x = 0
             self.velocity_y = 0
             self.attack(player)
-        elif self.has_spotted_player and not (self.level == 4 and self.defensive_mode):
-            # Chase state - always chase once spotted (unless level 4 boss in defensive mode)
+        elif self.has_spotted_player and not (self.level == 4 and self.defensive_mode) and not (self.level == 5 and self.casting_mode):
+            # Chase state - always chase once spotted (unless level 4 boss in defensive mode or level 5 boss in casting mode)
             self.state = 'chase'
             self.current_state = 'walk'
             self.move_towards_player(player)
         else:
-            # Idle state - stand still until player is spotted or if level 4 boss in defensive mode
+            # Idle state - stand still until player is spotted or if boss is in defensive/casting mode
             self.state = 'idle'
             self.current_state = 'idle'
             self.velocity_x = 0
             self.velocity_y = 0
         
-        # If level 4 boss is in defensive mode, ensure it doesn't move
-        if self.level == 4 and self.defensive_mode:
+        # If level 4 boss is in defensive mode or level 5 boss is in casting mode, ensure it doesn't move
+        if (self.level == 4 and self.defensive_mode) or (self.level == 5 and self.casting_mode):
             self.velocity_x = 0
             self.velocity_y = 0
             self.state = 'idle'
             self.current_state = 'idle'
-            
+        
         # Store old position to handle collisions
         old_rect = self.rect.copy()
         
@@ -1594,15 +1932,17 @@ class Boss(Enemy):
         if not (self.level == 4 and self.defensive_mode):
             self.image = self.animations[self.current_state][self.facing][self.frame]
         
-        # Update projectiles
-        if self.level == 2:
+        # Update projectiles for level 2 and 5 bosses
+        if self.level == 2 or self.level == 5:
             self.projectiles.update()
             
             # Check for collisions with player
             for projectile in self.projectiles:
                 if projectile.check_collision(player.hitbox):
                     player.take_damage(projectile.damage)
-                    projectile.kill()
+                    # Only destroy non-orbiting projectiles
+                    if not hasattr(projectile, 'is_orbiting') or not projectile.is_orbiting:
+                        projectile.kill()
         
         # Handle boss voice sound effect
         if distance <= detection_range:
@@ -1810,10 +2150,10 @@ class Boss(Enemy):
                 shield_y = draw_y + self.image.get_height()//2 - shield_radius
                 surface.blit(shield_surface, (shield_x, shield_y))
             
-            # Draw projectiles for level 2 boss
-            if self.level == 2:
+            # Draw projectiles for level 2 and 5 bosses
+            if self.level == 2 or self.level == 5:
                 for projectile in self.projectiles:
-                    surface.blit(projectile.image, projectile.rect)
+                    projectile.draw(surface)
             
             # Draw health bar
             health_bar_width = 50  # Reduced from 60
@@ -1828,3 +2168,41 @@ class Boss(Enemy):
                                           health_bar_width, health_bar_height))
             pygame.draw.rect(surface, GREEN, (health_bar_x, health_bar_y,
                                             health_bar_width * health_ratio, health_bar_height)) 
+
+    def cast_projectiles(self, player):
+        """Create projectiles that become stationary after a delay for Boss 5"""
+        if self.level != 5:
+            return
+            
+        # Create 4 projectiles in random directions
+        for i in range(4):
+            # Generate random angle and distance
+            angle = random.uniform(0, math.pi * 2)
+            distance = random.uniform(TILE_SIZE * 2, TILE_SIZE * 4)
+            
+            # Calculate direction vector
+            dx = math.cos(angle)
+            dy = math.sin(angle)
+            
+            # Green color only used as fallback if sprite is not available
+            color = (0, 255, 0)  # Green
+            
+            # Create projectile at boss position that will travel and then become stationary
+            projectile = BossProjectile(
+                self.rect.centerx,
+                self.rect.centery,
+                (dx, dy),
+                1.2,  # Slightly slower than regular projectiles
+                self.damage * 0.03,  # Very low damage like orbiting projectiles
+                color=color,
+                become_stationary=True,
+                stationary_time=self.casting_mode_duration  # Become stationary after cast completes
+            )
+            
+            # Set the stationary duration to match the cooldown
+            projectile.stationary_duration = self.stationary_projectile_duration
+            
+            # Add to projectile group
+            self.projectiles.add(projectile)
+            
+        print(f"Boss 5 cast 4 projectiles that will become stationary")

@@ -1359,8 +1359,9 @@ class Game:
             
     def trigger_screen_shake(self, amount=8, duration=10):
         """Trigger a screen shake effect"""
-        self.shake_amount = amount
-        self.shake_duration = duration
+        # Ensure amount is an integer to avoid TypeError in random.randint
+        self.shake_amount = int(amount)
+        self.shake_duration = int(duration)
         
     def update_screen_shake(self):
         """Update the screen shake effect"""
