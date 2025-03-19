@@ -13,29 +13,74 @@ class BossProjectile(pygame.sprite.Sprite):
         super().__init__()
         self.asset_manager = get_asset_manager()
         
+        # Trail effect properties - set defaults first
+        self.trail_enabled = True
+        self.position_history = []
+        self.max_trail_length = 12  # Increased from 8 for more visible trails 
+        self.trail_update_rate = 2  # Update trail every N frames
+        self.trail_frame_counter = 0
+        
+        # Store reference to the boss for checking health
+        self.boss_ref = orbit_boss
+        
+        # Calculate scale based on boss health if a boss reference exists
+        self.large_scale = (TILE_SIZE*2//1.5, TILE_SIZE*2//1.5)
+        self.normal_scale = (TILE_SIZE//1.5, TILE_SIZE//1.5)
+        
+        # Determine the current scale based on boss health if available
+        self.current_size_state = 'normal'  # Default size state
+        if self.boss_ref and hasattr(self.boss_ref, 'health') and hasattr(self.boss_ref, 'enemy_data') and 'health' in self.boss_ref.enemy_data:
+            # Check if boss health is below 50%
+            max_health = self.boss_ref.enemy_data['health']
+            current_health_percent = (self.boss_ref.health / max_health) * 100
+            
+            # Use large scale if below 50% health, otherwise normal scale
+            if current_health_percent <= 50:
+                current_scale = self.large_scale
+                self.current_size_state = 'large'
+            else:
+                current_scale = self.normal_scale
+                self.current_size_state = 'normal'
+        else:
+            # Default to normal scale if boss reference is not available
+            current_scale = self.normal_scale
+        
         # For orbiting projectiles, use the ghost sprite instead of a colored ball
         if is_orbiting:
             ghost_path = os.path.join(ENEMY_SPRITES_PATH, "ghost", "ghost.png")
             if os.path.exists(ghost_path):
-                # Load and scale the ghost image
-                self.image = self.asset_manager.load_image(ghost_path, scale=(TILE_SIZE//1.5, TILE_SIZE//1.5))
+                # Load and scale the ghost image based on boss health
+                self.image = self.asset_manager.load_image(ghost_path, scale=current_scale)
                 self.original_image = self.image.copy()
+                
+                # Ghosts have bluish trailing effect
+                self.trail_color = (180, 180, 255)  # Light blue tint for ghost trails
             else:
                 print(f"Ghost image not found at {ghost_path}, using fallback")
                 self.create_projectile_image(color)
+                self.trail_color = color
         # For stationary projectiles or those that will become stationary, use energy ball sprite
         elif become_stationary:
             energy_ball_path = os.path.join(BOSS_SPRITES_PATH, "energy_ball.png")
             if os.path.exists(energy_ball_path):
-                # Load and scale the energy ball image
-                self.image = self.asset_manager.load_image(energy_ball_path, scale=(TILE_SIZE//1.5, TILE_SIZE//1.5))
+                # Load and scale the energy ball image based on boss health
+                self.image = self.asset_manager.load_image(energy_ball_path, scale=current_scale)
                 self.original_image = self.image.copy()
+                
+                # Energy balls have greenish trailing effect
+                self.trail_color = (100, 255, 100)  # Green tint for energy ball trails
+                
+                # Energy balls have longer but faster fading trails
+                self.max_trail_length = 15
+                self.trail_update_rate = 1
             else:
                 print(f"Energy ball image not found at {energy_ball_path}, using fallback")
                 self.create_projectile_image(color)
+                self.trail_color = color
         else:
             # Create a regular projectile image for regular projectiles
             self.create_projectile_image(color)
+            self.trail_color = color
         
         self.rect = self.image.get_rect()
         self.rect.centerx = x
@@ -64,13 +109,6 @@ class BossProjectile(pygame.sprite.Sprite):
         self.creation_time = pygame.time.get_ticks()
         self.stationary_duration = 0  # How long to stay stationary (0 = forever)
         
-        # Trail effect properties
-        self.trail_enabled = True
-        self.position_history = []
-        self.max_trail_length = 8  # Number of previous positions to remember
-        self.trail_update_rate = 2  # Update trail every N frames
-        self.trail_frame_counter = 0
-        
         # For regular projectiles, add a pulsing effect
         if not is_orbiting:
             self.pulse_counter = 0
@@ -82,8 +120,31 @@ class BossProjectile(pygame.sprite.Sprite):
     
     def create_projectile_image(self, color):
         """Create a colored ball projectile image"""
-        # Create the projectile image - make it larger and more visible
-        self.image = pygame.Surface((TILE_SIZE//1.5, TILE_SIZE//1.5), pygame.SRCALPHA)
+        # Determine the appropriate size based on boss health
+        if hasattr(self, 'boss_ref') and self.boss_ref and hasattr(self.boss_ref, 'health') and hasattr(self.boss_ref, 'enemy_data') and 'health' in self.boss_ref.enemy_data:
+            max_health = self.boss_ref.enemy_data['health']
+            current_health_percent = (self.boss_ref.health / max_health) * 100
+            
+            # Use large surface if below 50% health, otherwise normal surface
+            if current_health_percent <= 50:
+                surface_size = (TILE_SIZE*2//1.5, TILE_SIZE*2//1.5)
+                radius = int(TILE_SIZE*2//3)
+                inner_offset = 4  # For larger projectiles
+                core_offset = 8   # For larger projectiles
+            else:
+                surface_size = (TILE_SIZE//1.5, TILE_SIZE//1.5)
+                radius = int(TILE_SIZE//3)
+                inner_offset = 2  # For normal projectiles
+                core_offset = 4   # For normal projectiles
+        else:
+            # Default to normal size if no boss reference
+            surface_size = (TILE_SIZE//1.5, TILE_SIZE//1.5)
+            radius = int(TILE_SIZE//3)
+            inner_offset = 2  # For normal projectiles
+            core_offset = 4   # For normal projectiles
+                
+        # Create the projectile image with the calculated size
+        self.image = pygame.Surface(surface_size, pygame.SRCALPHA)
         
         # Store the main color
         self.color = color
@@ -93,16 +154,31 @@ class BossProjectile(pygame.sprite.Sprite):
         lightest_color = tuple(min(255, c + 200) for c in color) + (120,)
         
         # Draw a colored circle with a glow effect
-        radius = int(TILE_SIZE//3)
-        pygame.draw.circle(self.image, color, (radius, radius), radius)  # Main color center
-        pygame.draw.circle(self.image, lighter_color, (radius, radius), radius-2)  # Lighter inner
-        pygame.draw.circle(self.image, lightest_color, (radius, radius), radius-4)  # Even lighter core
+        center = radius  # Center point of the surface
+        pygame.draw.circle(self.image, color, (center, center), radius)  # Main color center
+        pygame.draw.circle(self.image, lighter_color, (center, center), radius-inner_offset)  # Lighter inner
+        pygame.draw.circle(self.image, lightest_color, (center, center), radius-core_offset)  # Even lighter core
         
         # Store original image for pulsing
         self.original_image = self.image.copy()
     
     def update(self):
         current_time = pygame.time.get_ticks()
+        
+        # Check if boss health has dropped below 50% and resize if necessary
+        if self.boss_ref and hasattr(self.boss_ref, 'health') and hasattr(self.boss_ref, 'enemy_data') and 'health' in self.boss_ref.enemy_data:
+            max_health = self.boss_ref.enemy_data['health']
+            current_health_percent = (self.boss_ref.health / max_health) * 100
+            
+            # Determine the correct scale based on current health
+            should_be_large = current_health_percent <= 50
+            current_is_large = (hasattr(self, 'current_size_state') and self.current_size_state == 'large')
+            
+            # If size state needs to change, update the projectile size
+            if should_be_large and not current_is_large:
+                self.resize_projectile(True)  # Resize to large
+            elif not should_be_large and current_is_large:
+                self.resize_projectile(False)  # Resize to normal
         
         # Update position history for trailing effect
         if self.trail_enabled:
@@ -123,6 +199,8 @@ class BossProjectile(pygame.sprite.Sprite):
         if self.become_stationary and not self.is_stationary:
             if current_time - self.creation_time >= self.stationary_time:
                 self.is_stationary = True
+                # Reset position history when becoming stationary to avoid weird trails
+                self.position_history = []
                 
         # Handle different movement types
         if self.is_orbiting and self.orbit_boss:
@@ -188,6 +266,13 @@ class BossProjectile(pygame.sprite.Sprite):
                     self.kill()
                     return
             
+            # For stationary projectiles, create a subtle floating movement to help trails look better
+            self.pulse_time += 0.01
+            float_offset_x = math.cos(self.pulse_time) * 0.5
+            float_offset_y = math.sin(self.pulse_time * 0.7) * 0.5
+            self.rect.x += float_offset_x
+            self.rect.y += float_offset_y
+            
         # Update pulsing effect
         self.pulse_counter += self.pulse_rate
         scale_factor = 0.9 + 0.2 * abs(math.sin(self.pulse_counter))  # Oscillate between 0.9 and 1.1 size
@@ -213,15 +298,38 @@ class BossProjectile(pygame.sprite.Sprite):
             for i, (x, y, img) in enumerate(reversed(self.position_history)):
                 # Calculate alpha (transparency) based on position in history
                 # Make the oldest ones more transparent
-                alpha = max(30, 150 - (i * 20))
+                alpha = max(30, 150 - (i * 15))  # Adjusted for longer trails
                 
                 # Create a copy of the sprite with alpha transparency
                 ghost_img = img.copy()
+                
+                # Apply trail color tint for energy balls and ghosts if they have custom trail colors
+                if hasattr(self, 'trail_color'):
+                    # Create a colored overlay surface
+                    overlay = pygame.Surface(ghost_img.get_size(), pygame.SRCALPHA)
+                    overlay_color = self.trail_color + (100,)  # Add alpha value
+                    overlay.fill(overlay_color)
+                    
+                    # Apply overlay to create tint effect
+                    ghost_img.blit(overlay, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
+                
                 # Set the alpha of the entire surface
                 ghost_img.set_alpha(alpha)
                 
+                # Scale down the trail images as they get older
+                scale_factor = max(0.4, 0.9 - (i * 0.05))  # Smallest is 40% of original size
+                if scale_factor < 1.0:
+                    orig_width, orig_height = ghost_img.get_size()
+                    new_width = int(orig_width * scale_factor)
+                    new_height = int(orig_height * scale_factor)
+                    ghost_img = pygame.transform.scale(ghost_img, (new_width, new_height))
+                    
+                # Calculate position adjustment to keep trails centered
+                pos_x = x + (img.get_width() - ghost_img.get_width()) // 2
+                pos_y = y + (img.get_height() - ghost_img.get_height()) // 2
+                
                 # Draw the ghost sprite at the historical position
-                surface.blit(ghost_img, (x, y))
+                surface.blit(ghost_img, (pos_x, pos_y))
         
         # Draw the main projectile
         surface.blit(self.image, self.rect)
@@ -232,6 +340,43 @@ class BossProjectile(pygame.sprite.Sprite):
             # Always return True for collision detection, but let the caller decide whether to destroy
             return True
         return False
+
+    def resize_projectile(self, make_large):
+        """Resize the projectile based on boss health"""
+        # Save the current center for repositioning
+        old_center = self.rect.center
+        
+        # Set the size state flag for tracking
+        self.current_size_state = 'large' if make_large else 'normal'
+        
+        # For ghost or energy ball projectiles
+        if hasattr(self, 'original_image') and self.original_image:
+            # Determine new scale
+            scale = self.large_scale if make_large else self.normal_scale
+            
+            # Load original sprite and rescale it
+            if self.is_orbiting:
+                ghost_path = os.path.join(ENEMY_SPRITES_PATH, "ghost", "ghost.png")
+                if os.path.exists(ghost_path):
+                    self.image = self.asset_manager.load_image(ghost_path, scale=scale)
+                    self.original_image = self.image.copy()
+            elif hasattr(self, 'become_stationary') and self.become_stationary:
+                energy_ball_path = os.path.join(BOSS_SPRITES_PATH, "energy_ball.png")
+                if os.path.exists(energy_ball_path):
+                    self.image = self.asset_manager.load_image(energy_ball_path, scale=scale)
+                    self.original_image = self.image.copy()
+            
+        # For regular colored projectiles
+        elif hasattr(self, 'color'):
+            # Recreate with new size
+            self.create_projectile_image(self.color)
+        
+        # Update rect and maintain position
+        self.rect = self.image.get_rect()
+        self.rect.center = old_center
+        
+        # Clear position history to avoid visual artifacts from mixed sizes
+        self.position_history = []
 
 class Enemy(pygame.sprite.Sprite):
     def __init__(self, x, y, enemy_type, level, level_instance=None):
@@ -2196,11 +2341,16 @@ class Boss(Enemy):
                 self.damage * 0.03,  # Very low damage like orbiting projectiles
                 color=color,
                 become_stationary=True,
-                stationary_time=self.casting_mode_duration  # Become stationary after cast completes
+                stationary_time=self.casting_mode_duration,  # Become stationary after cast completes
+                orbit_boss=self  # Pass self as the boss reference for health tracking
             )
             
             # Set the stationary duration to match the cooldown
             projectile.stationary_duration = self.stationary_projectile_duration
+            
+            # Enhance trail effects for these special projectiles
+            projectile.max_trail_length = 15  # Longer trails
+            projectile.trail_update_rate = 1  # Update more frequently
             
             # Add to projectile group
             self.projectiles.add(projectile)
