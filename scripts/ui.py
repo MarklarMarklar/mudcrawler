@@ -4,8 +4,15 @@ from config import *
 from asset_manager import get_asset_manager
 import math
 import sys
-import cv2
-import numpy as np
+
+# Try to import OpenCV, but don't fail if not available
+try:
+    import cv2
+    import numpy as np
+    OPENCV_AVAILABLE = True
+except ImportError:
+    print("OpenCV (cv2) not available. Video playback will be disabled.")
+    OPENCV_AVAILABLE = False
 
 class Button:
     def __init__(self, x, y, width, height, text, font_size=36):
@@ -145,12 +152,17 @@ class VideoPlayer:
         self.video_path = video_path
         self.screen = screen
         self.loop = loop
+        self.is_playing = False
         
+        # Skip initialization if OpenCV is not available
+        if not OPENCV_AVAILABLE:
+            print(f"Cannot initialize video player for {video_path}: OpenCV not available")
+            return
+            
         # Initialize video capture
         self.video = cv2.VideoCapture(video_path)
         if not self.video.isOpened():
             print(f"Error: Could not open video file {video_path}")
-            self.is_playing = False
             return
             
         # Get video properties
@@ -182,6 +194,9 @@ class VideoPlayer:
     
     def convert_frame_to_surface(self, frame):
         """Convert OpenCV frame to a pygame surface"""
+        if not OPENCV_AVAILABLE:
+            return None
+            
         # Resize frame to fit screen
         if self.width != self.target_width or self.height != self.target_height:
             frame = cv2.resize(frame, (self.target_width, self.target_height))
@@ -195,8 +210,8 @@ class VideoPlayer:
     
     def update(self):
         """Update video frame if needed based on time"""
-        if not self.is_playing:
-            return self.surface
+        if not OPENCV_AVAILABLE or not self.is_playing:
+            return None
             
         current_time = pygame.time.get_ticks()
         time_elapsed = current_time - self.last_frame_time
@@ -227,13 +242,19 @@ class VideoPlayer:
     
     def draw(self):
         """Draw the current frame to the screen"""
-        if self.is_playing and hasattr(self, 'surface'):
+        if not OPENCV_AVAILABLE:
+            return
+            
+        if self.is_playing and hasattr(self, 'surface') and self.surface is not None:
             self.screen.blit(self.surface, (0, 0))
     
     def stop(self):
         """Stop the video and release resources"""
+        if not OPENCV_AVAILABLE:
+            return
+            
         self.is_playing = False
-        if self.video.isOpened():
+        if hasattr(self, 'video') and self.video is not None and self.video.isOpened():
             self.video.release()
 
 class Menu:
@@ -329,21 +350,21 @@ class Menu:
             
         # Try to load welcome screen image or video
         try:
-            # First, try to load video if it exists
+            # First, try to load video if it exists and OpenCV is available
             video_path = os.path.join(ASSET_PATH, "images/menu.mp4")
-            if os.path.exists(video_path):
+            if OPENCV_AVAILABLE and os.path.exists(video_path):
                 self.video_player = VideoPlayer(video_path, self.screen, loop=True)
-                self.use_welcome_screen = True
-                print(f"Successfully loaded welcome screen video: {video_path}")
-            else:
-                # Fall back to static image
-                welcome_path = os.path.join(ASSET_PATH, "images/e9aa7981-5ad9-44cf-91d9-3f5e4c45b13d.png")
-                if os.path.exists(welcome_path):
-                    self.welcome_screen = self.asset_manager.load_image(welcome_path, scale=(WINDOW_WIDTH, WINDOW_HEIGHT))
+                if self.video_player.is_playing:
                     self.use_welcome_screen = True
-                    print(f"Successfully loaded welcome screen image: {welcome_path}")
+                    print(f"Successfully loaded welcome screen video: {video_path}")
                 else:
-                    print(f"Welcome screen image not found: {welcome_path}")
+                    print(f"Failed to initialize video player, falling back to static image")
+                    self.video_player = None
+                    # Fall back to static image
+                    self._load_static_welcome_screen()
+            else:
+                # OpenCV not available or video doesn't exist, fall back to static image
+                self._load_static_welcome_screen()
         except Exception as e:
             print(f"Failed to load welcome screen: {e}")
             
@@ -689,6 +710,16 @@ class Menu:
                 return button_name
                 
         return None
+
+    def _load_static_welcome_screen(self):
+        """Helper method to load the static welcome screen image"""
+        welcome_path = os.path.join(ASSET_PATH, "images/e9aa7981-5ad9-44cf-91d9-3f5e4c45b13d.png")
+        if os.path.exists(welcome_path):
+            self.welcome_screen = self.asset_manager.load_image(welcome_path, scale=(WINDOW_WIDTH, WINDOW_HEIGHT))
+            self.use_welcome_screen = True
+            print(f"Successfully loaded welcome screen image: {welcome_path}")
+        else:
+            print(f"Welcome screen image not found: {welcome_path}")
 
 class HUD:
     def __init__(self, screen):
