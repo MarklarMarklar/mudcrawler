@@ -1243,6 +1243,10 @@ class Game:
             self.update()
             self.render()
             self.clock.tick(FPS)
+        
+        # Clean up resources before quitting
+        if hasattr(self, 'menu') and self.menu:
+            self.menu.cleanup()
             
         pygame.quit()
         sys.exit()

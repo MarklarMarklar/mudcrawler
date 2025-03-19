@@ -3,6 +3,9 @@ import os
 from config import *
 from asset_manager import get_asset_manager
 import math
+import sys
+import cv2
+import numpy as np
 
 class Button:
     def __init__(self, x, y, width, height, text, font_size=36):
@@ -137,6 +140,102 @@ class Button:
                     return True
         return False
 
+class VideoPlayer:
+    def __init__(self, video_path, screen, loop=True):
+        self.video_path = video_path
+        self.screen = screen
+        self.loop = loop
+        
+        # Initialize video capture
+        self.video = cv2.VideoCapture(video_path)
+        if not self.video.isOpened():
+            print(f"Error: Could not open video file {video_path}")
+            self.is_playing = False
+            return
+            
+        # Get video properties
+        self.fps = self.video.get(cv2.CAP_PROP_FPS)
+        self.frame_count = int(self.video.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.width = int(self.video.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.height = int(self.video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        
+        # Scale video to fit screen
+        self.target_width = WINDOW_WIDTH
+        self.target_height = WINDOW_HEIGHT
+        
+        # Initialize playback
+        self.is_playing = True
+        self.current_frame = 0
+        self.last_frame_time = pygame.time.get_ticks()
+        self.frame_delay = 1000 / self.fps  # milliseconds between frames
+        
+        print(f"Initialized video player for {video_path}")
+        print(f"Video size: {self.width}x{self.height}, FPS: {self.fps}, Frames: {self.frame_count}")
+        
+        # Read first frame
+        self.success, self.frame = self.video.read()
+        if self.success:
+            self.surface = self.convert_frame_to_surface(self.frame)
+        else:
+            print("Error: Could not read first frame")
+            self.is_playing = False
+    
+    def convert_frame_to_surface(self, frame):
+        """Convert OpenCV frame to a pygame surface"""
+        # Resize frame to fit screen
+        if self.width != self.target_width or self.height != self.target_height:
+            frame = cv2.resize(frame, (self.target_width, self.target_height))
+        
+        # Convert BGR (OpenCV) to RGB (Pygame)
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Create pygame surface
+        surface = pygame.surfarray.make_surface(frame.swapaxes(0, 1))
+        return surface
+    
+    def update(self):
+        """Update video frame if needed based on time"""
+        if not self.is_playing:
+            return self.surface
+            
+        current_time = pygame.time.get_ticks()
+        time_elapsed = current_time - self.last_frame_time
+        
+        # Check if it's time to update the frame
+        if time_elapsed >= self.frame_delay:
+            # Read next frame
+            self.success, self.frame = self.video.read()
+            
+            # If end of video, loop or stop
+            if not self.success:
+                if self.loop:
+                    self.video.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    self.success, self.frame = self.video.read()
+                    if not self.success:
+                        self.is_playing = False
+                        return self.surface
+                else:
+                    self.is_playing = False
+                    return self.surface
+            
+            # Convert frame to surface
+            self.surface = self.convert_frame_to_surface(self.frame)
+            self.current_frame += 1
+            self.last_frame_time = current_time
+        
+        return self.surface
+    
+    def draw(self):
+        """Draw the current frame to the screen"""
+        if self.is_playing and hasattr(self, 'surface'):
+            self.screen.blit(self.surface, (0, 0))
+    
+    def stop(self):
+        """Stop the video and release resources"""
+        self.is_playing = False
+        if self.video.isOpened():
+            self.video.release()
+
 class Menu:
     def __init__(self, screen):
         self.screen = screen
@@ -185,6 +284,7 @@ class Menu:
         # Welcome screen image
         self.welcome_screen = None
         self.use_welcome_screen = False
+        self.video_player = None  # For video welcome screen
         
         # Game over custom image
         self.gameover_custom_img = None
@@ -227,15 +327,23 @@ class Menu:
         except Exception as e:
             print(f"Failed to load title image: {e}")
             
-        # Try to load welcome screen image
+        # Try to load welcome screen image or video
         try:
-            welcome_path = os.path.join(ASSET_PATH, "images/e9aa7981-5ad9-44cf-91d9-3f5e4c45b13d.png")
-            if os.path.exists(welcome_path):
-                self.welcome_screen = self.asset_manager.load_image(welcome_path, scale=(WINDOW_WIDTH, WINDOW_HEIGHT))
+            # First, try to load video if it exists
+            video_path = os.path.join(ASSET_PATH, "images/menu.mp4")
+            if os.path.exists(video_path):
+                self.video_player = VideoPlayer(video_path, self.screen, loop=True)
                 self.use_welcome_screen = True
-                print(f"Successfully loaded welcome screen: {welcome_path}")
+                print(f"Successfully loaded welcome screen video: {video_path}")
             else:
-                print(f"Welcome screen image not found: {welcome_path}")
+                # Fall back to static image
+                welcome_path = os.path.join(ASSET_PATH, "images/e9aa7981-5ad9-44cf-91d9-3f5e4c45b13d.png")
+                if os.path.exists(welcome_path):
+                    self.welcome_screen = self.asset_manager.load_image(welcome_path, scale=(WINDOW_WIDTH, WINDOW_HEIGHT))
+                    self.use_welcome_screen = True
+                    print(f"Successfully loaded welcome screen image: {welcome_path}")
+                else:
+                    print(f"Welcome screen image not found: {welcome_path}")
         except Exception as e:
             print(f"Failed to load welcome screen: {e}")
             
@@ -356,8 +464,14 @@ class Menu:
         self.in_victory = False
         
         # Draw welcome screen if available, otherwise fallback to default background
-        if self.use_welcome_screen and self.welcome_screen:
-            self.screen.blit(self.welcome_screen, (0, 0))
+        if self.use_welcome_screen:
+            if self.video_player and self.video_player.is_playing:
+                # Update and draw video
+                self.video_player.update()
+                self.video_player.draw()
+            elif self.welcome_screen:
+                # Fall back to static image if video not available
+                self.screen.blit(self.welcome_screen, (0, 0))
         else:
             # Draw background
             self.screen.blit(self.menu_bg, (0, 0))
@@ -509,6 +623,12 @@ class Menu:
         self.fullscreen_enabled = not self.fullscreen_enabled
         return self.fullscreen_enabled
         
+    def cleanup(self):
+        """Release resources when closing the game"""
+        if self.video_player:
+            self.video_player.stop()
+            self.video_player = None
+    
     def handle_event(self, event):
         # Define which buttons should be active based on current state
         active_buttons = []
@@ -528,7 +648,7 @@ class Menu:
         else:
             # Default to main menu buttons
             active_buttons = ['start', 'options', 'quit']
-        
+            
         # If it's a mouse move or click event, update hover states and check clicks for all active buttons
         if event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN):
             # Get current mouse position
@@ -550,12 +670,22 @@ class Menu:
                         button = self.buttons[button_name]
                         if button.rect.collidepoint(mouse_pos):
                             print(f"Menu detected click on button: {button_name}")
+                            
+                            # Handle video player cleanup for specific buttons
+                            if button_name in ['start', 'restart', 'quit']:
+                                if self.video_player:
+                                    self.video_player.stop()
+                            
                             return button_name
-                return None
                 
         # Handle all other events through normal button processing
         for button_name in active_buttons:
             if button_name in self.buttons and self.buttons[button_name].handle_event(event):
+                # Handle video player cleanup for specific buttons
+                if button_name in ['start', 'restart', 'quit']:
+                    if self.video_player:
+                        self.video_player.stop()
+                        
                 return button_name
                 
         return None
@@ -980,7 +1110,7 @@ class HUD:
         if has_key and self.key_icon:
             self.screen.blit(self.key_icon, (10, 66))
     
-    def draw_ui(self, player, level_number, boss_health=None, boss_max_health=None, has_key=False, audio_available=True, has_fire_sword=False, has_lightning_sword=False):
+    def draw_ui(self, player, level_number, audio_available=True, level=None, boss_health=None, boss_max_health=None, has_key=False, has_fire_sword=False, has_lightning_sword=False):
         """Draw all UI elements"""
         # Draw boss health if provided
         if boss_health is not None and boss_max_health is not None and boss_health > 0:
@@ -1141,10 +1271,11 @@ class HUD:
         self.draw_ui(
             player,
             level_number,
+            audio_available,
+            level,
             boss_health,
             boss_max_health,
             has_key,
-            audio_available,
             has_fire_sword,
             has_lightning_sword
         ) 
