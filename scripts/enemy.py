@@ -39,16 +39,6 @@ class BossProjectile(pygame.sprite.Sprite):
         self.homing_start_time = pygame.time.get_ticks()
         self.player_target = None  # Will store reference to player
         
-        # Explosion properties for homing projectiles
-        self.explodes = is_homing  # Only homing projectiles explode
-        self.is_exploding = False
-        self.explosion_duration = 500  # 500ms explosion animation
-        self.explosion_start_time = 0
-        self.explosion_radius = TILE_SIZE * 2  # Explosion affects 2 tiles radius
-        self.explosion_damage = self.damage * 1.5  # Explosion does 150% damage
-        self.explosion_frame = 0
-        self.explosion_frames = 5  # Number of frames in explosion animation
-        
         self.asset_manager = get_asset_manager()
         
         # For orbiting projectiles, use the ghost sprite instead of a colored ball
@@ -137,17 +127,6 @@ class BossProjectile(pygame.sprite.Sprite):
     
     def update(self):
         current_time = pygame.time.get_ticks()
-        
-        # Handle explosion state first
-        if hasattr(self, 'is_exploding') and self.is_exploding:
-            # Update explosion animation
-            time_in_explosion = current_time - self.explosion_start_time
-            self.explosion_frame = min(self.explosion_frames - 1, int(time_in_explosion / (self.explosion_duration / self.explosion_frames)))
-            
-            # Check if explosion is complete
-            if time_in_explosion >= self.explosion_duration:
-                self.kill()
-            return
         
         # Update position history for trailing effect
         if self.trail_enabled:
@@ -247,11 +226,6 @@ class BossProjectile(pygame.sprite.Sprite):
             # Track distance traveled
             self.distance_traveled += math.sqrt(dx*dx + dy*dy)
             
-            # Check if the projectile should explode (at max distance)
-            if self.explodes and self.distance_traveled >= self.max_distance:
-                self.start_explosion()
-                return
-            
             # Update trail for homing projectiles
             if self.trail_enabled:
                 self.trail_frame_counter += 1
@@ -279,10 +253,7 @@ class BossProjectile(pygame.sprite.Sprite):
             
             # Check if the projectile should be destroyed
             if self.distance_traveled >= self.max_distance:
-                if self.explodes:
-                    self.start_explosion()
-                else:
-                    self.kill()
+                self.kill()
         else:
             # Projectile is stationary - check if it should expire
             if self.stationary_duration > 0:
@@ -378,32 +349,6 @@ class BossProjectile(pygame.sprite.Sprite):
             core_x = self.rect.centerx - core_size // 2
             core_y = self.rect.centery - core_size // 2
             surface.blit(core_surface, (core_x, core_y))
-        
-        # If exploding, draw explosion instead of projectile
-        if self.is_exploding:
-            # Draw expanding circle for explosion
-            explosion_progress = (pygame.time.get_ticks() - self.explosion_start_time) / self.explosion_duration
-            current_radius = int(self.explosion_radius * explosion_progress)
-            
-            # Create different colored circles for explosion effect
-            # Outer red glow
-            outer_surface = pygame.Surface((current_radius * 2, current_radius * 2), pygame.SRCALPHA)
-            pygame.draw.circle(outer_surface, (200, 50, 50, 100), (current_radius, current_radius), current_radius)
-            surface.blit(outer_surface, (self.rect.centerx - current_radius, self.rect.centery - current_radius))
-            
-            # Middle orange layer
-            middle_radius = int(current_radius * 0.7)
-            middle_surface = pygame.Surface((middle_radius * 2, middle_radius * 2), pygame.SRCALPHA)
-            pygame.draw.circle(middle_surface, (255, 150, 50, 150), (middle_radius, middle_radius), middle_radius)
-            surface.blit(middle_surface, (self.rect.centerx - middle_radius, self.rect.centery - middle_radius))
-            
-            # Inner yellow-white core
-            inner_radius = int(current_radius * 0.4)
-            inner_surface = pygame.Surface((inner_radius * 2, inner_radius * 2), pygame.SRCALPHA)
-            pygame.draw.circle(inner_surface, (255, 255, 200, 200), (inner_radius, inner_radius), inner_radius)
-            surface.blit(inner_surface, (self.rect.centerx - inner_radius, self.rect.centery - inner_radius))
-            
-            return
     
     def check_collision(self, player_rect):
         """Check if projectile collides with player"""
@@ -411,51 +356,6 @@ class BossProjectile(pygame.sprite.Sprite):
             # Always return True for collision detection, but let the caller decide whether to destroy
             return True
         return False
-    
-    def start_explosion(self):
-        """Start the explosion animation and process explosion damage"""
-        self.is_exploding = True
-        self.explosion_start_time = pygame.time.get_ticks()
-        
-        # If we have a player target, check if they're in explosion radius
-        if self.player_target:
-            # Calculate distance to player
-            dx = self.player_target.rect.centerx - self.rect.centerx
-            dy = self.player_target.rect.centery - self.rect.centery
-            distance = math.sqrt(dx * dx + dy * dy)
-            
-            # Apply damage if player is within explosion radius
-            if distance <= self.explosion_radius:
-                # Scale damage based on distance (more damage closer to center)
-                damage_factor = 1.0 - (distance / self.explosion_radius) * 0.5  # At max radius, 50% damage
-                self.player_target.take_damage(self.explosion_damage * damage_factor)
-                
-                # Create particle effect if game instance is available
-                if hasattr(self.player_target, 'game') and self.player_target.game and hasattr(self.player_target.game, 'particle_system'):
-                    for _ in range(20):  # Create lots of particles
-                        angle = random.uniform(0, math.pi * 2)
-                        dist = random.uniform(0, self.explosion_radius * 0.8)
-                        particle_x = self.rect.centerx + math.cos(angle) * dist
-                        particle_y = self.rect.centery + math.sin(angle) * dist
-                        
-                        # Get color based on distance from center
-                        if dist < self.explosion_radius * 0.3:
-                            # Inner explosion is white-yellow
-                            color = (255, 255, 200)
-                        elif dist < self.explosion_radius * 0.6:
-                            # Middle is orange
-                            color = (255, 150, 50)
-                        else:
-                            # Outer is reddish
-                            color = (200, 50, 50)
-                            
-                        self.player_target.game.particle_system.create_particle(
-                            particle_x, particle_y,
-                            color=color,
-                            size=random.randint(3, 8),
-                            speed=random.uniform(1.0, 3.0),
-                            lifetime=random.randint(20, 40)
-                        )
 
 class Enemy(pygame.sprite.Sprite):
     def __init__(self, x, y, enemy_type, level, level_instance=None):
@@ -503,6 +403,8 @@ class Enemy(pygame.sprite.Sprite):
                     selected_texture = self.level_instance.selected_ghost_texture
                 elif enemy_name == 'goblin':
                     selected_texture = self.level_instance.selected_goblin_texture
+                elif enemy_name == 'wizard':
+                    selected_texture = self.level_instance.selected_wizard_texture
                     
                 if selected_texture:
                     custom_texture_path = selected_texture
@@ -614,6 +516,17 @@ class Enemy(pygame.sprite.Sprite):
         
         # Damage tracking - prevent multiple hits from same sword swing
         self.has_been_hit_this_swing = False
+        
+        # Initialize projectile capabilities
+        self.projectiles = pygame.sprite.Group()
+        self.can_shoot = level == 6  # Only level 6 enemies can shoot
+        
+        if self.can_shoot:
+            self.projectile_cooldown = 6000  # 6 seconds between shots
+            self.last_shot_time = random.randint(0, 3000)  # Randomize initial cooldown
+            self.projectile_speed = 1.8  # Increased speed (was 1.2)
+            self.projectile_damage = self.damage * 0.8  # 80% of normal damage
+            self.projectile_color = (200, 50, 50)  # Red projectiles
         
     def take_damage(self, amount):
         self.health -= amount
@@ -939,6 +852,22 @@ class Enemy(pygame.sprite.Sprite):
             
             # Skip the rest of the update if still in blood puddle state
             return
+        
+        # Update projectiles if this enemy can shoot
+        if hasattr(self, 'can_shoot') and self.can_shoot:
+            # Update projectiles and check for collisions
+            for projectile in list(self.projectiles):
+                projectile.update()
+                
+                # Check if projectile collides with player
+                if projectile.check_collision(player.hitbox):
+                    player.take_damage(projectile.damage)
+                    # Only destroy regular projectiles, homing ones continue for their lifetime
+                    if not hasattr(projectile, 'is_homing') or not projectile.is_homing:
+                        projectile.kill()
+            
+            # Try to shoot a new projectile
+            self.shoot_projectile(player)
             
         # Calculate distance to player
         dx = player.rect.centerx - self.rect.centerx
@@ -1105,7 +1034,12 @@ class Enemy(pygame.sprite.Sprite):
                                       health_bar_width, health_bar_height))
         pygame.draw.rect(surface, GREEN, (self.rect.x, self.rect.y - 8,  # Moved closer to enemy
                                         health_bar_width * health_ratio, health_bar_height))
-
+        
+        # Draw projectiles for level 6 enemies
+        if self.can_shoot and self.projectiles:
+            for projectile in self.projectiles:
+                projectile.draw(surface)
+        
     def enter_blood_puddle_state(self):
         """Enter the blood puddle state for respawnable minions"""
         # Store the original texture (current frame of animation)
@@ -1163,6 +1097,76 @@ class Enemy(pygame.sprite.Sprite):
         self.is_dead = False
         self.resurrection_time = 0
         self.resurrection_sound_played = False  # Reset sound flag to ensure it plays next time
+
+    def shoot_projectile(self, player):
+        """Shoot a projectile at the player (for level 6 enemies)"""
+        if not self.can_shoot:
+            return False
+        
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_shot_time < self.projectile_cooldown:
+            return False
+        
+        # Only shoot if player is visible and not too close
+        if not self.has_spotted_player:
+            return False
+            
+        # Calculate direction to player
+        dx = player.rect.centerx - self.rect.centerx
+        dy = player.rect.centery - self.rect.centery
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        # Don't shoot if player is too close (within melee range)
+        if distance <= self.attack_range * 2:
+            return False
+        
+        # Normalize direction
+        if distance > 0:
+            dx = dx / distance
+            dy = dy / distance
+        else:
+            dx, dy = 0, -1
+            
+        # Create a homing projectile that follows the player
+        projectile = BossProjectile(
+            self.rect.centerx, 
+            self.rect.centery, 
+            (dx, dy), 
+            self.projectile_speed, 
+            self.projectile_damage, 
+            self.projectile_color,
+            is_homing=True  # Enable homing behavior
+        )
+        
+        # Set the player as the target to follow
+        projectile.player_target = player
+        
+        # Set maximum distance based on speed and lifetime (4 seconds)
+        projectile.max_distance = self.projectile_speed * 60 * 4  # Approx pixels traveled in 4 seconds
+        
+        # Add homing properties
+        projectile.homing_strength = 0.03  # How quickly it adjusts to player movement
+        projectile.max_homing_time = 4000  # Follow for 4 seconds
+        projectile.homing_start_time = current_time
+        
+        # Add trail effect for better visibility
+        projectile.trail_enabled = True
+        projectile.max_trail_length = 8  # Shorter than boss trail
+        projectile.trail_update_rate = 2
+        projectile.position_history = []
+        projectile.trail_frame_counter = 0
+        
+        # Add to projectile group
+        self.projectiles.add(projectile)
+        
+        # Update last shot time
+        self.last_shot_time = current_time
+        
+        # Play sound if available
+        if hasattr(self, 'sound_manager'):
+            self.sound_manager.play_sound("effects/projectile")
+            
+        return True
 
 class Boss(Enemy):
     def __init__(self, x, y, level, level_instance=None):
@@ -2023,6 +2027,22 @@ class Boss(Enemy):
             
             # Skip the rest of the update if still in blood puddle state
             return
+        
+        # Update projectiles if this enemy can shoot
+        if hasattr(self, 'can_shoot') and self.can_shoot:
+            # Update projectiles and check for collisions
+            for projectile in list(self.projectiles):
+                projectile.update()
+                
+                # Check if projectile collides with player
+                if projectile.check_collision(player.hitbox):
+                    player.take_damage(projectile.damage)
+                    # Only destroy regular projectiles, homing ones continue for their lifetime
+                    if not hasattr(projectile, 'is_homing') or not projectile.is_homing:
+                        projectile.kill()
+            
+            # Try to shoot a new projectile
+            self.shoot_projectile(player)
             
         # Calculate distance to player
         dx = player.rect.centerx - self.rect.centerx
@@ -2662,6 +2682,11 @@ class Boss(Enemy):
             pygame.draw.rect(surface, GREEN, (health_bar_x, health_bar_y,
                                             health_bar_width * health_ratio, health_bar_height)) 
 
+        # Draw projectiles for level 6 enemies
+        if hasattr(self, 'can_shoot') and self.can_shoot and self.projectiles:
+            for projectile in self.projectiles:
+                projectile.draw(surface)
+        
     def cast_projectiles(self, player):
         """Create projectiles that become stationary after a delay for Boss 5"""
         if self.level != 5:
