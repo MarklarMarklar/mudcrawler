@@ -403,8 +403,6 @@ class Enemy(pygame.sprite.Sprite):
                     selected_texture = self.level_instance.selected_ghost_texture
                 elif enemy_name == 'goblin':
                     selected_texture = self.level_instance.selected_goblin_texture
-                elif enemy_name == 'wizard':
-                    selected_texture = self.level_instance.selected_wizard_texture
                     
                 if selected_texture:
                     custom_texture_path = selected_texture
@@ -524,7 +522,7 @@ class Enemy(pygame.sprite.Sprite):
         if self.can_shoot:
             self.projectile_cooldown = 6000  # 6 seconds between shots
             self.last_shot_time = random.randint(0, 3000)  # Randomize initial cooldown
-            self.projectile_speed = 1.8  # Increased speed (was 1.2)
+            self.projectile_speed = 2.5  # Increased from 1.2 to make projectiles faster
             self.projectile_damage = self.damage * 0.8  # 80% of normal damage
             self.projectile_color = (200, 50, 50)  # Red projectiles
         
@@ -852,22 +850,6 @@ class Enemy(pygame.sprite.Sprite):
             
             # Skip the rest of the update if still in blood puddle state
             return
-        
-        # Update projectiles if this enemy can shoot
-        if hasattr(self, 'can_shoot') and self.can_shoot:
-            # Update projectiles and check for collisions
-            for projectile in list(self.projectiles):
-                projectile.update()
-                
-                # Check if projectile collides with player
-                if projectile.check_collision(player.hitbox):
-                    player.take_damage(projectile.damage)
-                    # Only destroy regular projectiles, homing ones continue for their lifetime
-                    if not hasattr(projectile, 'is_homing') or not projectile.is_homing:
-                        projectile.kill()
-            
-            # Try to shoot a new projectile
-            self.shoot_projectile(player)
             
         # Calculate distance to player
         dx = player.rect.centerx - self.rect.centerx
@@ -966,6 +948,21 @@ class Enemy(pygame.sprite.Sprite):
         # Calculate current frame
         self.frame = int(self.animation_time) % len(self.animations[self.current_state][self.facing])
         self.image = self.animations[self.current_state][self.facing][self.frame]
+        
+        # Update projectiles for level 6 enemies
+        if self.can_shoot:
+            # Update existing projectiles
+            self.projectiles.update()
+            
+            # Check for collisions with player
+            for projectile in self.projectiles:
+                if projectile.check_collision(player.hitbox):
+                    player.take_damage(projectile.damage)
+                    projectile.kill()
+            
+            # Try to shoot new projectile
+            if self.state != 'dead':
+                self.shoot_projectile(player)
         
     def draw(self, surface):
         surface.blit(self.image, self.rect)
@@ -1127,7 +1124,7 @@ class Enemy(pygame.sprite.Sprite):
         else:
             dx, dy = 0, -1
             
-        # Create a homing projectile that follows the player
+        # Create the projectile
         projectile = BossProjectile(
             self.rect.centerx, 
             self.rect.centery, 
@@ -1135,26 +1132,11 @@ class Enemy(pygame.sprite.Sprite):
             self.projectile_speed, 
             self.projectile_damage, 
             self.projectile_color,
-            is_homing=True  # Enable homing behavior
+            is_homing=True  # Make the projectile homing
         )
         
-        # Set the player as the target to follow
+        # Set the player as the target for homing
         projectile.player_target = player
-        
-        # Set maximum distance based on speed and lifetime (4 seconds)
-        projectile.max_distance = self.projectile_speed * 60 * 4  # Approx pixels traveled in 4 seconds
-        
-        # Add homing properties
-        projectile.homing_strength = 0.03  # How quickly it adjusts to player movement
-        projectile.max_homing_time = 4000  # Follow for 4 seconds
-        projectile.homing_start_time = current_time
-        
-        # Add trail effect for better visibility
-        projectile.trail_enabled = True
-        projectile.max_trail_length = 8  # Shorter than boss trail
-        projectile.trail_update_rate = 2
-        projectile.position_history = []
-        projectile.trail_frame_counter = 0
         
         # Add to projectile group
         self.projectiles.add(projectile)
@@ -2027,22 +2009,6 @@ class Boss(Enemy):
             
             # Skip the rest of the update if still in blood puddle state
             return
-        
-        # Update projectiles if this enemy can shoot
-        if hasattr(self, 'can_shoot') and self.can_shoot:
-            # Update projectiles and check for collisions
-            for projectile in list(self.projectiles):
-                projectile.update()
-                
-                # Check if projectile collides with player
-                if projectile.check_collision(player.hitbox):
-                    player.take_damage(projectile.damage)
-                    # Only destroy regular projectiles, homing ones continue for their lifetime
-                    if not hasattr(projectile, 'is_homing') or not projectile.is_homing:
-                        projectile.kill()
-            
-            # Try to shoot a new projectile
-            self.shoot_projectile(player)
             
         # Calculate distance to player
         dx = player.rect.centerx - self.rect.centerx
@@ -2683,7 +2649,7 @@ class Boss(Enemy):
                                             health_bar_width * health_ratio, health_bar_height)) 
 
         # Draw projectiles for level 6 enemies
-        if hasattr(self, 'can_shoot') and self.can_shoot and self.projectiles:
+        if self.can_shoot and self.projectiles:
             for projectile in self.projectiles:
                 projectile.draw(surface)
         
