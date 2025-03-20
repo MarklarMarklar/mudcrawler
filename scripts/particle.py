@@ -102,6 +102,37 @@ class ParticleSystem:
         """Add a particle to the system"""
         self.particles.append(particle)
     
+    def create_particle(self, x, y, color=(255, 255, 255), velocity=None, size=3, lifetime=30, fade_speed=None):
+        """Create a custom particle with specified properties"""
+        # If velocity not provided, generate random velocity
+        if velocity is None:
+            angle = random.uniform(0, math.pi * 2)
+            speed = random.uniform(1.0, 3.0)
+            velocity_x = math.cos(angle) * speed
+            velocity_y = math.sin(angle) * speed
+        else:
+            velocity_x, velocity_y = velocity
+        
+        # If fade_speed not provided, generate based on lifetime
+        if fade_speed is None:
+            fade_speed = size / lifetime * 2  # Scale fade speed to size and lifetime
+        
+        # Create the particle
+        particle = {
+            'x': x,
+            'y': y,
+            'velocity_x': velocity_x,
+            'velocity_y': velocity_y,
+            'color': color,
+            'size': size,
+            'lifetime': lifetime,
+            'alpha': 255,
+            'fade_speed': fade_speed
+        }
+        
+        self.particles.append(particle)
+        return particle
+    
     def create_blood_splash(self, x, y, amount=10):
         """Create a blood splash effect at the specified position"""
         for _ in range(amount):

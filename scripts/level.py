@@ -1593,6 +1593,9 @@ class Level:
         self.notification_time = 0
         self.notification_duration = 0
         
+        # Initialize cursed shields group for level 7 boss
+        self.cursed_shields = pygame.sprite.Group()
+        
     def get_random_texture(self, texture_type):
         """Get a random texture file from the specified directory"""
         try:
@@ -1893,6 +1896,11 @@ class Level:
                 elif self.level_number == 4:
                     # For level 4 boss, don't spawn any additional enemies
                     num_enemies = 0
+                elif self.level_number == 7:
+                    # For level 7 boss, don't spawn any additional enemies
+                    # The cursed shield mechanic makes the fight challenging enough
+                    num_enemies = 0
+                    print(f"No additional enemies spawned in level 7 boss room")
                 else:
                     num_enemies = self.max_enemies_per_room // 2  # Fewer regular enemies in boss room
             elif room.room_type == 'treasure':
@@ -2154,7 +2162,37 @@ class Level:
         # Check exit use (only if not already showing confirmation)
         if not self.show_exit_confirmation:
             self.check_exit_use(player.hitbox)
-            
+        
+        # Update cursed shields
+        self.cursed_shields.update()
+        
+        # Check player collision with cursed shields
+        for shield in self.cursed_shields:
+            if shield.check_collision(player.hitbox) and shield.can_damage():
+                # Apply damage to player
+                player.take_damage(shield.damage)
+                
+                # Create visual effect showing shield damage
+                if hasattr(self, 'particle_system'):
+                    for _ in range(8):  # Create several particles
+                        angle = random.uniform(0, math.pi * 2)
+                        speed = random.uniform(1.0, 2.0)
+                        dx = math.cos(angle) * speed
+                        dy = math.sin(angle) * speed
+                        
+                        self.particle_system.create_particle(
+                            player.rect.centerx,
+                            player.rect.centery,
+                            color=(150, 50, 255),  # Purple to match shield
+                            velocity=(dx, dy),
+                            size=random.randint(4, 8),
+                            lifetime=random.randint(20, 30)
+                        )
+                
+                # Display feedback to player
+                if hasattr(self, 'game') and hasattr(self.game, 'display_message'):
+                    self.game.display_message("Cursed area damage!", (150, 50, 255))
+        
     def check_collision(self, rect):
         """Check collision with walls in the current room only"""
         current_room = self.rooms[self.current_room_coords]
@@ -2194,6 +2232,10 @@ class Level:
         if self.current_room_coords in self.rooms:
             room = self.rooms[self.current_room_coords]
             room.draw(surface, self.tiles, self)
+            
+            # Draw cursed shields
+            for shield in self.cursed_shields:
+                shield.draw(surface)
             
             # Draw notification if active
             if self.notification_text:

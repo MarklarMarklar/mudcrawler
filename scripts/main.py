@@ -163,6 +163,11 @@ class Game:
         self.particle_system = ParticleSystem()
         # First initialize the level
         self.level = Level(self.current_level)
+        
+        # Give the level access to the particle system and game instance
+        self.level.particle_system = self.particle_system
+        self.level.game = self
+        
         # Then get a valid position for the player
         player_x, player_y = self.level.get_valid_player_start_position()
         self.player = Player(player_x, player_y)
@@ -178,6 +183,11 @@ class Game:
     def initialize_level(self):
         print(f"Initializing level {self.current_level}")
         self.level = Level(self.current_level)
+        
+        # Give the level access to the particle system and game instance
+        self.level.particle_system = self.particle_system
+        self.level.game = self
+        
         # Get a valid starting position for the player
         player_x, player_y = self.level.get_valid_player_start_position()
         self.player.rect.centerx = player_x
@@ -1422,6 +1432,10 @@ class Game:
         # Create new level
         self.level = Level(self.current_level)
         
+        # Give the level access to the particle system and game instance
+        self.level.particle_system = self.particle_system
+        self.level.game = self
+        
         # Get valid player position
         player_x, player_y = self.level.get_valid_player_start_position()
         
@@ -1440,6 +1454,50 @@ class Game:
         
         # Show level notification
         self.level.show_notification(f"Level {self.current_level}", (255, 255, 0), 3000)
+
+    def new_game(self):
+        """Start a new game"""
+        print("Starting new game...")
+        self.state = PLAYING
+        self.current_level = 1
+        
+        # Create first level
+        self.level = Level(self.current_level)
+        
+        # Give the level access to the particle system and game instance
+        self.level.particle_system = self.particle_system
+        self.level.game = self
+        
+        # Reset death sequence flags
+        self.death_sequence_active = False
+        self.death_message_shown = False
+        self.death_zoom_complete = False
+        self.death_zoom_start_time = 0
+        self.death_zoom_duration = 3000  # 3 seconds for zoom effect
+        self.death_original_zoom = 2.0  # Store original zoom level
+        self.death_target_zoom = 4.0  # Target zoom level for death sequence
+        
+        # Reset camera zoom to default value
+        self.camera.zoom = 2.0  # Reset to default zoom
+        self.camera.view_width = self.camera.width / self.camera.zoom
+        self.camera.view_height = self.camera.height / self.camera.zoom
+        print(f"Camera zoom reset to default: {self.camera.zoom}x")
+        
+        # Reset particle system
+        self.particle_system = ParticleSystem()
+        
+        # Play level-appropriate music
+        self.play_level_appropriate_music()
+        
+        # Place player on a valid floor tile in the new level
+        player_x, player_y = self.level.get_valid_player_start_position()
+        self.player.rect.centerx = player_x
+        self.player.rect.centery = player_y
+        
+        # Print debug info
+        print(f"Game initialized. State: {self.state}")
+        print(f"Screen size: {WINDOW_WIDTH}x{WINDOW_HEIGHT}")
+        print(f"Camera zoom: {self.camera.zoom}x")
 
 if __name__ == "__main__":
     print("Initializing Mud Crawler game...")

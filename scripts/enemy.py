@@ -1278,6 +1278,11 @@ class Boss(Enemy):
             self.last_defensive_mode_time = 0
             self.defensive_mode_engaged = False
             self.shield_growth = 0  # Track shield growth from 0 to 1 (0% to 100% additional size)
+            self.shield_radius = 0  # Current shield radius for collision detection
+            self.shield_damage = self.damage * 0.5  # Shield deals 50% of boss damage per tick
+            self.shield_damage_cooldown = 500  # Damage player every 0.5 seconds
+            self.last_shield_damage_time = 0
+            self.cursed_shield_dropped = False  # Track if a cursed shield has been dropped this cycle
             
             # Initialize projectile capabilities for level 7 boss
             self.projectiles = pygame.sprite.Group()
@@ -1726,7 +1731,8 @@ class Boss(Enemy):
         distance = math.sqrt(dx * dx + dy * dy)
         
         # Always use direct movement for level 2 boss to ensure reliable chasing
-        if self.level == 2 or distance < TILE_SIZE * 5:
+        # Also use direct movement for level 7 boss (unlike other bosses) and for short distances
+        if self.level == 2 or self.level == 7 or distance < TILE_SIZE * 5:
             # Use direct movement - much more reliable
             if distance > 0:
                 dx = dx / distance
@@ -2105,7 +2111,10 @@ class Boss(Enemy):
         
         # Always mark that boss has spotted player if within detection range
         # For level 2 boss, increase detection range substantially
-        detection_range = self.detection_range * 2 if self.level == 2 else self.detection_range
+        # For level 7 boss, also increase detection range to match level 2
+        detection_range = self.detection_range
+        if self.level == 2 or self.level == 7:
+            detection_range *= 2  # Double the detection range
         
         if distance <= detection_range:
             # If Boss 5 spots the player for the first time, create orbiting projectiles
@@ -2328,6 +2337,7 @@ class Boss(Enemy):
             self.attack(player)
         elif self.has_spotted_player and not (self.level == 4 and self.defensive_mode) and not (self.level == 5 and self.casting_mode):
             # Chase state - always chase once spotted (unless level 4 boss in defensive mode or level 5 boss in casting mode)
+            # Level 7 boss can chase even during defensive mode after cast is complete
             self.state = 'chase'
             self.current_state = 'walk'
             self.move_towards_player(player)
@@ -2339,7 +2349,8 @@ class Boss(Enemy):
             self.velocity_y = 0
         
         # If level 4 boss is in defensive mode or level 5 boss is in casting mode, ensure it doesn't move
-        if (self.level == 4 and self.defensive_mode) or (self.level == 5 and self.casting_mode) or (self.level == 7 and self.defensive_mode):
+        # Level 7 boss only stops during the actual shield casting, not after dropping the shield
+        if (self.level == 4 and self.defensive_mode) or (self.level == 5 and self.casting_mode) or (self.level == 7 and self.defensive_mode and not self.cursed_shield_dropped):
             self.velocity_x = 0
             self.velocity_y = 0
             self.state = 'idle'
@@ -2598,6 +2609,7 @@ class Boss(Enemy):
                     self.defensive_mode = True
                     self.last_defensive_mode_time = current_time
                     self.shield_growth = 0  # Start with original shield size
+                    self.cursed_shield_dropped = False  # Reset the flag when entering shield mode
                     
                     # Store the current image to restore later
                     self.normal_image = self.image
@@ -2622,7 +2634,30 @@ class Boss(Enemy):
                 # Already in shield mode, check if it's time to deactivate
                 time_in_defensive_mode = current_time - self.last_defensive_mode_time
                 if time_in_defensive_mode >= self.defensive_mode_duration:
-                    # Deactivate shield mode
+                    # Drop the shield as a stationary cursed area
+                    if hasattr(self, 'shield_radius') and self.shield_radius > 0:
+                        # Create a cursed shield at the boss's current position
+                        cursed_shield = CursedShield(
+                            self.rect.centerx,
+                            self.rect.centery,
+                            self.shield_radius * 2,  # Diameter
+                            self.shield_damage  # Same damage as the shield
+                        )
+                        
+                        # Add to player's level if possible
+                        if hasattr(player, 'level') and hasattr(player.level, 'cursed_shields'):
+                            player.level.cursed_shields.add(cursed_shield)
+                        else:
+                            # Initialize the cursed_shields group if it doesn't exist
+                            if hasattr(player, 'level'):
+                                if not hasattr(player.level, 'cursed_shields'):
+                                    player.level.cursed_shields = pygame.sprite.Group()
+                                player.level.cursed_shields.add(cursed_shield)
+                        
+                        print(f"Level 7 boss dropped a cursed shield at ({self.rect.centerx}, {self.rect.centery})")
+                        self.cursed_shield_dropped = True  # Mark that shield has been dropped
+                    
+                    # Deactivate shield mode and resume chasing immediately
                     self.defensive_mode_engaged = False
                     self.defensive_mode = False
                     
@@ -2644,6 +2679,46 @@ class Boss(Enemy):
                 else:
                     # Update shield growth during the shield mode (0 to 1 over the duration)
                     self.shield_growth = min(1.0, time_in_defensive_mode / self.defensive_mode_duration)
+            
+            # If in shield mode, check for collisions with the player
+            if self.defensive_mode:
+                current_time = pygame.time.get_ticks()
+                
+                # Check if player is colliding with the shield
+                if hasattr(self, 'shield_radius') and self.shield_radius > 0:
+                    # Calculate distance between boss center and player center
+                    dx = player.rect.centerx - self.rect.centerx
+                    dy = player.rect.centery - self.rect.centery
+                    distance = math.sqrt(dx * dx + dy * dy)
+                    
+                    # If player is inside shield radius, damage them (with cooldown)
+                    if distance < self.shield_radius:
+                        # Check cooldown to avoid constant damage
+                        if current_time - self.last_shield_damage_time >= self.shield_damage_cooldown:
+                            # Damage player
+                            player.take_damage(self.shield_damage)
+                            self.last_shield_damage_time = current_time
+                            
+                            # Create visual effect showing shield damage
+                            if hasattr(player.level, 'particle_system'):
+                                for _ in range(8):  # Create several particles
+                                    angle = random.uniform(0, math.pi * 2)
+                                    speed = random.uniform(1.0, 2.0)
+                                    dx = math.cos(angle) * speed
+                                    dy = math.sin(angle) * speed
+                                    
+                                    player.level.particle_system.create_particle(
+                                        player.rect.centerx,
+                                        player.rect.centery,
+                                        color=(150, 50, 255),  # Purple to match shield
+                                        velocity=(dx, dy),
+                                        size=random.randint(4, 8),
+                                        lifetime=random.randint(20, 30)
+                                    )
+                            
+                            # Display feedback to player
+                            if hasattr(player.level, 'game') and hasattr(player.level.game, 'display_message'):
+                                player.level.game.display_message("Shield damage!", (150, 50, 255))
         
     def draw(self, surface):
         # Draw resurrection effects if in blood puddle state
@@ -2797,11 +2872,14 @@ class Boss(Enemy):
             if self.level == 7 and self.defensive_mode:
                 current_time = pygame.time.get_ticks()
                 
-                # Create an expanding shield effect (grows to 200% of original size)
+                # Create an expanding shield effect (grows to 300% of original size instead of 200%)
                 base_shield_size = self.image.get_width() * 1.2  # Base size (same as level 4)
-                expansion_factor = 1.0 + self.shield_growth  # Grows from 1x to 2x
+                expansion_factor = 1.0 + (self.shield_growth * 2.0)  # Grows from 1x to 3x (300% growth)
                 shield_pulse = 0.1 * math.sin(current_time / 100)  # Subtle pulsing effect
                 shield_radius = int(base_shield_size / 2 * expansion_factor * (1 + shield_pulse))
+                
+                # Store the current shield radius for collision detection
+                self.shield_radius = shield_radius
                 
                 # Create a transparent surface for the shield
                 shield_surface = pygame.Surface((shield_radius * 2, shield_radius * 2), pygame.SRCALPHA)
@@ -3113,3 +3191,114 @@ class PoisonTrail(pygame.sprite.Sprite):
             self.last_damage_time = current_time
             return True
         return False
+
+class CursedShield(pygame.sprite.Sprite):
+    def __init__(self, x, y, size, damage):
+        super().__init__()
+        self.asset_manager = get_asset_manager()
+        self.sound_manager = get_sound_manager()
+        
+        # Position and size properties
+        self.x = x
+        self.y = y
+        self.size = size
+        self.radius = size // 2
+        
+        # Damage properties
+        self.damage = damage
+        self.damage_cooldown = 500  # Damage player every 0.5 seconds
+        self.last_damage_time = 0
+        
+        # Duration for the shield to remain active
+        self.duration = 8000  # Changed from 2000 to 8000 (8 seconds)
+        self.creation_time = pygame.time.get_ticks()
+        
+        # Create a surface for the shield
+        self.image = pygame.Surface((size, size), pygame.SRCALPHA)
+        
+        # Visual properties
+        self.pulse_timer = 0
+        self.alpha = 200  # Start fairly visible
+        self.fade_timer = 0
+        
+        # Create the hitbox
+        self.rect = pygame.Rect(x - self.radius, y - self.radius, size, size)
+        
+        # Play sound when created
+        self.sound_manager.play_sound("effects/boss_cast")
+    
+    def update(self):
+        """Update the shield state"""
+        current_time = pygame.time.get_ticks()
+        elapsed_time = current_time - self.creation_time
+        
+        # Check if the shield should be destroyed
+        if elapsed_time >= self.duration:
+            self.kill()
+            return
+        
+        # Visual updates - pulsing effect
+        self.pulse_timer += 0.1
+        pulse_factor = 0.1 * math.sin(self.pulse_timer)
+        
+        # Fade out as time passes
+        remaining_time_pct = 1.0 - (elapsed_time / self.duration)
+        self.alpha = int(180 * remaining_time_pct) + 20  # Fade from 200 to 20
+    
+    def check_collision(self, player_rect):
+        """Check if the player is inside the shield area"""
+        # Calculate distance between shield center and player center
+        dx = player_rect.centerx - self.rect.centerx
+        dy = player_rect.centery - self.rect.centery
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        # If player is inside shield radius, they should take damage
+        return distance < self.radius
+    
+    def can_damage(self):
+        """Check if the cooldown has elapsed and the shield can damage again"""
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_damage_time >= self.damage_cooldown:
+            self.last_damage_time = current_time
+            return True
+        return False
+    
+    def draw(self, surface):
+        """Draw the shield with visual effects"""
+        current_time = pygame.time.get_ticks()
+        
+        # Create a new surface for this frame with pulse effect
+        pulse_surface = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
+        
+        # Calculate pulse effect
+        pulse_size = int(self.size * (1.0 + 0.1 * math.sin(current_time / 100)))
+        shield_radius = pulse_size // 2
+        
+        # Center point
+        center = (self.size // 2, self.size // 2)
+        
+        # Purple shield color with current alpha
+        shield_color = (128, 0, 255, self.alpha)
+        
+        # Draw shield
+        pygame.draw.circle(pulse_surface, shield_color, center, shield_radius, 5)  # Outline
+        
+        # Draw energy lines within the shield
+        for i in range(8):
+            angle = i * math.pi / 4 + current_time / 500  # Rotate over time
+            start_x = center[0] + math.cos(angle) * (shield_radius * 0.3)
+            start_y = center[1] + math.sin(angle) * (shield_radius * 0.3)
+            end_x = center[0] + math.cos(angle) * (shield_radius * 0.9)
+            end_y = center[1] + math.sin(angle) * (shield_radius * 0.9)
+            
+            line_color = (200, 100, 255, self.alpha)
+            pygame.draw.line(pulse_surface, line_color, (start_x, start_y), (end_x, end_y), 2)
+        
+        # Add a partially filled circle for the inner shield
+        inner_color = (128, 0, 255, self.alpha // 4)  # Very transparent
+        pygame.draw.circle(pulse_surface, inner_color, center, int(shield_radius * 0.9))
+        
+        # Draw the shield at its position
+        shield_x = self.rect.x
+        shield_y = self.rect.y
+        surface.blit(pulse_surface, (shield_x, shield_y))
