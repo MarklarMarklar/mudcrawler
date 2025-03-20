@@ -375,84 +375,124 @@ class Enemy(pygame.sprite.Sprite):
         # Get the enemy name
         enemy_name = self.enemy_data['name'].lower().replace(' ', '_')
         
-        # Load animations for each direction
-        for direction in ['down', 'up', 'left', 'right']:
+        # For level 6 enemies, use wizard sprites and apply to all directions at once
+        if level == 6:
             # Create default placeholder first
             placeholder = pygame.Surface((TILE_SIZE, TILE_SIZE))
             placeholder.fill(RED)
             font = pygame.font.Font(None, 16)
-            text = font.render(enemy_name[:8], True, WHITE)
+            text = font.render("Wizard", True, WHITE)
             text_rect = text.get_rect(center=(TILE_SIZE//2, TILE_SIZE//2))
             placeholder.blit(text, text_rect)
             
-            # Set default animations to placeholder
-            self.animations['idle'][direction] = [placeholder]
-            self.animations['walk'][direction] = [placeholder]
-            self.animations['attack'][direction] = [placeholder]
+            # Initialize all animations with placeholder
+            for direction in ['down', 'up', 'left', 'right']:
+                self.animations['idle'][direction] = [placeholder]
+                self.animations['walk'][direction] = [placeholder]
+                self.animations['attack'][direction] = [placeholder]
             
-            # Check if we have a specific texture selected for this enemy type in the level
-            selected_texture = None
+            # Try to load a wizard sprite
+            wizard_folder = os.path.join(ENEMY_SPRITES_PATH, "wizard")
             custom_texture_path = None
             
-            if self.level_instance:
-                if enemy_name == 'skeleton':
-                    selected_texture = self.level_instance.selected_skeleton_texture
-                elif enemy_name == 'slime':
-                    selected_texture = self.level_instance.selected_slime_texture
-                elif enemy_name == 'ghost':
-                    selected_texture = self.level_instance.selected_ghost_texture
-                elif enemy_name == 'goblin':
-                    selected_texture = self.level_instance.selected_goblin_texture
-                    
-                if selected_texture:
-                    custom_texture_path = selected_texture
-                    print(f"Using custom {enemy_name} texture: {os.path.basename(custom_texture_path)}")
+            if os.path.exists(wizard_folder):
+                wizard_files = glob.glob(os.path.join(wizard_folder, "*.png"))
+                if wizard_files:
+                    custom_texture_path = random.choice(wizard_files)
+                    print(f"Using wizard texture for level 6 enemy: {os.path.basename(custom_texture_path)}")
             
-            # If we have a custom texture, use it
+            # If we found a wizard texture, use it for all directions and states
             if custom_texture_path and os.path.exists(custom_texture_path):
                 try:
                     texture = self.asset_manager.load_image(custom_texture_path, scale=(TILE_SIZE, TILE_SIZE))
                     # Use the same texture for all animation states and directions
-                    self.animations['idle'][direction] = [texture]
-                    self.animations['walk'][direction] = [texture]
-                    self.animations['attack'][direction] = [texture]
-                    print(f"Successfully loaded custom {enemy_name} texture")
+                    for direction in ['down', 'up', 'left', 'right']:
+                        self.animations['idle'][direction] = [texture]
+                        self.animations['walk'][direction] = [texture]
+                        self.animations['attack'][direction] = [texture]
+                    print(f"Successfully loaded wizard texture for level 6 enemy")
                 except Exception as e:
-                    print(f"Error loading custom {enemy_name} texture: {e}")
-            else:
-                # Fallback to the regular animation loading logic
-                # Set up base path for this enemy
-                base_path = os.path.join(ENEMY_SPRITES_PATH, enemy_name)
+                    print(f"Error loading wizard texture: {e}")
+        else:
+            # Original animation loading for non-level 6 enemies
+            # Load animations for each direction
+            for direction in ['down', 'up', 'left', 'right']:
+                # Create default placeholder first
+                placeholder = pygame.Surface((TILE_SIZE, TILE_SIZE))
+                placeholder.fill(RED)
+                font = pygame.font.Font(None, 16)
+                text = font.render(enemy_name[:8], True, WHITE)
+                text_rect = text.get_rect(center=(TILE_SIZE//2, TILE_SIZE//2))
+                placeholder.blit(text, text_rect)
                 
-                # Now try to load actual animations but don't crash if they're missing
-                try:
-                    if os.path.exists(base_path):
-                        idle_path = os.path.join(base_path, f"idle_{direction}")
-                        if os.path.exists(idle_path):
-                            self.animations['idle'][direction] = self.asset_manager.load_animation(
-                                idle_path, "idle_", 4, scale=(TILE_SIZE, TILE_SIZE))
-                except Exception as e:
-                    print(f"Could not load idle animation for {enemy_name} {direction}: {e}")
+                # Set default animations to placeholder
+                self.animations['idle'][direction] = [placeholder]
+                self.animations['walk'][direction] = [placeholder]
+                self.animations['attack'][direction] = [placeholder]
+                
+                # Check if we have a specific texture selected for this enemy type in the level
+                selected_texture = None
+                custom_texture_path = None
+                
+                if self.level_instance:
+                    if enemy_name == 'skeleton':
+                        selected_texture = self.level_instance.selected_skeleton_texture
+                    elif enemy_name == 'slime':
+                        selected_texture = self.level_instance.selected_slime_texture
+                    elif enemy_name == 'ghost':
+                        selected_texture = self.level_instance.selected_ghost_texture
+                    elif enemy_name == 'goblin':
+                        selected_texture = self.level_instance.selected_goblin_texture
+                        
+                    if selected_texture:
+                        custom_texture_path = selected_texture
+                        print(f"Using custom {enemy_name} texture: {os.path.basename(custom_texture_path)}")
+                
+                # If we have a custom texture, use it
+                if custom_texture_path and os.path.exists(custom_texture_path):
+                    try:
+                        texture = self.asset_manager.load_image(custom_texture_path, scale=(TILE_SIZE, TILE_SIZE))
+                        # Use the same texture for all animation states and directions
+                        self.animations['idle'][direction] = [texture]
+                        self.animations['walk'][direction] = [texture]
+                        self.animations['attack'][direction] = [texture]
+                        print(f"Successfully loaded custom {enemy_name} texture")
+                    except Exception as e:
+                        print(f"Error loading custom {enemy_name} texture: {e}")
+                else:
+                    # Fallback to the regular animation loading logic
+                    # Set up base path for this enemy
+                    base_path = os.path.join(ENEMY_SPRITES_PATH, enemy_name)
                     
-                try:
-                    if os.path.exists(base_path):
-                        walk_path = os.path.join(base_path, f"walk_{direction}")
-                        if os.path.exists(walk_path):
-                            self.animations['walk'][direction] = self.asset_manager.load_animation(
-                                walk_path, "walk_", 4, scale=(TILE_SIZE, TILE_SIZE))
-                except Exception as e:
-                    print(f"Could not load walk animation for {enemy_name} {direction}: {e}")
-                    # Fallback already set above
-                    
-                try:
-                    if os.path.exists(base_path):
-                        attack_path = os.path.join(base_path, f"attack_{direction}")
-                        if os.path.exists(attack_path):
-                            self.animations['attack'][direction] = self.asset_manager.load_animation(
-                                attack_path, "attack_", 4, scale=(TILE_SIZE, TILE_SIZE))
-                except Exception as e:
-                    print(f"Could not load attack animation for {enemy_name} {direction}: {e}")
-                    # Fallback already set above
+                    # Now try to load actual animations but don't crash if they're missing
+                    try:
+                        if os.path.exists(base_path):
+                            idle_path = os.path.join(base_path, f"idle_{direction}")
+                            if os.path.exists(idle_path):
+                                self.animations['idle'][direction] = self.asset_manager.load_animation(
+                                    idle_path, "idle_", 4, scale=(TILE_SIZE, TILE_SIZE))
+                    except Exception as e:
+                        print(f"Could not load idle animation for {enemy_name} {direction}: {e}")
+                        
+                    try:
+                        if os.path.exists(base_path):
+                            walk_path = os.path.join(base_path, f"walk_{direction}")
+                            if os.path.exists(walk_path):
+                                self.animations['walk'][direction] = self.asset_manager.load_animation(
+                                    walk_path, "walk_", 4, scale=(TILE_SIZE, TILE_SIZE))
+                    except Exception as e:
+                        print(f"Could not load walk animation for {enemy_name} {direction}: {e}")
+                        # Fallback already set above
+                        
+                    try:
+                        if os.path.exists(base_path):
+                            attack_path = os.path.join(base_path, f"attack_{direction}")
+                            if os.path.exists(attack_path):
+                                self.animations['attack'][direction] = self.asset_manager.load_animation(
+                                    attack_path, "attack_", 4, scale=(TILE_SIZE, TILE_SIZE))
+                    except Exception as e:
+                        print(f"Could not load attack animation for {enemy_name} {direction}: {e}")
+                        # Fallback already set above
         
         # Animation state
         self.current_state = 'idle'
