@@ -24,8 +24,17 @@ class BossProjectile(pygame.sprite.Sprite):
                 print(f"Ghost image not found at {ghost_path}, using fallback")
                 self.create_projectile_image(color)
         else:
-            # Create a regular projectile image for non-orbiting projectiles
-            self.create_projectile_image(color)
+            # For non-orbiting projectiles, use the energy ball texture
+            energy_ball_path = os.path.join(BOSS_SPRITES_PATH, "energy_ball.png")
+            print(f"Looking for energy ball at: {energy_ball_path}")
+            if os.path.exists(energy_ball_path):
+                print(f"Energy ball texture found!")
+                # Load and scale the energy ball image
+                self.image = self.asset_manager.load_image(energy_ball_path, scale=(TILE_SIZE//1.5, TILE_SIZE//1.5))
+                self.original_image = self.image.copy()
+            else:
+                print(f"Energy ball image not found at {energy_ball_path}, using fallback")
+                self.create_projectile_image(color)
         
         self.rect = self.image.get_rect()
         self.rect.centerx = x
@@ -1041,6 +1050,16 @@ class Boss(Enemy):
             self.cast_complete = False
             self.stationary_projectile_duration = 6000  # How long projectiles stay in place
         
+        # Boss 6 teleportation attributes
+        if level == 6:
+            self.teleport_cooldown = 6000  # 6 seconds between teleports
+            self.teleport_duration = 1500  # 1.5 seconds to disappear and reappear
+            self.last_teleport_time = pygame.time.get_ticks()  # Initialize with current time
+            self.is_teleporting = False
+            self.teleport_start_time = 0
+            self.teleport_target_pos = None
+            self.teleport_alpha = 255  # For fade effect
+        
         # Phase system for special attacks
         self.phase = 0  # 0 = normal, 1 = <60% health, 2 = <30% health
         self.last_special_attack_time = 0
@@ -1387,7 +1406,12 @@ class Boss(Enemy):
         self.has_been_hit_this_swing = False
         
     def move_towards_player(self, player):
-        """Move towards player using simplified movement for more reliable chasing"""
+        # Skip movement if Boss 6 is teleporting
+        if self.level == 6 and self.is_teleporting:
+            self.velocity_x = 0
+            self.velocity_y = 0
+            return
+
         # Calculate direction vector to player
         dx = player.rect.centerx - self.rect.centerx
         dy = player.rect.centery - self.rect.centery
@@ -1410,7 +1434,7 @@ class Boss(Enemy):
                 else:
                     self.facing = 'down' if dy > 0 else 'up'
             return
-        
+
         # For other bosses (or longer distances for non-level-2 bosses), try pathfinding
         target_pos = (player.rect.centerx, player.rect.centery)
         
@@ -1420,8 +1444,8 @@ class Boss(Enemy):
             self.path_update_timer >= 10 or
             self.movement_failed_counter >= 2 or
             (self.last_target_position and 
-             ((abs(self.last_target_position[0] - target_pos[0]) > TILE_SIZE) or 
-              (abs(self.last_target_position[1] - target_pos[1]) > TILE_SIZE)))
+            ((abs(self.last_target_position[0] - target_pos[0]) > TILE_SIZE) or 
+             (abs(self.last_target_position[1] - target_pos[1]) > TILE_SIZE)))
         )
         
         if should_update_path and hasattr(player, 'level'):
@@ -1434,86 +1458,94 @@ class Boss(Enemy):
                 player.level
             )
             
-            # Reset counters
+            # Reset timer and counters
             self.path_update_timer = 0
             self.movement_failed_counter = 0
             self.last_target_position = target_pos
-            
-            # If pathfinding fails, use direct movement
-            if not self.path and distance > 0:
-                dx = dx / distance
-                dy = dy / distance
-                self.velocity_x = dx * self.speed
-                self.velocity_y = dy * self.speed
-                
-                if abs(dx) > abs(dy):
-                    self.facing = 'right' if dx > 0 else 'left'
-                else:
-                    self.facing = 'down' if dy > 0 else 'up'
-                return
         else:
             # Increment timer
             self.path_update_timer += 1
         
-        # If no path, use direct movement
-        if not self.path:
+        # If we have a path, follow it
+        if self.path:
+            # Get the next point in the path
+            next_point = self.path[0]
+            
+            # Calculate direction to next point
+            dx = next_point[0] - self.rect.centerx
+            dy = next_point[1] - self.rect.centery
+            distance = math.sqrt(dx * dx + dy * dy)
+            
+            # If we've reached this point (or close enough), move to the next point
+            if distance < self.speed:
+                self.path.pop(0)
+                # If path is now empty, we're done
+                if not self.path:
+                    # If we're close to player, stop moving
+                    if math.sqrt((player.rect.centerx - self.rect.centerx)**2 + 
+                               (player.rect.centery - self.rect.centery)**2) < self.attack_range:
+                        self.velocity_x = 0
+                        self.velocity_y = 0
+                        return
+                    # Otherwise, calculate a new path
+                    self.path = self.find_path(
+                        self.rect.centerx, 
+                        self.rect.centery, 
+                        player.rect.centerx, 
+                        player.rect.centery,
+                        player.level
+                    )
+                    
+                    # If we couldn't find a path, use the old method (direct movement)
+                    if not self.path:
+                        # Old direct movement code
+                        dx = player.rect.centerx - self.rect.centerx
+                        dy = player.rect.centery - self.rect.centery
+                        distance = math.sqrt(dx * dx + dy * dy)
+                        
+                        if distance > 0:
+                            dx = dx / distance
+                            dy = dy / distance
+                            self.velocity_x = dx * self.speed
+                            self.velocity_y = dy * self.speed
+                            
+                            # Update facing direction based on movement
+                            if abs(dx) > abs(dy):
+                                self.facing = 'right' if dx > 0 else 'left'
+                            else:
+                                self.facing = 'down' if dy > 0 else 'up'
+                        return
+            else:
+                # Move towards next point
+                if distance > 0:
+                    dx = dx / distance
+                    dy = dy / distance
+                    self.velocity_x = dx * self.speed
+                    self.velocity_y = dy * self.speed
+                    
+                    # Update facing direction based on movement
+                    if abs(dx) > abs(dy):
+                        self.facing = 'right' if dx > 0 else 'left'
+                    else:
+                        self.facing = 'down' if dy > 0 else 'up'
+        else:
+            # If there's no path, fall back to direct movement
+            dx = player.rect.centerx - self.rect.centerx
+            dy = player.rect.centery - self.rect.centery
+            distance = math.sqrt(dx * dx + dy * dy)
+            
             if distance > 0:
                 dx = dx / distance
                 dy = dy / distance
                 self.velocity_x = dx * self.speed
                 self.velocity_y = dy * self.speed
                 
+                # Update facing direction based on movement
                 if abs(dx) > abs(dy):
                     self.facing = 'right' if dx > 0 else 'left'
                 else:
                     self.facing = 'down' if dy > 0 else 'up'
-            return
-        
-        # Follow the path if we have one
-        next_point = self.path[0]
-        
-        # Calculate direction to next path point
-        dx = next_point[0] - self.rect.centerx
-        dy = next_point[1] - self.rect.centery
-        point_distance = math.sqrt(dx * dx + dy * dy)
-        
-        # If we're close enough to this point, move to the next one
-        if point_distance < self.speed:
-            self.path.pop(0)
-            # If no more points, use direct movement
-            if not self.path:
-                if distance > 0:
-                    dx = (player.rect.centerx - self.rect.centerx) / distance
-                    dy = (player.rect.centery - self.rect.centery) / distance
-                    self.velocity_x = dx * self.speed
-                    self.velocity_y = dy * self.speed
-                    
-                    if abs(dx) > abs(dy):
-                        self.facing = 'right' if dx > 0 else 'left'
-                    else:
-                        self.facing = 'down' if dy > 0 else 'up'
-                # Force path recalculation on next update
-                self.path_update_timer = 999
-                return
-            
-            # Use the next point in the path
-            next_point = self.path[0]
-            dx = next_point[0] - self.rect.centerx
-            dy = next_point[1] - self.rect.centery
-            point_distance = math.sqrt(dx * dx + dy * dy)
-        
-        # Move toward the next point in the path
-        if point_distance > 0:
-            dx = dx / point_distance
-            dy = dy / point_distance
-            self.velocity_x = dx * self.speed
-            self.velocity_y = dy * self.speed
-            
-            if abs(dx) > abs(dy):
-                self.facing = 'right' if dx > 0 else 'left'
-            else:
-                self.facing = 'down' if dy > 0 else 'up'
-                
+
     def take_damage(self, amount):
         """Override the parent take_damage method to make boss aggressive when hit"""
         # Set the has_spotted_player flag to True when boss takes damage
@@ -1821,6 +1853,62 @@ class Boss(Enemy):
                     self.casting_mode = False
                     print(f"Boss 5 leaving casting mode at time {current_time}")
         
+        # Boss 6 teleportation logic
+        if self.level == 6 and self.has_spotted_player:
+            # Get current time
+            current_time = pygame.time.get_ticks()
+            
+            if not self.is_teleporting:
+                # Check if it's time to teleport
+                time_since_last_teleport = current_time - self.last_teleport_time
+                if time_since_last_teleport >= self.teleport_cooldown:
+                    # Start teleportation
+                    self.is_teleporting = True
+                    self.teleport_start_time = current_time
+                    self.teleport_alpha = 255
+                    print(f"Boss 6 starting teleportation at time {current_time}")
+            else:
+                # In teleportation process
+                time_in_teleport = current_time - self.teleport_start_time
+                
+                # Fade out
+                if time_in_teleport < self.teleport_duration / 2:
+                    self.teleport_alpha = int(255 * (1 - (time_in_teleport / (self.teleport_duration / 2))))
+                # Fade in at new position
+                elif time_in_teleport < self.teleport_duration:
+                    if not self.teleport_target_pos:
+                        # Find a random non-wall tile in the room
+                        if hasattr(player, 'level') and player.level:
+                            room = player.level.rooms[player.level.current_room_coords]
+                            valid_positions = []
+                            
+                            # Collect all valid positions
+                            for y in range(room.height):
+                                for x in range(room.width):
+                                    if room.tiles[y][x] == 0:  # 0 is floor tile
+                                        valid_positions.append((x * TILE_SIZE + TILE_SIZE//2, 
+                                                              y * TILE_SIZE + TILE_SIZE//2))
+                            
+                            if valid_positions:
+                                # Choose a random position
+                                self.teleport_target_pos = random.choice(valid_positions)
+                                # Update position
+                                self.rect.centerx = self.teleport_target_pos[0]
+                                self.rect.centery = self.teleport_target_pos[1]
+                                # Update damage hitbox
+                                self.damage_hitbox.centerx = self.rect.centerx
+                                self.damage_hitbox.centery = self.rect.centery
+                    
+                    # Fade in
+                    self.teleport_alpha = int(255 * ((time_in_teleport - self.teleport_duration/2) / (self.teleport_duration/2)))
+                else:
+                    # Teleportation complete
+                    self.is_teleporting = False
+                    self.last_teleport_time = current_time  # Reset timer after teleport is complete
+                    self.teleport_target_pos = None
+                    self.teleport_alpha = 255
+                    print(f"Boss 6 teleportation complete at time {current_time}")
+        
         # Level 2 boss: use special attack when player is in range but not in melee range
         # (to avoid spamming when in close combat)
         if self.level == 2 and self.has_spotted_player and distance > self.attack_range * 2:
@@ -1920,6 +2008,14 @@ class Boss(Enemy):
         # Only update image from animation frames if not in defensive mode (for level 4 boss)
         if not (self.level == 4 and self.defensive_mode):
             self.image = self.animations[self.current_state][self.facing][self.frame]
+            
+            # Apply teleportation fade effect for Boss 6
+            if self.level == 6 and self.is_teleporting:
+                # Create a copy of the image with alpha
+                alpha_surface = pygame.Surface(self.image.get_size(), pygame.SRCALPHA)
+                alpha_surface.blit(self.image, (0, 0))
+                alpha_surface.set_alpha(self.teleport_alpha)
+                self.image = alpha_surface
         
         # Update projectiles for level 2 and 5 bosses
         if self.level == 2 or self.level == 5:
