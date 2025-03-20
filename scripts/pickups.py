@@ -144,7 +144,7 @@ class KeyPickup(BasePickup):
         
         # Try to load key texture
         try:
-            key_path = "/home/marklar/Mud/Mud_dungeon_crawler/assets/icons/key.png"  # Correct path to key.png in assets/icons
+            key_path = os.path.join(ASSET_PATH, "icons/key.png")  # Use correct relative path
             if os.path.exists(key_path):
                 self.key_texture = self.asset_manager.load_image(key_path, scale=(self.size, self.size))
                 print("Successfully loaded key texture for ground pickup")

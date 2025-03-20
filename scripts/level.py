@@ -1296,13 +1296,17 @@ class Room:
 
         # Draw key if dropped
         if self.key_dropped and self.key_position:
-            # Load the key image using absolute path
-            key_path = "/home/marklar/Mud/Mud_dungeon_crawler/assets/icons/key.png"
+            # Load the key image using the correct path
+            key_path = os.path.join(ASSET_PATH, "icons/key.png")
             
             try:
                 # Make the key pulse based on time
                 pulse_factor = 0.5 + 0.5 * abs(math.sin(pygame.time.get_ticks() / 200))
                 key_size = TILE_SIZE * pulse_factor
+                
+                # Debug print to verify key texture loading
+                print(f"Drawing key at {self.key_position}, using path: {key_path}")
+                print(f"Key path exists: {os.path.exists(key_path)}")
                 
                 # First draw a glow effect
                 glow_size = TILE_SIZE * 2 * pulse_factor
