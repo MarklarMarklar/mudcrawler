@@ -2694,55 +2694,98 @@ class Boss(Enemy):
 class PoisonTrail(pygame.sprite.Sprite):
     def __init__(self, x, y, size, damage):
         super().__init__()
+        self.asset_manager = get_asset_manager()
+        
         # Create a larger surface to accommodate the glow effect
         glow_size = int(size * 1.5)
         self.image = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
         
-        # Center offset for positioning the puddle on the larger surface
-        offset = (glow_size - size) // 2
+        # Try to load a random blood puddle texture first
+        blood_texture = None
+        try:
+            blood_dir = os.path.join(TILE_SPRITES_PATH, "blood")
+            if os.path.exists(blood_dir):
+                blood_files = glob.glob(os.path.join(blood_dir, "*.png"))
+                if blood_files:
+                    selected_blood = random.choice(blood_files)
+                    blood_texture = self.asset_manager.load_image(
+                        selected_blood, scale=(glow_size, glow_size)
+                    )
+        except Exception as e:
+            print(f"Failed to load blood puddle texture for poison trail: {e}")
+            blood_texture = None
+            
         center_point = (glow_size // 2, glow_size // 2)
-        
-        # Draw the glow around the edges of the main puddle
-        # Start with largest, most transparent circle and work inward
-        for i in range(6):
-            # Calculate radius from outside in
-            glow_radius = size // 2 + (5 - i) * 3
-            # Calculate alpha to increase toward the center
-            glow_alpha = 20 + i * 10  # More transparent on outside, more opaque toward center
-            # Create the glow color with proper alpha
-            glow_col = (50, 200, 50, glow_alpha)
-            # Draw the glow circle
-            pygame.draw.circle(self.image, glow_col, center_point, glow_radius)
-        
-        # Main puddle colors
-        outer_color = (40, 150, 40, 190)  # Dark toxic green
-        main_color = (80, 220, 80, 200)   # Medium toxic green
-        inner_color = (150, 255, 150, 220)  # Light toxic green
-        
-        # Use circles instead of ellipses for better blending
-        # Draw the base puddle shape as a circle
-        pygame.draw.circle(self.image, outer_color, center_point, size // 2 - 2)
-        
-        # Draw a smaller inner puddle
-        pygame.draw.circle(self.image, main_color, center_point, int(size * 0.4) - 1)
-        
-        # Draw the toxic center
-        pygame.draw.circle(self.image, inner_color, center_point, int(size * 0.25))
-        
-        # Add some toxic bubble details (small yellowish-green dots)
-        for _ in range(6):
-            # Calculate random angle and distance from center
-            angle = random.uniform(0, math.pi * 2)
-            distance = random.uniform(0, size // 4)  # Keep bubbles near center
             
-            # Convert polar to cartesian coordinates
-            dot_x = center_point[0] + int(math.cos(angle) * distance)
-            dot_y = center_point[1] + int(math.sin(angle) * distance)
+        if blood_texture:
+            # Use the blood texture as the base
+            self.image = blood_texture.copy()
             
-            dot_size = random.randint(1, 3)
-            # Yellowish bubbles for toxic effect
-            bubble_color = (220, 255, 150, 230)
-            pygame.draw.circle(self.image, bubble_color, (dot_x, dot_y), dot_size)
+            # Create a green overlay to tint the blood texture
+            green_overlay = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
+            green_overlay.fill((0, 255, 0, 100))  # Semi-transparent green
+            self.image.blit(green_overlay, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            
+            # Add a green glow around the edges
+            overlay = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
+            
+            # Add a green pulsing glow around the puddle
+            for i in range(6):
+                glow_radius = size // 2 + (5 - i) * 3
+                glow_alpha = 20 + i * 10  # More transparent on outside
+                # Use green glow for poison
+                glow_col = (50, 200, 50, glow_alpha)
+                pygame.draw.circle(overlay, glow_col, center_point, glow_radius)
+            
+            # Apply the overlay
+            self.image.blit(overlay, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+            
+            # Add some toxic bubble details
+            for _ in range(6):
+                angle = random.uniform(0, math.pi * 2)
+                distance = random.uniform(0, size // 4)
+                
+                dot_x = center_point[0] + int(math.cos(angle) * distance)
+                dot_y = center_point[1] + int(math.sin(angle) * distance)
+                
+                dot_size = random.randint(1, 3)
+                bubble_color = (220, 255, 150, 230)  # Yellowish-green for toxic effect
+                pygame.draw.circle(self.image, bubble_color, (dot_x, dot_y), dot_size)
+        else:
+            # Fallback to a manually drawn poison puddle if no texture
+            
+            # Draw the glow around the edges of the main puddle
+            for i in range(6):
+                glow_radius = size // 2 + (5 - i) * 3
+                glow_alpha = 20 + i * 10
+                glow_col = (50, 200, 50, glow_alpha)  # Green glow for poison
+                pygame.draw.circle(self.image, glow_col, center_point, glow_radius)
+            
+            # Main puddle colors - toxic green
+            outer_color = (40, 150, 40, 190)  # Dark toxic green
+            main_color = (80, 220, 80, 200)   # Medium toxic green
+            inner_color = (150, 255, 150, 220)  # Light toxic green
+            
+            # Draw the base puddle shape as a circle
+            pygame.draw.circle(self.image, outer_color, center_point, size // 2 - 2)
+            
+            # Draw a smaller inner puddle
+            pygame.draw.circle(self.image, main_color, center_point, int(size * 0.4) - 1)
+            
+            # Draw the toxic center
+            pygame.draw.circle(self.image, inner_color, center_point, int(size * 0.25))
+            
+            # Add some toxic bubble details
+            for _ in range(6):
+                angle = random.uniform(0, math.pi * 2)
+                distance = random.uniform(0, size // 4)
+                
+                dot_x = center_point[0] + int(math.cos(angle) * distance)
+                dot_y = center_point[1] + int(math.sin(angle) * distance)
+                
+                dot_size = random.randint(1, 3)
+                bubble_color = (220, 255, 150, 230)  # Yellowish-green for toxic effect
+                pygame.draw.circle(self.image, bubble_color, (dot_x, dot_y), dot_size)
         
         self.rect = self.image.get_rect(center=(x, y))
         self.true_center = (x, y)  # Store the exact center for accurate positioning
@@ -2761,7 +2804,7 @@ class PoisonTrail(pygame.sprite.Sprite):
         # Add pulse/glow effect
         self.pulse_time = random.uniform(0, math.pi * 2)  # Random start phase
         self.pulse_speed = 0.08  # Speed of pulsing
-        
+
     def update(self):
         # Check if the trail should disappear
         if pygame.time.get_ticks() - self.creation_time > self.duration:
