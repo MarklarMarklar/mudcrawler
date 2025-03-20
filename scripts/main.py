@@ -802,19 +802,29 @@ class Game:
                         
                         # Apply reflected damage to player
                         self.player.take_damage(reflected)
+                        
+                        # Different reflection effects based on boss level
+                        if hasattr(current_room.boss, 'level') and current_room.boss.level == 7:
+                            # Purple reflection particles for level 7 boss
+                            particle_color = (150, 50, 255)
+                            self.display_message(f"Shield reflected {int(reflected)} damage!", particle_color)
+                        else:
+                            # Blue reflection particles for level 4 boss
+                            particle_color = (0, 100, 255)
+                            self.display_message(f"Boss reflected {int(reflected)} damage!", particle_color)
+                            
                         # Create visual effect to show damage reflection
                         self.particle_system.create_particle(
-                            self.player.rect.centerx, 
-                            self.player.rect.centery,
-                            color=(0, 100, 255),  # Blue reflection particles
+                            current_room.boss.rect.centerx, 
+                            current_room.boss.rect.centery,
+                            color=particle_color,
                             size=random.randint(4, 8),
                             speed=random.uniform(1.0, 2.0),
                             lifetime=random.randint(20, 30)
                         )
+                        
                         # Reset reflected damage
                         current_room.boss.reflected_damage = 0
-                        # Show feedback message
-                        self.display_message(f"Boss reflected {int(reflected)} damage!", (0, 100, 255))
                     
                 # Check arrow collisions with boss
                 arrows_to_remove = []
@@ -831,19 +841,29 @@ class Game:
                                 
                                 # Apply reflected damage to player
                                 self.player.take_damage(reflected)
+                                
+                                # Different reflection effects based on boss level
+                                if hasattr(current_room.boss, 'level') and current_room.boss.level == 7:
+                                    # Purple reflection particles for level 7 boss
+                                    particle_color = (150, 50, 255)
+                                    self.display_message(f"Shield reflected {int(reflected)} damage!", particle_color)
+                                else:
+                                    # Blue reflection particles for level 4 boss
+                                    particle_color = (0, 100, 255)
+                                    self.display_message(f"Boss reflected {int(reflected)} damage!", particle_color)
+                                
                                 # Create visual effect to show damage reflection
                                 self.particle_system.create_particle(
-                                    self.player.rect.centerx, 
-                                    self.player.rect.centery,
-                                    color=(0, 100, 255),  # Blue reflection particles
+                                    current_room.boss.rect.centerx, 
+                                    current_room.boss.rect.centery,
+                                    color=particle_color,
                                     size=random.randint(4, 8),
                                     speed=random.uniform(1.0, 2.0),
                                     lifetime=random.randint(20, 30)
                                 )
+                                
                                 # Reset reflected damage
                                 current_room.boss.reflected_damage = 0
-                                # Show feedback message
-                                self.display_message(f"Boss reflected {int(reflected)} damage!", (0, 100, 255))
                             
                             arrows_to_remove.append(arrow)
                             break

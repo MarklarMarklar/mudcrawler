@@ -1270,6 +1270,19 @@ class Boss(Enemy):
         self.last_defensive_sound_time = 0  # Track when defensive sound was last played
         self.reflected_damage = 0  # Track damage to reflect during defensive mode
         
+        # Level 7 boss shield mode attributes (based on level 4)
+        if level == 7:
+            self.defensive_mode = False
+            self.defensive_mode_cooldown = 10000  # 10 seconds between shield activations
+            self.defensive_mode_duration = 4000   # 4 seconds in shield mode
+            self.last_defensive_mode_time = 0
+            self.defensive_mode_engaged = False
+            self.shield_growth = 0  # Track shield growth from 0 to 1 (0% to 100% additional size)
+            
+            # Initialize projectile capabilities for level 7 boss
+            self.projectiles = pygame.sprite.Group()
+            print("Initialized level 7 boss with projectile capabilities")
+        
         # Load defensive state image for level 4 boss
         self.defensive_image = None
         if level == 4:
@@ -1284,6 +1297,27 @@ class Boss(Enemy):
                     print(f"Defensive image not found at: {defensive_img_path}")
             except Exception as e:
                 print(f"Failed to load defensive image for level 4 boss: {e}")
+        
+        # Also use defensive image for level 7 boss (or load specific image if available)
+        if level == 7:
+            try:
+                defensive_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_7_def.png")
+                if os.path.exists(defensive_img_path):
+                    print(f"Loading defensive image from: {defensive_img_path}")
+                    self.defensive_image = self.asset_manager.load_image(
+                        defensive_img_path, scale=(TILE_SIZE*2.2, TILE_SIZE*2.2))
+                    print(f"Loaded defensive image for level 7 boss: {id(self.defensive_image)}")
+                else:
+                    # Try using level 4 defensive image as fallback
+                    defensive_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_4_def.png")
+                    if os.path.exists(defensive_img_path):
+                        print(f"Using level 4 defensive image for level 7 boss")
+                        self.defensive_image = self.asset_manager.load_image(
+                            defensive_img_path, scale=(TILE_SIZE*2.2, TILE_SIZE*2.2))
+                    else:
+                        print(f"Defensive image not found for level 7 boss")
+            except Exception as e:
+                print(f"Failed to load defensive image for level 7 boss: {e}")
         
         # Load teleportation casting image for level 6 boss
         self.teleport_cast_image = None
@@ -1826,7 +1860,7 @@ class Boss(Enemy):
         self.has_spotted_player = True
         
         # Clear any lingering reflected damage to prevent bugs
-        if self.level == 4:
+        if self.level == 4 or self.level == 7:
             # Always reset reflection when taking damage
             if not self.defensive_mode:
                 self.reflected_damage = 0  # Ensure no reflection when not in defensive mode
@@ -1838,6 +1872,17 @@ class Boss(Enemy):
             # we'll store the reflected damage amount so the game can apply it later
             self.reflected_damage = amount * 0.5  # Reflect 50% of damage
             print(f"Level 4 boss reflecting {self.reflected_damage} damage!")
+            
+            # Don't take damage during defensive mode
+            return False
+            
+        # Level 7 boss damage reflection during defensive mode (same as level 4)
+        if self.level == 7 and self.defensive_mode:
+            # Get the current game instance to access the player
+            # We need to reflect damage, but since we don't have direct access to the player,
+            # we'll store the reflected damage amount so the game can apply it later
+            self.reflected_damage = amount * 0.5  # Reflect 50% of damage
+            print(f"Level 7 boss reflecting {self.reflected_damage} damage!")
             
             # Don't take damage during defensive mode
             return False
@@ -2294,7 +2339,7 @@ class Boss(Enemy):
             self.velocity_y = 0
         
         # If level 4 boss is in defensive mode or level 5 boss is in casting mode, ensure it doesn't move
-        if (self.level == 4 and self.defensive_mode) or (self.level == 5 and self.casting_mode):
+        if (self.level == 4 and self.defensive_mode) or (self.level == 5 and self.casting_mode) or (self.level == 7 and self.defensive_mode):
             self.velocity_x = 0
             self.velocity_y = 0
             self.state = 'idle'
@@ -2380,16 +2425,41 @@ class Boss(Enemy):
                 self.image = alpha_surface
         
         # Update projectiles for level 2, 5, and 6 bosses
-        if self.level == 2 or self.level == 5 or self.level == 6:
-            self.projectiles.update()
-            
-            # Check for collisions with player
+        if self.level in [2, 5, 6]:
+            # Update projectiles
             for projectile in self.projectiles:
+                projectile.update()
+                
+                # Check collisions with player for level 2 boss
                 if projectile.check_collision(player.hitbox):
                     player.take_damage(projectile.damage)
                     # Only destroy non-orbiting projectiles
                     if not hasattr(projectile, 'is_orbiting') or not projectile.is_orbiting:
                         projectile.kill()
+            
+            # Remove projectiles that go off screen for level 2 boss
+            if self.level == 2:
+                screen_rect = pygame.Rect(0, 0, ROOM_WIDTH * TILE_SIZE, ROOM_HEIGHT * TILE_SIZE)
+                for projectile in list(self.projectiles):
+                    if not screen_rect.colliderect(projectile.rect):
+                        projectile.kill()
+        
+        # Update projectiles for level 7 boss
+        if self.level == 7:
+            # Update projectiles
+            for projectile in self.projectiles:
+                projectile.update()
+                
+                # Check collisions with player
+                if projectile.check_collision(player.hitbox):
+                    player.take_damage(projectile.damage)
+                    projectile.kill()
+            
+            # Remove projectiles that go off screen
+            screen_rect = pygame.Rect(0, 0, ROOM_WIDTH * TILE_SIZE, ROOM_HEIGHT * TILE_SIZE)
+            for projectile in list(self.projectiles):
+                if not screen_rect.colliderect(projectile.rect):
+                    projectile.kill()
         
         # Handle boss voice sound effect
         if distance <= detection_range:
@@ -2515,7 +2585,66 @@ class Boss(Enemy):
                     # Delete the end time so this only happens once per debuff
                     delattr(player, '_speed_debuff_end_time')
                     print("Player speed restored")
-
+        
+        # Level 7 boss shield mode logic (based on level 4)
+        if self.level == 7 and self.has_spotted_player:
+            # Use simpler logic than level 4 - just cycle between normal and shield mode
+            if not self.defensive_mode_engaged:
+                # Check if it's time to activate shield mode
+                time_since_last_defensive = current_time - self.last_defensive_mode_time
+                if time_since_last_defensive >= self.defensive_mode_cooldown:
+                    # Activate shield mode
+                    self.defensive_mode_engaged = True
+                    self.defensive_mode = True
+                    self.last_defensive_mode_time = current_time
+                    self.shield_growth = 0  # Start with original shield size
+                    
+                    # Store the current image to restore later
+                    self.normal_image = self.image
+                    
+                    # Switch to defensive image if available
+                    if self.defensive_image:
+                        self.image = self.defensive_image
+                        # Force it to be used immediately
+                        print(f"Switching to defensive image for level 7 boss: {id(self.defensive_image)}")
+                    
+                    # Play defensive sound
+                    self.sound_manager.play_sound("effects/boss_4_def")  # Reuse level 4 sound
+                    print(f"Level 7 boss entering shield mode at time {current_time}!")
+                    
+                    # Summon homing projectiles at the start of shield mode
+                    self.summon_homing_projectiles(player)
+                else:
+                    # Debug output to track the shield mode cooldown
+                    if current_time % 1000 < 20:  # Only print once per second approximately
+                        print(f"Time until level 7 shield mode: {self.defensive_mode_cooldown - time_since_last_defensive} ms")
+            else:
+                # Already in shield mode, check if it's time to deactivate
+                time_in_defensive_mode = current_time - self.last_defensive_mode_time
+                if time_in_defensive_mode >= self.defensive_mode_duration:
+                    # Deactivate shield mode
+                    self.defensive_mode_engaged = False
+                    self.defensive_mode = False
+                    
+                    # Restore normal image
+                    if hasattr(self, 'normal_image') and self.normal_image:
+                        self.image = self.normal_image
+                    
+                    # Ensure reflected damage is reset when leaving shield mode
+                    self.reflected_damage = 0
+                    
+                    # Play the boss voice when leaving shield mode
+                    voice_file = f"effects/boss_4_voice"  # Fallback to level 4 voice
+                    if os.path.exists(os.path.join(SOUND_PATH, f"effects/boss_7_voice.mp3")):
+                        voice_file = f"effects/boss_7_voice"
+                    self.sound_manager.play_sound(voice_file)
+                    self.last_voice_time = current_time
+                        
+                    print(f"Level 7 boss leaving shield mode at time {current_time}!")
+                else:
+                    # Update shield growth during the shield mode (0 to 1 over the duration)
+                    self.shield_growth = min(1.0, time_in_defensive_mode / self.defensive_mode_duration)
+        
     def draw(self, surface):
         # Draw resurrection effects if in blood puddle state
         if self.is_dead:
@@ -2664,8 +2793,71 @@ class Boss(Enemy):
                 shield_y = draw_y + self.image.get_height()//2 - shield_radius
                 surface.blit(shield_surface, (shield_x, shield_y))
             
+            # Draw shield mode effect for level 7 boss (based on level 4)
+            if self.level == 7 and self.defensive_mode:
+                current_time = pygame.time.get_ticks()
+                
+                # Create an expanding shield effect (grows to 200% of original size)
+                base_shield_size = self.image.get_width() * 1.2  # Base size (same as level 4)
+                expansion_factor = 1.0 + self.shield_growth  # Grows from 1x to 2x
+                shield_pulse = 0.1 * math.sin(current_time / 100)  # Subtle pulsing effect
+                shield_radius = int(base_shield_size / 2 * expansion_factor * (1 + shield_pulse))
+                
+                # Create a transparent surface for the shield
+                shield_surface = pygame.Surface((shield_radius * 2, shield_radius * 2), pygame.SRCALPHA)
+                
+                # Purple shield color with pulsing opacity (different from level 4's blue)
+                shield_alpha = int(100 + 50 * math.sin(current_time / 150))
+                
+                # Change shield color if damage was just reflected - make it brighter
+                if hasattr(self, 'reflected_damage') and self.reflected_damage > 0:
+                    shield_color = (150, 50, 255, shield_alpha + 50)  # Brighter purple shield
+                    # Also add an extra outer ring to show reflection
+                    reflection_radius = shield_radius + 10
+                    pygame.draw.circle(shield_surface, (255, 255, 255, shield_alpha // 2), 
+                                      (shield_radius, shield_radius), reflection_radius, 3)
+                else:
+                    shield_color = (128, 0, 255, shield_alpha)  # Regular purple shield
+                
+                # Draw shield
+                center = (shield_radius, shield_radius)
+                pygame.draw.circle(shield_surface, shield_color, center, shield_radius, 5)  # Outline shield
+                
+                # Draw energy lines within the shield
+                for i in range(8):  # 8 energy lines
+                    angle = i * math.pi / 4 + current_time / 500  # Rotate over time
+                    start_x = center[0] + math.cos(angle) * (shield_radius * 0.3)
+                    start_y = center[1] + math.sin(angle) * (shield_radius * 0.3)
+                    end_x = center[0] + math.cos(angle) * (shield_radius * 0.9)
+                    end_y = center[1] + math.sin(angle) * (shield_radius * 0.9)
+                    
+                    line_color = (200, 100, 255, shield_alpha)
+                    pygame.draw.line(shield_surface, line_color, (start_x, start_y), (end_x, end_y), 2)
+                
+                # Draw energy particles
+                for _ in range(5):  # Add 5 particles
+                    angle = random.uniform(0, math.pi * 2)
+                    dist = random.uniform(shield_radius * 0.5, shield_radius * 0.9)
+                    particle_x = center[0] + math.cos(angle) * dist
+                    particle_y = center[1] + math.sin(angle) * dist
+                    particle_size = random.randint(2, 4)
+                    
+                    particle_color = (220, 150, 255, 200)
+                    pygame.draw.circle(shield_surface, particle_color, 
+                                      (int(particle_x), int(particle_y)), particle_size)
+                
+                # Position and draw the shield
+                shield_x = draw_x + self.image.get_width()//2 - shield_radius
+                shield_y = draw_y + self.image.get_height()//2 - shield_radius
+                surface.blit(shield_surface, (shield_x, shield_y))
+            
             # Draw projectiles for level 2, 5 and 6 bosses
             if self.level in [2, 5, 6] and self.projectiles:
+                for projectile in self.projectiles:
+                    projectile.draw(surface)
+                    
+            # Draw projectiles for level 7 boss
+            if self.level == 7 and self.projectiles:
                 for projectile in self.projectiles:
                     projectile.draw(surface)
             
@@ -2730,6 +2922,62 @@ class Boss(Enemy):
             self.projectiles.add(projectile)
             
         print(f"Boss 5 cast 4 projectiles that will become stationary")
+
+    def summon_homing_projectiles(self, player):
+        """Summon 5 homing projectiles at random locations in the room"""
+        print("Boss 7 is summoning homing projectiles!")
+        
+        # Calculate room dimensions
+        room_width = ROOM_WIDTH * TILE_SIZE
+        room_height = ROOM_HEIGHT * TILE_SIZE
+        
+        # Create 5 projectiles at random locations
+        for _ in range(5):
+            # Generate a random position within the room, avoiding being too close to walls
+            margin = TILE_SIZE * 2  # Keep projectiles away from walls
+            x = random.randint(margin, room_width - margin)
+            y = random.randint(margin, room_height - margin)
+            
+            # Calculate direction to player
+            dx = player.rect.centerx - x
+            dy = player.rect.centery - y
+            distance = math.sqrt(dx * dx + dy * dy)
+            
+            # Normalize direction
+            if distance > 0:
+                dx = dx / distance
+                dy = dy / distance
+            else:
+                dx, dy = 0, -1
+            
+            # Create the projectile with a purple color to match the boss's shield
+            projectile = BossProjectile(
+                x, y, 
+                (dx, dy), 
+                speed=1.5,  # Moderate speed
+                damage=self.damage * 0.75,  # 75% of boss's damage
+                color=(160, 32, 240),  # Purple color to match the shield
+                is_homing=True  # Make it home in on the player
+            )
+            
+            # Configure homing behavior
+            projectile.player_target = player
+            projectile.homing_strength = 0.04  # More aggressive turning than normal
+            projectile.max_homing_time = 8000  # Home for 8 seconds
+            
+            # Enhance the trail effect for better visibility
+            projectile.trail_enabled = True
+            projectile.max_trail_length = 12  # Longer trail for dramatic effect
+            projectile.trail_update_rate = 1  # Update every frame for smoother trail
+            
+            # Increase projectile lifetime
+            projectile.max_distance = TILE_SIZE * 20  # Longer lifetime
+            
+            # Add to projectile group
+            self.projectiles.add(projectile)
+        
+        # Play sound effect for summoning
+        self.sound_manager.play_sound("effects/boss_cast")
 
 class PoisonTrail(pygame.sprite.Sprite):
     def __init__(self, x, y, size, damage):
