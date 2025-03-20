@@ -9,8 +9,36 @@ from asset_manager import get_asset_manager
 from sound_manager import get_sound_manager
 
 class BossProjectile(pygame.sprite.Sprite):
-    def __init__(self, x, y, direction, speed=1.4, damage=25, color=(255, 0, 0), is_orbiting=False, orbit_boss=None, orbit_angle=0, orbit_radius=0, orbit_speed=0, become_stationary=False, stationary_time=0):
+    def __init__(self, x, y, direction, speed=1.4, damage=25, color=(255, 0, 0), 
+                 is_orbiting=False, orbit_boss=None, orbit_angle=0, orbit_radius=0, orbit_speed=0, 
+                 become_stationary=False, stationary_time=0, is_homing=False):
         super().__init__()
+        self.x = x
+        self.y = y
+        self.direction = direction
+        self.speed = speed
+        self.damage = damage
+        self.color = color
+        self.is_orbiting = is_orbiting
+        self.orbit_boss = orbit_boss
+        self.orbit_angle = orbit_angle
+        self.orbit_radius = orbit_radius
+        self.orbit_speed = orbit_speed
+        
+        # Stationary projectile properties (for boss 5)
+        self.become_stationary = become_stationary
+        self.is_stationary = False
+        self.stationary_time = stationary_time
+        self.stationary_start_time = 0
+        self.stationary_duration = 0  # How long the projectile stays stationary
+        
+        # Homing projectile properties (for boss 6)
+        self.is_homing = is_homing
+        self.homing_strength = 0.03  # How quickly to adjust direction (lower = more gradual)
+        self.max_homing_time = 3000  # Stop homing after 3 seconds
+        self.homing_start_time = pygame.time.get_ticks()
+        self.player_target = None  # Will store reference to player
+        
         self.asset_manager = get_asset_manager()
         
         # For orbiting projectiles, use the ghost sprite instead of a colored ball
@@ -41,9 +69,6 @@ class BossProjectile(pygame.sprite.Sprite):
         self.rect.centery = y
         
         # Movement properties
-        self.direction = direction  # Tuple (dx, dy) - normalized direction
-        self.speed = speed
-        self.damage = damage
         self.distance_traveled = 0
         self.max_distance = TILE_SIZE * 10  # Projectiles disappear after traveling this distance
         
@@ -165,6 +190,56 @@ class BossProjectile(pygame.sprite.Sprite):
                 
                 # Update the image with rotation applied
                 self.image = rotated
+        elif self.is_homing and hasattr(self, 'player_target') and self.player_target:
+            # Only home for a limited time
+            if current_time - self.homing_start_time < self.max_homing_time:
+                # Calculate direction to player
+                dx = self.player_target.rect.centerx - self.rect.centerx
+                dy = self.player_target.rect.centery - self.rect.centery
+                distance = math.sqrt(dx * dx + dy * dy)
+                
+                if distance > 0:
+                    # Normalize
+                    target_dx = dx / distance
+                    target_dy = dy / distance
+                    
+                    # Gradually adjust direction toward player
+                    self.direction = (
+                        self.direction[0] * (1 - self.homing_strength) + target_dx * self.homing_strength,
+                        self.direction[1] * (1 - self.homing_strength) + target_dy * self.homing_strength
+                    )
+                    
+                    # Normalize the direction vector
+                    direction_length = math.sqrt(self.direction[0]**2 + self.direction[1]**2)
+                    if direction_length > 0:
+                        self.direction = (
+                            self.direction[0] / direction_length,
+                            self.direction[1] / direction_length
+                        )
+            
+            # Move the projectile with potentially adjusted direction
+            dx = self.direction[0] * self.speed
+            dy = self.direction[1] * self.speed
+            self.rect.x += dx
+            self.rect.y += dy
+            
+            # Track distance traveled
+            self.distance_traveled += math.sqrt(dx*dx + dy*dy)
+            
+            # Update trail for homing projectiles
+            if self.trail_enabled:
+                self.trail_frame_counter += 1
+                if self.trail_frame_counter >= self.trail_update_rate:
+                    self.trail_frame_counter = 0
+                    # Store position and image
+                    self.position_history.append((
+                        self.rect.x, 
+                        self.rect.y, 
+                        self.image.copy()
+                    ))
+                    
+                    if len(self.position_history) > self.max_trail_length:
+                        self.position_history.pop(0)
         elif not self.is_stationary:
             # Regular projectile movement for non-orbiting, non-stationary projectiles
             # Move the projectile
@@ -207,23 +282,74 @@ class BossProjectile(pygame.sprite.Sprite):
     def draw(self, surface):
         # Draw trailing effect first (under the main sprite)
         if self.trail_enabled and self.position_history:
-            # Draw position history for trailing effect
-            for i, (x, y, img) in enumerate(reversed(self.position_history)):
+            # Draw each position in the history
+            for i, (x, y, img) in enumerate(self.position_history):
                 # Calculate alpha (transparency) based on position in history
                 # Make the oldest ones more transparent
-                alpha = max(30, 150 - (i * 20))
+                alpha = max(20, 150 - (i * 15))
                 
-                # Create a copy of the sprite with alpha transparency
+                # Create a copy with alpha
                 ghost_img = img.copy()
-                # Set the alpha of the entire surface
                 ghost_img.set_alpha(alpha)
                 
-                # Draw the ghost sprite at the historical position
+                # Scale factor for shrinking trail (smaller as they get older)
+                if self.is_homing:
+                    # For homing projectiles, create a more dramatic scaling effect
+                    scale_factor = 1.0 - (i * 0.06)  # Decrease size more rapidly
+                    if scale_factor > 0.1:  # Minimum size threshold
+                        # Calculate new dimensions
+                        new_width = int(img.get_width() * scale_factor)
+                        new_height = int(img.get_height() * scale_factor)
+                        
+                        # Scale the image
+                        if new_width > 2 and new_height > 2:  # Prevent scaling to zero
+                            ghost_img = pygame.transform.scale(ghost_img, (new_width, new_height))
+                            
+                            # Recenter the scaled image
+                            offset_x = (img.get_width() - new_width) // 2
+                            offset_y = (img.get_height() - new_height) // 2
+                            
+                            # Draw at adjusted position
+                            surface.blit(ghost_img, (x + offset_x, y + offset_y))
+                    continue  # Skip the regular drawing for homing projectiles
+                
+                # Regular (non-homing) trail drawing
                 surface.blit(ghost_img, (x, y))
+        
+        # Special effects for homing projectiles
+        if self.is_homing:
+            # Create a pulsing glow effect around the projectile
+            pulse_size = int(self.rect.width * (1.2 + 0.2 * math.sin(pygame.time.get_ticks() / 100)))
+            glow_surface = pygame.Surface((pulse_size, pulse_size), pygame.SRCALPHA)
+            
+            # Use the projectile color for the glow with some alpha
+            glow_color = self.color + (100,)  # Add alpha value
+            
+            # Draw circular glow
+            pygame.draw.circle(glow_surface, glow_color, (pulse_size // 2, pulse_size // 2), pulse_size // 2)
+            
+            # Draw the glow centered on the projectile
+            glow_x = self.rect.centerx - pulse_size // 2
+            glow_y = self.rect.centery - pulse_size // 2
+            surface.blit(glow_surface, (glow_x, glow_y))
         
         # Draw the main projectile
         surface.blit(self.image, self.rect)
         
+        # Add extra effect for homing projectiles on top
+        if self.is_homing:
+            # Add a small bright core
+            core_size = max(4, int(self.rect.width * 0.3))
+            core_surface = pygame.Surface((core_size, core_size), pygame.SRCALPHA)
+            
+            # White core with high alpha
+            pygame.draw.circle(core_surface, (255, 255, 255, 200), (core_size // 2, core_size // 2), core_size // 2)
+            
+            # Draw the core centered in the projectile
+            core_x = self.rect.centerx - core_size // 2
+            core_y = self.rect.centery - core_size // 2
+            surface.blit(core_surface, (core_x, core_y))
+    
     def check_collision(self, player_rect):
         """Check if projectile collides with player"""
         if self.rect.colliderect(player_rect):
@@ -1033,6 +1159,21 @@ class Boss(Enemy):
             except Exception as e:
                 print(f"Failed to load defensive image for level 4 boss: {e}")
         
+        # Load teleportation casting image for level 6 boss
+        self.teleport_cast_image = None
+        if level == 6:
+            try:
+                cast_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_6_cast.png")
+                if os.path.exists(cast_img_path):
+                    print(f"Loading teleport cast image from: {cast_img_path}")
+                    self.teleport_cast_image = self.asset_manager.load_image(
+                        cast_img_path, scale=(TILE_SIZE*2.2, TILE_SIZE*2.2))
+                    print(f"Loaded teleport cast image for level 6 boss: {id(self.teleport_cast_image)}")
+                else:
+                    print(f"Teleport cast image not found at: {cast_img_path}")
+            except Exception as e:
+                print(f"Failed to load teleport cast image for level 6 boss: {e}")
+        
         # Level 2 boss uses projectiles
         self.projectiles = pygame.sprite.Group()
         self.projectile_cooldown = 0
@@ -1059,6 +1200,13 @@ class Boss(Enemy):
             self.teleport_start_time = 0
             self.teleport_target_pos = None
             self.teleport_alpha = 255  # For fade effect
+            
+            # Poison trail attributes
+            self.poison_trails = pygame.sprite.Group()
+            self.last_trail_time = 0
+            self.trail_interval = 300  # Create trail every 300ms
+            self.trail_size = int(TILE_SIZE * 1.0)  # Increased size of trail segments (was 0.6)
+            self.trail_damage = self.damage * 0.05  # Trail does 5% of boss damage
         
         # Phase system for special attacks
         self.phase = 0  # 0 = normal, 1 = <60% health, 2 = <30% health
@@ -1704,6 +1852,35 @@ class Boss(Enemy):
                     self.projectiles.add(projectile)
                 
                 return True
+            # Level 6 boss - melee-only special attack
+            elif self.level == 6:
+                # Check if player is within attack range before applying damage
+                dx = player.rect.centerx - self.rect.centerx
+                dy = player.rect.centery - self.rect.centery
+                distance = math.sqrt(dx * dx + dy * dy)
+                
+                # Only apply damage if player is within the attack range
+                if distance <= self.attack_range * 1.5:  # Slightly increased range for special attack
+                    damage_multiplier = 1 + (self.phase * 0.5)  # Damage increases with phase
+                    
+                    # Create visual effect to show the special attack - blue particles for Boss 6
+                    if hasattr(player, 'game') and player.game and hasattr(player.game, 'particle_system'):
+                        for _ in range(10):  # Create 10 particles
+                            offset_x = random.randint(-10, 10)
+                            offset_y = random.randint(-10, 10)
+                            player.game.particle_system.create_particle(
+                                player.rect.centerx + offset_x,
+                                player.rect.centery + offset_y,
+                                color=(50, 100, 255),  # Blue tint for Boss 6
+                                size=random.randint(3, 8),
+                                speed=random.uniform(0.8, 2.0),
+                                lifetime=random.randint(20, 35)
+                            )
+                    
+                    return player.take_damage(self.damage * damage_multiplier)
+                else:
+                    # Player is out of range, special attack misses
+                    return False
             else:
                 # Other bosses use the original special attack
                 # Check if player is within attack range before applying damage
@@ -1866,6 +2043,15 @@ class Boss(Enemy):
                     self.is_teleporting = True
                     self.teleport_start_time = current_time
                     self.teleport_alpha = 255
+                    
+                    # Store the current image to restore later
+                    self.normal_image = self.image
+                    
+                    # Switch to teleport cast image if available
+                    if self.teleport_cast_image:
+                        self.image = self.teleport_cast_image
+                        print(f"Switching to teleport cast image: {id(self.teleport_cast_image)}")
+                    
                     print(f"Boss 6 starting teleportation at time {current_time}")
             else:
                 # In teleportation process
@@ -1907,6 +2093,54 @@ class Boss(Enemy):
                     self.last_teleport_time = current_time  # Reset timer after teleport is complete
                     self.teleport_target_pos = None
                     self.teleport_alpha = 255
+                    
+                    # Restore normal image if we changed it for teleporting
+                    if hasattr(self, 'normal_image') and self.normal_image:
+                        self.image = self.normal_image
+                    
+                    # Shoot a projectile at the player when teleportation is complete
+                    # Calculate normalized direction vector to player
+                    dx = player.rect.centerx - self.rect.centerx
+                    dy = player.rect.centery - self.rect.centery
+                    length = math.sqrt(dx*dx + dy*dy)
+                    
+                    if length > 0:
+                        # Normalize
+                        dx = dx / length
+                        dy = dy / length
+                        
+                        # Create a homing teleport projectile with a unique purple color
+                        projectile = BossProjectile(
+                            self.rect.centerx, 
+                            self.rect.centery, 
+                            (dx, dy), 
+                            1.6,  # Slightly faster than Boss 2 projectiles
+                            self.damage * 1.2,  # 20% more damage than normal
+                            color=(160, 32, 240),  # Purple color for teleport projectile
+                            is_homing=True  # Enable homing behavior
+                        )
+                        
+                        # Store reference to player for homing
+                        projectile.player_target = player
+                        
+                        # Enhance the trail effect
+                        projectile.trail_enabled = True
+                        projectile.max_trail_length = 12  # Longer trail for dramatic effect
+                        projectile.trail_update_rate = 1   # Update every frame for smoother trail
+                        
+                        # Make it hunt the player more aggressively
+                        projectile.homing_strength = 0.04  # More aggressive turning
+                        projectile.max_homing_time = 5000  # Home for longer (5 seconds)
+                        
+                        # Increase projectile lifetime
+                        projectile.max_distance = TILE_SIZE * 20  # Double the normal distance
+                        
+                        # Add to projectile group
+                        self.projectiles.add(projectile)
+                        
+                        # Play a sound effect if available
+                        self.sound_manager.play_sound("effects/projectile")
+                    
                     print(f"Boss 6 teleportation complete at time {current_time}")
         
         # Level 2 boss: use special attack when player is in range but not in melee range
@@ -2006,7 +2240,9 @@ class Boss(Enemy):
         self.frame = int(self.animation_time) % len(self.animations[self.current_state][self.facing])
         
         # Only update image from animation frames if not in defensive mode (for level 4 boss)
-        if not (self.level == 4 and self.defensive_mode):
+        # and not teleporting (for level 6 boss)
+        if not ((self.level == 4 and self.defensive_mode) or 
+                (self.level == 6 and self.is_teleporting and hasattr(self, 'teleport_cast_image') and self.teleport_cast_image)):
             self.image = self.animations[self.current_state][self.facing][self.frame]
             
             # Apply teleportation fade effect for Boss 6
@@ -2017,8 +2253,8 @@ class Boss(Enemy):
                 alpha_surface.set_alpha(self.teleport_alpha)
                 self.image = alpha_surface
         
-        # Update projectiles for level 2 and 5 bosses
-        if self.level == 2 or self.level == 5:
+        # Update projectiles for level 2, 5, and 6 bosses
+        if self.level == 2 or self.level == 5 or self.level == 6:
             self.projectiles.update()
             
             # Check for collisions with player
@@ -2070,22 +2306,89 @@ class Boss(Enemy):
                 self.damage = int(self.enemy_data['damage'] * 1.5)
                 # Note: we deliberately do NOT increase attack_range here
                 self.phase = 2  # High phase for damage calculation
-                if random.random() < 0.05:
-                    self.special_attack(player)
+                
+                # Different special attack probabilities for different bosses
+                if self.level == 6:
+                    # Boss 6 has higher special attack chance in phase 2 (below 30% health)
+                    if random.random() < 0.08 and distance <= self.attack_range * 4:  # Requires being somewhat close
+                        self.special_attack(player)
+                else:
+                    if random.random() < 0.05:
+                        self.special_attack(player)
+                        
             elif health_percent < 0.6:
                 self.attack_cooldown = 750
                 self.speed = self.enemy_data['speed'] * 1.2
                 self.damage = int(self.enemy_data['damage'] * 1.2)
                 # Note: we deliberately do NOT increase attack_range here
                 self.phase = 1  # Medium phase for damage calculation
-                if random.random() < 0.03:
-                    self.special_attack(player)
+                
+                # Different special attack probabilities for different bosses
+                if self.level == 6:
+                    # Boss 6 has moderate special attack chance in phase 1 (30-60% health)
+                    if random.random() < 0.04 and distance <= self.attack_range * 3:  # Requires being close
+                        self.special_attack(player)
+                else:
+                    if random.random() < 0.03:
+                        self.special_attack(player)
             else:
                 self.phase = 0  # Base phase
+                
+                # Level 6 boss has the lowest special attack chance when at full health (phase 0)
+                if self.level == 6:
+                    if random.random() < 0.01 and distance <= self.attack_range * 2:  # Requires being very close
+                        self.special_attack(player)
                 
             # Safety check to ensure attack range doesn't change
             if self.attack_range != original_attack_range:
                 self.attack_range = original_attack_range
+        
+        # Update Boss 6 poison trails
+        if self.level == 6 and self.has_spotted_player:
+            # Update existing trails
+            self.poison_trails.update()
+            
+            # Create new trails while moving and not teleporting
+            current_time = pygame.time.get_ticks()
+            if not self.is_teleporting and self.state == 'chase' and (self.velocity_x != 0 or self.velocity_y != 0):
+                if current_time - self.last_trail_time >= self.trail_interval:
+                    # Create new trail at current position
+                    new_trail = PoisonTrail(
+                        self.rect.centerx, 
+                        self.rect.centery, 
+                        self.trail_size, 
+                        5  # Fixed damage value of 5 HP
+                    )
+                    self.poison_trails.add(new_trail)
+                    self.last_trail_time = current_time
+            
+            # Check for player collision with trails
+            for trail in self.poison_trails:
+                if trail.check_collision(player.hitbox):
+                    # Apply damage - fixed amount of 5, but only if cooldown allows
+                    if hasattr(trail, 'can_damage') and trail.can_damage():
+                        player.take_damage(1)  # Reduced to 1 damage per hit
+                    
+                    # Apply slow effect - simplified direct approach
+                    # Store original speed if first time
+                    if not hasattr(player, '_original_speed'):
+                        player._original_speed = player.speed
+                    
+                    # Apply the slow effect
+                    player.speed = player._original_speed * 0.5
+                    
+                    # Set the debuff end time
+                    player._speed_debuff_end_time = current_time + 2000  # 2 seconds
+                    print(f"Player speed reduced to 50% for 2 seconds")
+            
+            # Check if debuff should be removed - do this every frame
+            if hasattr(player, '_original_speed') and hasattr(player, '_speed_debuff_end_time'):
+                if current_time >= player._speed_debuff_end_time:
+                    # Restore original speed
+                    player.speed = player._original_speed
+                    # Delete the end time so this only happens once per debuff
+                    delattr(player, '_speed_debuff_end_time')
+                    print("Player speed restored")
 
     def draw(self, surface):
         # Draw resurrection effects if in blood puddle state
@@ -2235,10 +2538,15 @@ class Boss(Enemy):
                 shield_y = draw_y + self.image.get_height()//2 - shield_radius
                 surface.blit(shield_surface, (shield_x, shield_y))
             
-            # Draw projectiles for level 2 and 5 bosses
-            if self.level == 2 or self.level == 5:
+            # Draw projectiles for level 2, 5 and 6 bosses
+            if self.level in [2, 5, 6] and self.projectiles:
                 for projectile in self.projectiles:
                     projectile.draw(surface)
+            
+            # Draw poison trails for Boss 6
+            if self.level == 6 and self.poison_trails:
+                for trail in self.poison_trails:
+                    surface.blit(trail.image, trail.rect)
             
             # Draw health bar
             health_bar_width = 50  # Reduced from 60
@@ -2291,3 +2599,95 @@ class Boss(Enemy):
             self.projectiles.add(projectile)
             
         print(f"Boss 5 cast 4 projectiles that will become stationary")
+
+class PoisonTrail(pygame.sprite.Sprite):
+    def __init__(self, x, y, size, damage):
+        super().__init__()
+        # Create a larger surface to accommodate the glow effect
+        glow_size = int(size * 1.5)
+        self.image = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
+        
+        # Center offset for positioning the puddle on the larger surface
+        offset = (glow_size - size) // 2
+        center_point = (glow_size // 2, glow_size // 2)
+        
+        # Draw the glow around the edges of the main puddle
+        # Start with largest, most transparent circle and work inward
+        for i in range(6):
+            # Calculate radius from outside in
+            glow_radius = size // 2 + (5 - i) * 3
+            # Calculate alpha to increase toward the center
+            glow_alpha = 20 + i * 10  # More transparent on outside, more opaque toward center
+            # Create the glow color with proper alpha
+            glow_col = (50, 200, 50, glow_alpha)
+            # Draw the glow circle
+            pygame.draw.circle(self.image, glow_col, center_point, glow_radius)
+        
+        # Main puddle colors
+        outer_color = (40, 150, 40, 190)  # Dark toxic green
+        main_color = (80, 220, 80, 200)   # Medium toxic green
+        inner_color = (150, 255, 150, 220)  # Light toxic green
+        
+        # Use circles instead of ellipses for better blending
+        # Draw the base puddle shape as a circle
+        pygame.draw.circle(self.image, outer_color, center_point, size // 2 - 2)
+        
+        # Draw a smaller inner puddle
+        pygame.draw.circle(self.image, main_color, center_point, int(size * 0.4) - 1)
+        
+        # Draw the toxic center
+        pygame.draw.circle(self.image, inner_color, center_point, int(size * 0.25))
+        
+        # Add some toxic bubble details (small yellowish-green dots)
+        for _ in range(6):
+            # Calculate random angle and distance from center
+            angle = random.uniform(0, math.pi * 2)
+            distance = random.uniform(0, size // 4)  # Keep bubbles near center
+            
+            # Convert polar to cartesian coordinates
+            dot_x = center_point[0] + int(math.cos(angle) * distance)
+            dot_y = center_point[1] + int(math.sin(angle) * distance)
+            
+            dot_size = random.randint(1, 3)
+            # Yellowish bubbles for toxic effect
+            bubble_color = (220, 255, 150, 230)
+            pygame.draw.circle(self.image, bubble_color, (dot_x, dot_y), dot_size)
+        
+        self.rect = self.image.get_rect(center=(x, y))
+        self.true_center = (x, y)  # Store the exact center for accurate positioning
+        
+        # Pulse effect
+        self.damage = damage
+        self.creation_time = pygame.time.get_ticks()
+        self.duration = 12000  # 12 seconds lifetime (reduced from 15)
+        self.slow_duration = 2000  # 2 seconds slow effect
+        self.slow_amount = 0.5  # Reduce speed to 50%
+        
+        # Add damage cooldown
+        self.last_damage_time = 0
+        self.damage_cooldown = 1000  # 1 second between damage applications
+        
+        # Add pulse/glow effect
+        self.pulse_time = random.uniform(0, math.pi * 2)  # Random start phase
+        self.pulse_speed = 0.08  # Speed of pulsing
+        
+    def update(self):
+        # Check if the trail should disappear
+        if pygame.time.get_ticks() - self.creation_time > self.duration:
+            self.kill()
+            
+        # Update pulse effect
+        self.pulse_time += self.pulse_speed
+        if self.pulse_time > math.pi * 2:
+            self.pulse_time -= math.pi * 2
+
+    def check_collision(self, player_rect):
+        return self.rect.colliderect(player_rect)
+        
+    def can_damage(self):
+        # Check if the cooldown has elapsed
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_damage_time >= self.damage_cooldown:
+            self.last_damage_time = current_time
+            return True
+        return False
