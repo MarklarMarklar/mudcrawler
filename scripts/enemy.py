@@ -2424,6 +2424,7 @@ class Boss(Enemy):
         # Only update image from animation frames if not in defensive mode (for level 4 boss)
         # and not teleporting (for level 6 boss)
         if not ((self.level == 4 and self.defensive_mode) or 
+                (self.level == 7 and self.defensive_mode) or
                 (self.level == 6 and self.is_teleporting and hasattr(self, 'teleport_cast_image') and self.teleport_cast_image)):
             self.image = self.animations[self.current_state][self.facing][self.frame]
             
