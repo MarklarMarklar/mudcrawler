@@ -85,6 +85,7 @@ CONTROLS = {
     'move_right': ['K_d', 'K_RIGHT'],
     'attack_sword': ['K_SPACE'],
     'attack_bow': ['MOUSEBUTTONDOWN'],
+    'special_attack': ['K_e'],
     'interact': ['K_e'],
     'pause': ['K_ESCAPE']
 }

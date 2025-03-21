@@ -41,6 +41,12 @@ class Game:
         self.death_original_zoom = 2.0  # Store original zoom level
         self.death_target_zoom = 4.0  # Target zoom level for death sequence
         
+        # Special attack variables
+        self.special_attack_active = False
+        self.special_attack_data = None
+        self.special_attack_cooldown = 10000  # 10 seconds cooldown
+        self.last_special_attack_time = 0
+        
         # Debug: Print working directory
         print(f"Current working directory: {os.getcwd()}")
         print(f"Asset path: {ASSET_PATH}")
@@ -377,7 +383,9 @@ class Game:
                     # Toggle torch lighting with 'L' key
                     elif event.key == pygame.K_l:
                         self.torch_enabled = not self.torch_enabled
-                    
+                    elif event.key == pygame.K_e:
+                        self.activate_special_attack()
+                
             if self.state == PLAYING:
                 # Check if we're within the state transition cooldown period
                 current_time = pygame.time.get_ticks()
@@ -392,6 +400,8 @@ class Game:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_SPACE:
                         self.weapon_manager.attack_sword()
+                    elif event.key == pygame.K_e:
+                        self.activate_special_attack()
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
                         # Get screen mouse position
@@ -423,6 +433,13 @@ class Game:
         
         # Update particle system
         self.particle_system.update()
+        
+        # Handle special attack if active
+        if self.special_attack_active:
+            print(f"Special attack active - state: {self.special_attack_data['state']}, enemy index: {self.special_attack_data['current_enemy_index']}")
+            self._update_special_attack()
+            # Skip normal updates when special attack is active
+            return
         
         # Check if death sequence is active
         if self.death_sequence_active:
@@ -1504,6 +1521,194 @@ class Game:
         print(f"Game initialized. State: {self.state}")
         print(f"Screen size: {WINDOW_WIDTH}x{WINDOW_HEIGHT}")
         print(f"Camera zoom: {self.camera.zoom}x")
+
+    def activate_special_attack(self):
+        """Activate the special attack"""
+        # Check if player is near an interactable object (prioritize interaction)
+        if self.level and hasattr(self.level, 'is_near_interactable') and self.level.is_near_interactable(self.player):
+            # Let the interaction happen instead of special attack
+            return
+            
+        # Check if special attack is on cooldown
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_special_attack_time < self.special_attack_cooldown:
+            # Still on cooldown, show feedback
+            cooldown_remaining = (self.special_attack_cooldown - (current_time - self.last_special_attack_time)) // 1000
+            print(f"Special attack on cooldown: {cooldown_remaining}s remaining")
+            return
+            
+        # Check if there are enemies to attack
+        current_room = self.level.rooms[self.level.current_room_coords]
+        visible_enemies = [enemy for enemy in current_room.enemies.sprites() if enemy.health > 0]
+        
+        if not visible_enemies:
+            print("No enemies in range for special attack")
+            return
+            
+        # Store original player position for return after attack
+        original_pos = (self.player.rect.centerx, self.player.rect.centery)
+        
+        # Store original camera zoom
+        original_zoom = self.camera.zoom
+        
+        # Zoom out by 30%
+        new_zoom = original_zoom * 0.7  # 30% zoom out
+        self.camera.zoom = new_zoom
+        self.camera.view_width = self.camera.width / self.camera.zoom
+        self.camera.view_height = self.camera.height / self.camera.zoom
+        print(f"Camera zoomed out to {self.camera.zoom:.2f}x for special attack")
+        
+        # Initialize special attack data
+        self.special_attack_data = {
+            'state': 'init',
+            'enemies': visible_enemies,
+            'current_enemy_index': 0,
+            'original_player_pos': original_pos,
+            'original_camera_zoom': original_zoom,
+            'start_time': current_time,
+            'transition_time': 500,  # 500ms for each enemy transition
+            'damage': 50  # Damage per enemy hit
+        }
+        
+        # Activate special attack
+        self.special_attack_active = True
+        self.last_special_attack_time = current_time
+        
+        # Play special attack sound
+        self.sound_manager.play_sound("effects/sword_attack")  # Replace with special sound when available
+        
+        print(f"Special attack activated targeting {len(visible_enemies)} enemies")
+    
+    def _update_special_attack(self):
+        """Update special attack animation and effects"""
+        if not self.special_attack_active or not self.special_attack_data:
+            return
+            
+        current_time = pygame.time.get_ticks()
+        data = self.special_attack_data
+        
+        # Get references to necessary objects
+        enemies = data['enemies']
+        
+        # Handle different states of the special attack
+        if data['state'] == 'init':
+            # Just started, initiate movement to first enemy
+            if enemies:
+                data['state'] = 'moving'
+                data['target_pos'] = (enemies[0].rect.centerx, enemies[0].rect.centery)
+                data['move_start_time'] = current_time
+                print(f"Moving to enemy 1/{len(enemies)}")
+            else:
+                # No enemies to attack, finish
+                self._finish_special_attack()
+                
+        elif data['state'] == 'moving':
+            # Moving to next enemy
+            elapsed = current_time - data['move_start_time']
+            
+            if elapsed >= data['transition_time']:
+                # Arrived at enemy, damage it
+                enemy_idx = data['current_enemy_index']
+                if enemy_idx < len(enemies):
+                    enemy = enemies[enemy_idx]
+                    
+                    # Apply damage to the enemy
+                    enemy.take_damage(data['damage'])
+                    
+                    # Create blood particles for damage visualization
+                    self.particle_system.create_blood_splash(
+                        enemy.rect.centerx, enemy.rect.centery,
+                        amount=max(5, int(data['damage'] * 0.5))
+                    )
+                    
+                    # Apply screen shake for impact feedback
+                    self.trigger_screen_shake(amount=5, duration=10)
+                    
+                    # Play hit sound
+                    self.sound_manager.play_sound("effects/enemy_hit")
+                    
+                    # Prepare for next enemy or finish
+                    data['current_enemy_index'] += 1
+                    if data['current_enemy_index'] < len(enemies):
+                        # Move to next enemy
+                        next_enemy = enemies[data['current_enemy_index']]
+                        data['target_pos'] = (next_enemy.rect.centerx, next_enemy.rect.centery)
+                        data['move_start_time'] = current_time
+                        data['state'] = 'moving'
+                        print(f"Moving to enemy {data['current_enemy_index']+1}/{len(enemies)}")
+                    else:
+                        # All enemies damaged, return to original position
+                        data['target_pos'] = data['original_player_pos']
+                        data['move_start_time'] = current_time
+                        data['state'] = 'returning'
+                        print("All enemies hit, returning to original position")
+            else:
+                # Update player position during movement (visually only)
+                current_enemy_idx = data['current_enemy_index']
+                
+                # If moving to an enemy (not returning), set player position
+                if current_enemy_idx < len(enemies):
+                    progress = min(1.0, elapsed / data['transition_time'])
+                    
+                    # Calculate interpolation between current position and target
+                    if data['state'] == 'moving':
+                        # Get start position (either original or previous enemy)
+                        if current_enemy_idx == 0:
+                            start_pos = data['original_player_pos']
+                        else:
+                            prev_enemy = enemies[current_enemy_idx - 1]
+                            start_pos = (prev_enemy.rect.centerx, prev_enemy.rect.centery)
+                            
+                        # Interpolate position
+                        self.player.rect.centerx = int(start_pos[0] + (data['target_pos'][0] - start_pos[0]) * progress)
+                        self.player.rect.centery = int(start_pos[1] + (data['target_pos'][1] - start_pos[1]) * progress)
+                
+        elif data['state'] == 'returning':
+            # Returning to original position
+            elapsed = current_time - data['move_start_time']
+            
+            if elapsed >= data['transition_time']:
+                # Return complete, end special attack
+                self.player.rect.centerx = data['original_player_pos'][0]
+                self.player.rect.centery = data['original_player_pos'][1]
+                self._finish_special_attack()
+            else:
+                # Update player position during return
+                progress = min(1.0, elapsed / data['transition_time'])
+                
+                # Get start position (last enemy)
+                last_enemy = enemies[len(enemies) - 1]
+                start_pos = (last_enemy.rect.centerx, last_enemy.rect.centery)
+                
+                # Interpolate position
+                self.player.rect.centerx = int(start_pos[0] + (data['target_pos'][0] - start_pos[0]) * progress)
+                self.player.rect.centery = int(start_pos[1] + (data['target_pos'][1] - start_pos[1]) * progress)
+        
+        # Make camera follow player during special attack
+        self.camera.center_on_point(self.player.rect.centerx, self.player.rect.centery)
+    
+    def _finish_special_attack(self):
+        """Reset the special attack state"""
+        if self.special_attack_data:
+            # Ensure player is back at original position
+            orig_pos = self.special_attack_data['original_player_pos']
+            self.player.rect.centerx = orig_pos[0]
+            self.player.rect.centery = orig_pos[1]
+            
+            # Restore original camera zoom
+            orig_zoom = self.special_attack_data['original_camera_zoom']
+            self.camera.zoom = orig_zoom
+            self.camera.view_width = self.camera.width / self.camera.zoom
+            self.camera.view_height = self.camera.height / self.camera.zoom
+            print(f"Camera zoom restored to {self.camera.zoom:.2f}x after special attack")
+            
+            # Center camera on player's final position
+            self.camera.center_on_point(self.player.rect.centerx, self.player.rect.centery)
+            
+        # Reset special attack state
+        self.special_attack_active = False
+        self.special_attack_data = None
+        print("Special attack completed")
 
 if __name__ == "__main__":
     print("Initializing Mud Crawler game...")
