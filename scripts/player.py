@@ -893,43 +893,47 @@ class Player(pygame.sprite.Sprite):
         if self.is_dead:
             return
             
-        # Use mouse position for crosshair instead of attack_direction
-        # Calculate crosshair position based on mouse position
-        crosshair_size = TILE_SIZE // 3  # Size of the crosshair
-        
-        # The crosshair should be exactly at mouse position
-        end_x, end_y = self.mouse_pos
+        # Fixed distance from player for the direction indicator
+        indicator_distance = TILE_SIZE * 1.2  # Close distance from player
         
         # Start position at player center
         start_x = self.rect.centerx
         start_y = self.rect.centery
         
+        # Calculate vector from player to mouse
+        mouse_x, mouse_y = self.mouse_pos
+        dx = mouse_x - start_x
+        dy = mouse_y - start_y
+        
+        # Normalize the vector (make it unit length)
+        distance = math.sqrt(dx*dx + dy*dy)
+        if distance > 0:
+            dx = dx / distance
+            dy = dy / distance
+            
+        # Calculate indicator position at fixed distance from player
+        indicator_x = start_x + dx * indicator_distance
+        indicator_y = start_y + dy * indicator_distance
+        
         # Only draw the line in debug mode
         if DEBUG_HITBOXES:
-            # Draw line from player to crosshair (light and semi-transparent)
+            # Draw line from player to indicator (light and semi-transparent)
             pygame.draw.line(
                 surface, 
                 (255, 255, 255, 128),  # White with transparency
                 (start_x, start_y),
-                (int(end_x), int(end_y)),
+                (int(indicator_x), int(indicator_y)),
                 2
             )
         
-        # Always draw the crosshair
-        pygame.draw.circle(surface, (255, 0, 0), (int(end_x), int(end_y)), crosshair_size // 2, 2)
-        pygame.draw.line(
-            surface,
-            (255, 0, 0),
-            (int(end_x - crosshair_size // 2), int(end_y)),
-            (int(end_x + crosshair_size // 2), int(end_y)),
-            2
-        )
-        pygame.draw.line(
-            surface,
-            (255, 0, 0),
-            (int(end_x), int(end_y - crosshair_size // 2)),
-            (int(end_x), int(end_y + crosshair_size // 2)),
-            2
+        # Draw the indicator as a simple yellow dot
+        indicator_size = TILE_SIZE // 16  # Size of the dot
+        pygame.draw.circle(
+            surface, 
+            (255, 255, 0),  # Yellow color
+            (int(indicator_x), int(indicator_y)), 
+            indicator_size,  # Filled circle 
+            0  # 0 width means filled
         )
 
     def update_attack_direction_from_mouse(self, world_mouse_pos):
