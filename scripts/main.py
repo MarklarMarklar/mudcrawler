@@ -47,6 +47,10 @@ class Game:
         self.kill_counter = 0  # Counter of enemy kills
         self.kill_counter_max = 10  # Kills needed for special attack
         
+        # Special attack trail effect
+        self.special_attack_trail_positions = []  # List of positions for trail images
+        self.special_attack_trail_duration = 1500  # How long trail lasts in milliseconds (3x dodge trail)
+        
         # Debug: Print working directory
         print(f"Current working directory: {os.getcwd()}")
         print(f"Asset path: {ASSET_PATH}")
@@ -1034,6 +1038,31 @@ class Game:
             # Draw player to room surface
             self.player.draw(room_surface)
             
+            # Draw special attack trail if active
+            if self.special_attack_active and self.special_attack_trail_positions:
+                player_image = self.player.image.copy()  # Use current player image
+                
+                # Calculate the max alpha value (make it more visible than dodge trail)
+                max_alpha = 160  # Higher than dodge trail's 128
+                
+                # Calculate alpha for each trail position (newer positions are more opaque)
+                for i, pos in enumerate(self.special_attack_trail_positions):
+                    # Calculate progress (0 to 1) with newer positions having higher values
+                    progress = i / len(self.special_attack_trail_positions)
+                    
+                    # Calculate alpha (quadratic falloff for faster fading)
+                    alpha = int(max_alpha * (progress ** 2))
+                    
+                    # Create a copy with adjusted alpha
+                    ghost_image = player_image.copy()
+                    
+                    # Apply custom alpha
+                    ghost_image.fill((255, 150, 0, alpha), None, pygame.BLEND_RGBA_MULT)  # Yellow-orange tint
+                    
+                    # Draw ghost at stored position
+                    ghost_rect = ghost_image.get_rect(center=pos)
+                    room_surface.blit(ghost_image, ghost_rect)
+            
             # Draw particles
             self.particle_system.draw(room_surface, (0, 0))
         
@@ -1674,6 +1703,19 @@ class Game:
                         # Interpolate position
                         self.player.rect.centerx = int(start_pos[0] + (data['target_pos'][0] - start_pos[0]) * progress)
                         self.player.rect.centery = int(start_pos[1] + (data['target_pos'][1] - start_pos[1]) * progress)
+                        
+                        # Track positions for trail effect - store every few frames
+                        # We create more points than dodge for a longer trail
+                        if 'last_trail_time' not in data or current_time - data['last_trail_time'] > 30:  # Save position every 30ms
+                            # Add current position to trail
+                            self.special_attack_trail_positions.append((self.player.rect.centerx, self.player.rect.centery))
+                            
+                            # Keep only the last 10 positions (longer than dodge's 4)
+                            if len(self.special_attack_trail_positions) > 10:
+                                self.special_attack_trail_positions.pop(0)
+                            
+                            # Update last trail time
+                            data['last_trail_time'] = current_time
                 
         elif data['state'] == 'returning':
             # Returning to original position
@@ -1724,6 +1766,60 @@ class Game:
         # Reset kill counter after using special attack
         self.kill_counter = 0
         print("Special attack completed - kill counter reset")
+
+    def _start_special_attack(self, enemies):
+        """Start the special attack sequence."""
+        # For now, only allow if there are enemies to attack
+        if not enemies:
+            # There are no enemies to attack
+            debug_log("No enemies to perform special attack on")
+            return
+
+        # Activate special attack
+        self.special_attack_active = True
+        self.special_attack_trail_positions = []  # Reset trail positions
+        
+        # Set up special attack data
+        original_player_pos = (self.player.rect.centerx, self.player.rect.centery)
+        
+        # Order enemies by distance to player
+        # This creates a sequence where the player moves from one enemy to the next
+        ordered_enemies = sorted(enemies, key=lambda e: math.dist(
+            (self.player.rect.centerx, self.player.rect.centery), 
+            (e.rect.centerx, e.rect.centery)
+        ))
+        
+        self.special_attack_data = {
+            'enemies': ordered_enemies,
+            'current_enemy_idx': 0,
+            'start_time': pygame.time.get_ticks(),
+            'original_player_pos': original_player_pos,
+            'target_pos': (ordered_enemies[0].rect.centerx, ordered_enemies[0].rect.centery),
+            'state': 'moving',  # moving or attacking
+            'attack_start_time': 0,
+            'last_trail_time': pygame.time.get_ticks(),  # Track when we last saved a trail position
+        }
+        
+        # Reset the kill counter
+        self.kill_counter = 0
+        
+        # Make player temporarily invulnerable
+        self.player.make_invulnerable(3000)  # 3 seconds of invulnerability during special attack
+        
+        # Play special attack sound
+        self.sfx.play_sound('special_attack')
+
+    def _end_special_attack(self):
+        """End the special attack and return player to original position."""
+        if not self.special_attack_active:
+            return
+            
+        # Handle transition back to normal state
+        self.special_attack_active = False
+        self.special_attack_data = None
+        
+        # Clear trail positions
+        self.special_attack_trail_positions = []
 
 if __name__ == "__main__":
     print("Initializing Mud Crawler game...")
