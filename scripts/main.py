@@ -982,6 +982,8 @@ class Game:
             self.current_level += 1
             if self.current_level > self.max_levels:
                 self.state = VICTORY
+                # Play victory music when player wins
+                self.sound_manager.play_music('victory')
             else:
                 # Clear any existing arrows before changing levels
                 self.weapon_manager.clear_arrows()
@@ -994,7 +996,7 @@ class Game:
                 player_x, player_y = self.level.get_valid_player_start_position()
                 self.player.rect.centerx = player_x
                 self.player.rect.centery = player_y
-                
+        
         # Check if player died
         if self.player.is_dead and not self.death_sequence_active:
             # Start death sequence instead of immediately showing game over

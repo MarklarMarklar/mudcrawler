@@ -380,6 +380,18 @@ class Menu:
         except Exception as e:
             print(f"Failed to load custom game over image: {e}")
             
+        # Try to load custom victory image
+        try:
+            victory_custom_path = os.path.join(ASSET_PATH, "images/victory_screen.png")
+            if os.path.exists(victory_custom_path):
+                self.victory_custom_img = self.asset_manager.load_image(victory_custom_path, scale=(WINDOW_WIDTH, WINDOW_HEIGHT))
+                self.use_victory_custom_img = True
+                print(f"Successfully loaded custom victory image: {victory_custom_path}")
+            else:
+                print(f"Custom victory image not found: {victory_custom_path}")
+        except Exception as e:
+            print(f"Failed to load custom victory image: {e}")
+            
         # Try to load custom title image
         try:
             custom_title_path = os.path.join(ASSET_PATH, "images/title.png")
@@ -440,6 +452,10 @@ class Menu:
             ("Pause", "Escape"),
             ("Toggle Fullscreen", "F11")
         ]
+        
+        # Custom victory screen image
+        self.victory_custom_img = None
+        self.use_victory_custom_img = False
         
         # Set initial positions
         self._update_button_positions('main_menu')
@@ -620,17 +636,21 @@ class Menu:
         self.in_victory = True
         
         # Draw background
-        self.screen.blit(self.victory_bg, (0, 0))
+        if self.use_victory_custom_img and self.victory_custom_img:
+            self.screen.blit(self.victory_custom_img, (0, 0))
+        else:
+            self.screen.blit(self.victory_bg, (0, 0))
         
-        # Draw title with pixelated font
-        title = self.font.render("VICTORY!", True, GREEN)
-        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3))
-        self.screen.blit(title, title_rect)
-        
-        # Draw message with pixelated font
-        msg = self.font.render("Congratulations!", True, WHITE)
-        msg_rect = msg.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
-        self.screen.blit(msg, msg_rect)
+        # Draw title with pixelated font if not using custom image
+        if not self.use_victory_custom_img or self.victory_custom_img is None:
+            title = self.font.render("VICTORY!", True, GREEN)
+            title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3))
+            self.screen.blit(title, title_rect)
+            
+            # Draw message with pixelated font
+            msg = self.font.render("Congratulations!", True, WHITE)
+            msg_rect = msg.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
+            self.screen.blit(msg, msg_rect)
         
         # Draw buttons
         self.buttons['restart'].draw(self.screen)
@@ -766,25 +786,27 @@ class Menu:
         
         # Draw controls information
         y_offset = 150
-        left_column_x = WINDOW_WIDTH // 2 - 150
-        right_column_x = WINDOW_WIDTH // 2 + 70
+        # Further increase spacing between columns and move left column more to the left
+        left_column_x = WINDOW_WIDTH // 2 - 210
+        right_column_x = WINDOW_WIDTH // 2 + 60
         
         # Draw a semi-transparent background for controls list
-        controls_bg = pygame.Surface((350, len(self.controls_info) * 40 + 20))
+        # Make background even wider to prevent overlap
+        controls_bg = pygame.Surface((520, len(self.controls_info) * 45 + 30))
         controls_bg.fill((50, 50, 50))
         controls_bg.set_alpha(180)
-        controls_bg_rect = controls_bg.get_rect(center=(WINDOW_WIDTH // 2, y_offset + (len(self.controls_info) * 40) // 2))
+        controls_bg_rect = controls_bg.get_rect(center=(WINDOW_WIDTH // 2, y_offset + (len(self.controls_info) * 45) // 2))
         self.screen.blit(controls_bg, controls_bg_rect)
         
         # Draw each control with its key
         for i, (action, key) in enumerate(self.controls_info):
             # Draw action (left column)
             action_text = self.instruction_font.render(action + ":", True, (255, 255, 100))
-            self.screen.blit(action_text, (left_column_x, y_offset + i * 40))
+            self.screen.blit(action_text, (left_column_x, y_offset + i * 45))
             
             # Draw key (right column)
             key_text = self.instruction_font.render(key, True, WHITE)
-            self.screen.blit(key_text, (right_column_x, y_offset + i * 40))
+            self.screen.blit(key_text, (right_column_x, y_offset + i * 45))
         
         # Draw back button
         self.buttons['back'].draw(self.screen)
