@@ -375,9 +375,9 @@ class BossProjectile(pygame.sprite.Sprite):
         # Special rendering for Boss 8 floor projectiles
         if self.is_floor_projectile:
             if self.creation_time == 0:
-                # Warning phase - pulsing glow effect - making it smaller
-                pulse_size = int(TILE_SIZE * (0.4 + 0.1 * abs(math.sin(self.warning_pulse))))  # Reduced from 0.6+0.2
-                pulse_alpha = int(100 + 100 * abs(math.sin(self.warning_pulse)))
+                # Warning phase - pulsing glow effect - making it much smaller
+                pulse_size = int(TILE_SIZE * (0.25 + 0.05 * abs(math.sin(self.warning_pulse))))  # Reduced from 0.4+0.1
+                pulse_alpha = int(80 + 60 * abs(math.sin(self.warning_pulse)))  # Reduced alpha
                 
                 # Create a warning circle surface with transparency
                 warning_surface = pygame.Surface((pulse_size * 2, pulse_size * 2), pygame.SRCALPHA)
@@ -387,7 +387,7 @@ class BossProjectile(pygame.sprite.Sprite):
                 pygame.draw.circle(warning_surface, warning_color, (pulse_size, pulse_size), pulse_size)
                 
                 # Draw a darker inner circle for contrast
-                inner_size = int(pulse_size * 0.7)
+                inner_size = int(pulse_size * 0.6)  # Smaller inner circle
                 inner_color = (200, 100, 0, pulse_alpha)
                 pygame.draw.circle(warning_surface, inner_color, (pulse_size, pulse_size), inner_size)
                 
@@ -399,14 +399,14 @@ class BossProjectile(pygame.sprite.Sprite):
                 # Draw the main projectile sprite on top
                 surface.blit(self.image, self.rect.topleft)
             else:
-                # Active phase - more intense but smaller glow
+                # Active phase - more intense but much smaller glow
                 # Draw a bright glow around the projectile
-                glow_size = int(TILE_SIZE * 0.6)  # Reduced from 1.0
+                glow_size = int(TILE_SIZE * 0.3)  # Reduced from 0.6
                 glow_surface = pygame.Surface((glow_size * 2, glow_size * 2), pygame.SRCALPHA)
                 
                 # Create a radial gradient glow
-                for radius in range(glow_size, 0, -3):
-                    alpha = int(150 * (radius / glow_size))
+                for radius in range(glow_size, 0, -2):  # Larger steps for fewer circles
+                    alpha = int(120 * (radius / glow_size))  # Reduced alpha
                     color = (255, 100 + radius % 100, 0, alpha)  # Pulsing orange-red
                     pygame.draw.circle(glow_surface, color, (glow_size, glow_size), radius)
                 
@@ -417,6 +417,7 @@ class BossProjectile(pygame.sprite.Sprite):
                 
                 # Draw the main projectile on top
                 surface.blit(self.image, self.rect.topleft)
+        
         else:
             # Normal projectile rendering
             surface.blit(self.image, self.rect.topleft)
@@ -425,16 +426,16 @@ class BossProjectile(pygame.sprite.Sprite):
             if self.is_orbiting and hasattr(self, 'orbit_boss') and self.orbit_boss:
                 # For boss 8, draw a small flame trail behind orbiting projectiles
                 if hasattr(self, 'boss_level') and self.boss_level == 8:
-                    # Create a small flame trail
-                    trail_size = int(TILE_SIZE * 0.4)  # Smaller than the projectile
+                    # Create a very small flame trail
+                    trail_size = int(TILE_SIZE * 0.2)  # Reduced from 0.4
                     trail_surface = pygame.Surface((trail_size * 2, trail_size * 2), pygame.SRCALPHA)
                     
                     # Calculate trail direction (opposite to orbital movement)
                     trail_angle = self.orbit_angle - math.pi  # Opposite direction
                     
                     # Draw the flame trail as a gradient
-                    for radius in range(trail_size, 0, -2):
-                        alpha = int(100 * (radius / trail_size))
+                    for radius in range(trail_size, 0, -3):  # Larger steps for fewer circles
+                        alpha = int(80 * (radius / trail_size))  # Reduced alpha
                         color = (255, 100 + radius % 100, 0, alpha)  # Orange-red
                         
                         # Calculate offset based on angle
@@ -496,12 +497,12 @@ class BossProjectile(pygame.sprite.Sprite):
         if not self.is_orbiting:
             # For Boss 8 projectiles, use a smaller core to not obscure the fire animation
             if hasattr(self, 'boss_level') and self.boss_level == 8:
-                # Create a smaller white core
-                core_size = int(TILE_SIZE // 5)  # Reduced size for Boss 8
+                # Create a very small white core
+                core_size = int(TILE_SIZE // 8)  # Reduced from 1/5 to 1/8
                 core_surface = pygame.Surface((core_size, core_size), pygame.SRCALPHA)
                 
-                # White core with moderate alpha
-                pygame.draw.circle(core_surface, (255, 255, 255, 150), (core_size // 2, core_size // 2), core_size // 2)
+                # White core with lower alpha
+                pygame.draw.circle(core_surface, (255, 255, 255, 100), (core_size // 2, core_size // 2), core_size // 2)
             else:
                 # Create a small white core at the center for extra brightness (original behavior)
                 core_size = int(TILE_SIZE // 3)
