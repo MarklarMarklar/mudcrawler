@@ -1137,9 +1137,62 @@ class HUD:
                             (segment_x, arrow_bar_y + self.arrow_bar_rect.height), 
                             segment_width)
         
+        # Create and draw kill counter bar
+        # Position it below the arrow bar
+        kill_bar_height = 8
+        kill_bar_y = arrow_bar_y + self.arrow_bar_rect.height + 6
+        
+        # Get kill counter from game instance
+        kill_counter = 0
+        kill_counter_max = 10
+        if hasattr(player, 'game') and player.game:
+            kill_counter = player.game.kill_counter
+            kill_counter_max = player.game.kill_counter_max
+        
+        # Draw kill counter bar background
+        pygame.draw.rect(self.screen, (50, 50, 50), 
+                         (arrow_bar_x, kill_bar_y, 
+                         self.arrow_bar_rect.width, kill_bar_height))
+        
+        # Draw kill counter bar fill - use purple color for special attack
+        kill_percent = min(1.0, kill_counter / kill_counter_max)
+        kill_width = int(self.arrow_bar_rect.width * kill_percent)
+        
+        # Use purple color for special attack bar
+        if kill_percent == 1.0:
+            # Ready for special attack - pulsing bright purple
+            pulse = 0.5 + 0.5 * abs(math.sin(pygame.time.get_ticks() / 200))
+            # Interpolate between dark and bright purple
+            r = int(150 + (pulse * 105))  # 150-255
+            g = int(50 + (pulse * 50))    # 50-100
+            b = int(200 + (pulse * 55))   # 200-255
+            kill_bar_color = (r, g, b)
+        else:
+            # Normal purple color while charging
+            kill_bar_color = (150, 50, 200)
+            
+        pygame.draw.rect(self.screen, kill_bar_color,
+                         (arrow_bar_x, kill_bar_y,
+                         kill_width, kill_bar_height))
+        
+        # Draw segmented markers for kill counter (1 segment per kill)
+        segment_spacing = self.arrow_bar_rect.width / kill_counter_max
+        for i in range(1, kill_counter_max):
+            segment_x = arrow_bar_x + int(i * segment_spacing)
+            # Draw all segment markers regardless of fill, as a guide
+            pygame.draw.line(self.screen, (100, 30, 150),
+                             (segment_x, kill_bar_y),
+                             (segment_x, kill_bar_y + kill_bar_height),
+                             1)  # Thinner line for kill segments
+        
+        # Add small "SP" label for special attack
+        small_font = pygame.font.Font(None, 14)
+        sp_text = small_font.render("SP", True, (200, 100, 255))
+        self.screen.blit(sp_text, (arrow_bar_x - 22, kill_bar_y))
+        
         # Draw key icon if player has key
         if has_key and self.key_icon:
-            self.screen.blit(self.key_icon, (10, 66))
+            self.screen.blit(self.key_icon, (10, 76))  # Move down to accommodate new kill counter bar
     
     def draw_ui(self, player, level_number, audio_available=True, level=None, boss_health=None, boss_max_health=None, has_key=False, has_fire_sword=False, has_lightning_sword=False):
         """Draw all UI elements"""
@@ -1167,18 +1220,20 @@ class HUD:
             # Position the icon based on whether the player has a key
             bar_x, bar_y = self.get_health_bar_position()
             
+            # Add more offset to account for the additional kill counter bar
+            y_offset = 10
             if has_key:
                 # If player has key, position to right of key icon
                 fire_sword_x = bar_x + std_bar_width + 80  # Adjust as needed
-                fire_sword_y = bar_y
+                fire_sword_y = bar_y + y_offset
             else:
                 # No key, position to right of health bar
                 if self.use_custom_health_bar and self.health_bar_bg and self.health_bar_rect:
                     fire_sword_x = bar_x + self.health_bar_width + 10
-                    fire_sword_y = bar_y + (self.health_bar_height // 2) - (fire_sword_size // 2)
+                    fire_sword_y = bar_y + (self.health_bar_height // 2) - (fire_sword_size // 2) + y_offset
                 else:
                     fire_sword_x = bar_x + std_bar_width + 20
-                    fire_sword_y = bar_y
+                    fire_sword_y = bar_y + y_offset
             
             # Draw fire sword background glow with pulsing effect
             pulse = 0.5 + 0.5 * abs(math.sin(pygame.time.get_ticks() / 200))

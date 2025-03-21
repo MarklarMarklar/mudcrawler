@@ -44,8 +44,8 @@ class Game:
         # Special attack variables
         self.special_attack_active = False
         self.special_attack_data = None
-        self.special_attack_cooldown = 10000  # 10 seconds cooldown
-        self.last_special_attack_time = 0
+        self.kill_counter = 0  # Counter of enemy kills
+        self.kill_counter_max = 10  # Kills needed for special attack
         
         # Debug: Print working directory
         print(f"Current working directory: {os.getcwd()}")
@@ -770,7 +770,13 @@ class Game:
                             enemy.rect.centery,
                             amount=8
                         )
-                    enemy.take_damage(damage)
+                    
+                    # Apply damage and check if enemy was killed
+                    if enemy.take_damage(damage):
+                        # Enemy was killed, increment kill counter
+                        self.kill_counter += 1
+                        print(f"Enemy killed! Kill counter: {self.kill_counter}/{self.kill_counter_max}")
+                        
                     enemy.has_been_hit_this_swing = True  # Mark as hit for this swing
                     
                 # Check arrow collisions with enemies
@@ -778,7 +784,12 @@ class Game:
                 for arrow in self.weapon_manager.bow.arrows:
                     try:
                         if arrow.rect.colliderect(enemy.rect):
-                            enemy.take_damage(BOW_DAMAGE)
+                            # Apply damage and check if enemy was killed
+                            if enemy.take_damage(BOW_DAMAGE):
+                                # Enemy was killed, increment kill counter
+                                self.kill_counter += 1
+                                print(f"Enemy killed! Kill counter: {self.kill_counter}/{self.kill_counter_max}")
+                                
                             arrows_to_remove.append(arrow)
                             break
                     except Exception as e:
@@ -1529,12 +1540,11 @@ class Game:
             # Let the interaction happen instead of special attack
             return
             
-        # Check if special attack is on cooldown
-        current_time = pygame.time.get_ticks()
-        if current_time - self.last_special_attack_time < self.special_attack_cooldown:
-            # Still on cooldown, show feedback
-            cooldown_remaining = (self.special_attack_cooldown - (current_time - self.last_special_attack_time)) // 1000
-            print(f"Special attack on cooldown: {cooldown_remaining}s remaining")
+        # Check if kill counter has reached maximum
+        if self.kill_counter < self.kill_counter_max:
+            # Not enough kills for special attack
+            remaining = self.kill_counter_max - self.kill_counter
+            print(f"Special attack not ready: {self.kill_counter}/{self.kill_counter_max} kills")
             return
             
         # Check if there are enemies to attack
@@ -1565,14 +1575,13 @@ class Game:
             'current_enemy_index': 0,
             'original_player_pos': original_pos,
             'original_camera_zoom': original_zoom,
-            'start_time': current_time,
+            'start_time': pygame.time.get_ticks(),
             'transition_time': 500,  # 500ms for each enemy transition
             'damage': 50  # Damage per enemy hit
         }
         
         # Activate special attack
         self.special_attack_active = True
-        self.last_special_attack_time = current_time
         
         # Play special attack sound
         self.sound_manager.play_sound("effects/sword_attack")  # Replace with special sound when available
@@ -1613,7 +1622,10 @@ class Game:
                     enemy = enemies[enemy_idx]
                     
                     # Apply damage to the enemy
-                    enemy.take_damage(data['damage'])
+                    if enemy.take_damage(data['damage']):
+                        # Enemy was killed during special attack
+                        # We don't increment the kill counter for special attack kills
+                        print("Enemy killed during special attack")
                     
                     # Create blood particles for damage visualization
                     self.particle_system.create_blood_splash(
@@ -1708,7 +1720,10 @@ class Game:
         # Reset special attack state
         self.special_attack_active = False
         self.special_attack_data = None
-        print("Special attack completed")
+        
+        # Reset kill counter after using special attack
+        self.kill_counter = 0
+        print("Special attack completed - kill counter reset")
 
 if __name__ == "__main__":
     print("Initializing Mud Crawler game...")
