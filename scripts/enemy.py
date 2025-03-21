@@ -1419,6 +1419,9 @@ class Boss(Enemy):
         self.health = self.enemy_data['health']
         self.max_health = self.health
         
+        # Set boss damage directly from configuration
+        self.damage = self.enemy_data['damage']
+        
         # Use adjusted speeds for bosses
         self.speed = self.enemy_data['speed']
         
