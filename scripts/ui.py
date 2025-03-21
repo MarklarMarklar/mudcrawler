@@ -415,17 +415,31 @@ class Menu:
             'options': Button(self.center_x, 0, self.button_width, self.button_height, "Options", font_size=32),
             'quit': Button(self.center_x, 0, self.button_width, self.button_height, "Quit", font_size=32),
             'back': Button(self.center_x, 0, self.button_width, self.button_height, "Back", font_size=32),
-            'fullscreen': Button(self.center_x, 0, self.button_width, self.button_height, "Fullscreen: Off", font_size=28)
+            'fullscreen': Button(self.center_x, 0, self.button_width, self.button_height, "Fullscreen: Off", font_size=28),
+            'controls': Button(self.center_x, 0, self.button_width, self.button_height, "Controls", font_size=28)
         }
         
         # Track menu states
         self.showing_options = False
+        self.showing_controls = False
         self.in_pause_menu = False
         self.in_game_over = False
         self.in_victory = False
         
         # Track fullscreen state
         self.fullscreen_enabled = False
+        
+        # Game controls information
+        self.controls_info = [
+            ("Movement", "WASD / Arrow Keys"),
+            ("Aim", "Mouse"),
+            ("Throw", "Left Mouse Button"),
+            ("Dodge", "Right Mouse Button"),
+            ("Special Attack", "E"),
+            ("Melee Attack", "Spacebar"),
+            ("Pause", "Escape"),
+            ("Toggle Fullscreen", "F11")
+        ]
         
         # Set initial positions
         self._update_button_positions('main_menu')
@@ -464,8 +478,16 @@ class Menu:
             self.buttons['fullscreen'].rect.x = self.center_x
             self.buttons['fullscreen'].rect.y = WINDOW_HEIGHT // 2
             
+            self.buttons['controls'].rect.x = self.center_x
+            self.buttons['controls'].rect.y = WINDOW_HEIGHT // 2 + 70
+            
             self.buttons['back'].rect.x = self.center_x
             self.buttons['back'].rect.y = WINDOW_HEIGHT // 2 + 140
+            
+        elif menu_type == 'controls_menu':
+            # Position back button for controls menu
+            self.buttons['back'].rect.x = self.center_x
+            self.buttons['back'].rect.y = WINDOW_HEIGHT - 100
             
         elif menu_type == 'game_over' or menu_type == 'victory':
             # Position buttons for game over and victory screens
@@ -637,6 +659,7 @@ class Menu:
         
         # Draw option buttons
         self.buttons['fullscreen'].draw(self.screen)
+        self.buttons['controls'].draw(self.screen)
         self.buttons['back'].draw(self.screen)
         
     def toggle_fullscreen(self):
@@ -654,9 +677,12 @@ class Menu:
         # Define which buttons should be active based on current state
         active_buttons = []
         
-        if self.showing_options:
-            # Only fullscreen and back buttons are active in options menu
-            active_buttons = ['fullscreen', 'back']
+        if self.showing_controls:
+            # Only back button is active in controls menu
+            active_buttons = ['back']
+        elif self.showing_options:
+            # Fullscreen, controls and back buttons are active in options menu
+            active_buttons = ['fullscreen', 'controls', 'back']
         elif hasattr(self, 'in_pause_menu') and self.in_pause_menu:
             # Pause menu buttons
             active_buttons = ['resume', 'restart', 'options', 'quit']
@@ -720,6 +746,48 @@ class Menu:
             print(f"Successfully loaded welcome screen image: {welcome_path}")
         else:
             print(f"Welcome screen image not found: {welcome_path}")
+
+    # Add a new method to draw the controls menu
+    def draw_controls_menu(self):
+        """Draw the controls menu with game controls"""
+        # Update button positions first
+        self._update_button_positions('controls_menu')
+        
+        # Semi-transparent overlay
+        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+        overlay.fill((0, 0, 0))
+        overlay.set_alpha(128)
+        self.screen.blit(overlay, (0, 0))
+        
+        # Draw title with pixelated font
+        title = self.font.render("CONTROLS", True, WHITE)
+        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 80))
+        self.screen.blit(title, title_rect)
+        
+        # Draw controls information
+        y_offset = 150
+        left_column_x = WINDOW_WIDTH // 2 - 150
+        right_column_x = WINDOW_WIDTH // 2 + 70
+        
+        # Draw a semi-transparent background for controls list
+        controls_bg = pygame.Surface((350, len(self.controls_info) * 40 + 20))
+        controls_bg.fill((50, 50, 50))
+        controls_bg.set_alpha(180)
+        controls_bg_rect = controls_bg.get_rect(center=(WINDOW_WIDTH // 2, y_offset + (len(self.controls_info) * 40) // 2))
+        self.screen.blit(controls_bg, controls_bg_rect)
+        
+        # Draw each control with its key
+        for i, (action, key) in enumerate(self.controls_info):
+            # Draw action (left column)
+            action_text = self.instruction_font.render(action + ":", True, (255, 255, 100))
+            self.screen.blit(action_text, (left_column_x, y_offset + i * 40))
+            
+            # Draw key (right column)
+            key_text = self.instruction_font.render(key, True, WHITE)
+            self.screen.blit(key_text, (right_column_x, y_offset + i * 40))
+        
+        # Draw back button
+        self.buttons['back'].draw(self.screen)
 
 class HUD:
     def __init__(self, screen):

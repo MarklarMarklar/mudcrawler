@@ -286,16 +286,29 @@ class Game:
                         self.menu._update_button_positions('options_menu')
                     elif button_clicked == 'back':
                         print("Back button clicked")
+                        # If we're in the controls menu, go back to options
+                        if self.menu.showing_controls:
+                            self.menu.showing_controls = False
+                            self.menu.showing_options = True
+                            self.menu._update_button_positions('options_menu')
+                        else:
+                            # Otherwise normal back button behavior for options menu
+                            self.menu.showing_options = False
+                            # Update button positions when going back to previous menu
+                            if self.state == MENU:
+                                self.menu._update_button_positions('main_menu')
+                                # Reset pause menu flag if we were in options from main menu
+                                self.menu.in_pause_menu = False
+                            elif self.state == PAUSED:
+                                self.menu._update_button_positions('pause_menu')
+                                # Set pause menu flag if we were in options from pause menu
+                                self.menu.in_pause_menu = True
+                    elif button_clicked == 'controls':
+                        print("Controls button clicked")
+                        # Show controls menu
+                        self.menu.showing_controls = True
                         self.menu.showing_options = False
-                        # Update button positions when going back to previous menu
-                        if self.state == MENU:
-                            self.menu._update_button_positions('main_menu')
-                            # Reset pause menu flag if we were in options from main menu
-                            self.menu.in_pause_menu = False
-                        elif self.state == PAUSED:
-                            self.menu._update_button_positions('pause_menu')
-                            # Set pause menu flag if we were in options from pause menu
-                            self.menu.in_pause_menu = True
+                        self.menu._update_button_positions('controls_menu')
                     elif button_clicked == 'fullscreen':
                         print("Fullscreen toggle button clicked")
                         self.toggle_fullscreen()
@@ -997,7 +1010,9 @@ class Game:
         
         # Render based on game state
         if self.state == MENU:
-            if self.menu.showing_options:
+            if self.menu.showing_controls:
+                self.menu.draw_controls_menu()
+            elif self.menu.showing_options:
                 self.menu.draw_options_menu()
             else:
                 self.menu.draw_main_menu()
@@ -1005,7 +1020,9 @@ class Game:
             self.render_game()
         elif self.state == PAUSED:
             self.render_game()  # Draw game state in background
-            if self.menu.showing_options:
+            if self.menu.showing_controls:
+                self.menu.draw_controls_menu()
+            elif self.menu.showing_options:
                 self.menu.draw_options_menu()
             else:
                 self.menu.draw_pause_menu()
