@@ -11,7 +11,7 @@ from sound_manager import get_sound_manager
 class BossProjectile(pygame.sprite.Sprite):
     def __init__(self, x, y, direction, speed=1.4, damage=25, color=(255, 0, 0), 
                  is_orbiting=False, orbit_boss=None, orbit_angle=0, orbit_radius=0, orbit_speed=0, 
-                 become_stationary=False, stationary_time=0, is_homing=False):
+                 become_stationary=False, stationary_time=0, is_homing=False, boss_level=None):
         super().__init__()
         self.x = x
         self.y = y
@@ -24,6 +24,7 @@ class BossProjectile(pygame.sprite.Sprite):
         self.orbit_angle = orbit_angle
         self.orbit_radius = orbit_radius
         self.orbit_speed = orbit_speed
+        self.boss_level = boss_level  # Store which boss created this projectile
         
         # Stationary projectile properties (for boss 5)
         self.become_stationary = become_stationary
@@ -41,28 +42,54 @@ class BossProjectile(pygame.sprite.Sprite):
         
         self.asset_manager = get_asset_manager()
         
-        # For orbiting projectiles, use the ghost sprite instead of a colored ball
-        if is_orbiting:
-            ghost_path = os.path.join(ENEMY_SPRITES_PATH, "ghost", "ghost.png")
-            if os.path.exists(ghost_path):
-                # Load and scale the ghost image
-                self.image = self.asset_manager.load_image(ghost_path, scale=(TILE_SIZE//1.5, TILE_SIZE//1.5))
+        # Animation properties for boss 8 projectiles
+        self.animation_frames = []
+        self.animation_frame_index = 0
+        self.animation_speed = 0.1  # How fast to cycle through frames
+        self.animation_timer = 0
+        
+        # For boss 8, use the fire_ball animation for all projectiles
+        if boss_level == 8:
+            fire_ball_path = os.path.join(BOSS_SPRITES_PATH, "fire_ball.png")
+            if os.path.exists(fire_ball_path):
+                print(f"Loading fire_ball animation for boss 8 projectile")
+                
+                # Load the sprite sheet
+                sprite_sheet = self.asset_manager.load_image(fire_ball_path)
+                
+                # Calculate frame width based on 5 frames in the sprite sheet
+                frame_width = sprite_sheet.get_width() // 5
+                frame_height = sprite_sheet.get_height()
+                
+                # Determine the appropriate size - 150% of normal size
+                projectile_size = int(TILE_SIZE//1.5 * 1.5)
+                
+                # Adjust size for orbiting projectiles (to match others)
+                if is_orbiting:
+                    # Use the same size for consistency
+                    projectile_size = int(TILE_SIZE//1.5 * 1.5)
+                
+                # Extract individual frames
+                for i in range(5):
+                    # Create a new surface for each frame
+                    frame = pygame.Surface((frame_width, frame_height), pygame.SRCALPHA)
+                    # Copy the specific region from the sprite sheet
+                    frame.blit(sprite_sheet, (0, 0), (i * frame_width, 0, frame_width, frame_height))
+                    
+                    # Scale the frame to 150% of the normal size
+                    scaled_frame = pygame.transform.scale(frame, (projectile_size, projectile_size))
+                    self.animation_frames.append(scaled_frame)
+                
+                # Set the initial image to the first frame
+                self.image = self.animation_frames[0]
                 self.original_image = self.image.copy()
+                print(f"Created {len(self.animation_frames)} animation frames for boss 8 projectile")
             else:
-                print(f"Ghost image not found at {ghost_path}, using fallback")
-                self.create_projectile_image(color)
+                print(f"Fire ball image not found at {fire_ball_path}, using fallback")
+                self.choose_standard_projectile_image(is_orbiting, color)
         else:
-            # For non-orbiting projectiles, use the energy ball texture
-            energy_ball_path = os.path.join(BOSS_SPRITES_PATH, "energy_ball.png")
-            print(f"Looking for energy ball at: {energy_ball_path}")
-            if os.path.exists(energy_ball_path):
-                print(f"Energy ball texture found!")
-                # Load and scale the energy ball image
-                self.image = self.asset_manager.load_image(energy_ball_path, scale=(TILE_SIZE//1.5, TILE_SIZE//1.5))
-                self.original_image = self.image.copy()
-            else:
-                print(f"Energy ball image not found at {energy_ball_path}, using fallback")
-                self.create_projectile_image(color)
+            # Use standard projectile images for other bosses
+            self.choose_standard_projectile_image(is_orbiting, color)
         
         self.rect = self.image.get_rect()
         self.rect.centerx = x
@@ -85,8 +112,21 @@ class BossProjectile(pygame.sprite.Sprite):
         self.become_stationary = become_stationary
         self.stationary_time = stationary_time  # When to become stationary
         self.is_stationary = False
-        self.creation_time = pygame.time.get_ticks()
+        
+        # For Boss 8 floor projectiles, leave creation_time at 0 until activated
+        # For all other projectiles, initialize it now
+        if not (boss_level == 8 and become_stationary):
+            self.creation_time = pygame.time.get_ticks()
+        else:
+            self.creation_time = 0  # Will be set when activated
+            
         self.stationary_duration = 0  # How long to stay stationary (0 = forever)
+        
+        # Special properties for Boss 8 floor projectiles
+        self.is_floor_projectile = boss_level == 8 and become_stationary
+        self.is_active = False  # Will be set to True when activated after casting
+        self.warning_pulse = 0  # For warning effect during casting
+        self.warning_pulse_rate = 0.1
         
         # Trail effect properties
         self.trail_enabled = True
@@ -103,6 +143,31 @@ class BossProjectile(pygame.sprite.Sprite):
             # For ghost projectiles, use a slower pulse rate
             self.pulse_counter = 0
             self.pulse_rate = 0.05
+    
+    def choose_standard_projectile_image(self, is_orbiting, color):
+        """Choose the appropriate image for non-boss 8 projectiles"""
+        # For orbiting projectiles, use the ghost sprite instead of a colored ball
+        if is_orbiting:
+            ghost_path = os.path.join(ENEMY_SPRITES_PATH, "ghost", "ghost.png")
+            if os.path.exists(ghost_path):
+                # Load and scale the ghost image
+                self.image = self.asset_manager.load_image(ghost_path, scale=(TILE_SIZE//1.5, TILE_SIZE//1.5))
+                self.original_image = self.image.copy()
+            else:
+                print(f"Ghost image not found at {ghost_path}, using fallback")
+                self.create_projectile_image(color)
+        else:
+            # For non-orbiting projectiles, use the energy ball texture
+            energy_ball_path = os.path.join(BOSS_SPRITES_PATH, "energy_ball.png")
+            print(f"Looking for energy ball at: {energy_ball_path}")
+            if os.path.exists(energy_ball_path):
+                print(f"Energy ball texture found!")
+                # Load and scale the energy ball image
+                self.image = self.asset_manager.load_image(energy_ball_path, scale=(TILE_SIZE//1.5, TILE_SIZE//1.5))
+                self.original_image = self.image.copy()
+            else:
+                print(f"Energy ball image not found at {energy_ball_path}, using fallback")
+                self.create_projectile_image(color)
     
     def create_projectile_image(self, color):
         """Create a colored ball projectile image"""
@@ -127,6 +192,22 @@ class BossProjectile(pygame.sprite.Sprite):
     
     def update(self):
         current_time = pygame.time.get_ticks()
+        
+        # Update warning pulse for Boss 8 floor projectiles during casting
+        if self.is_floor_projectile and self.creation_time == 0:
+            self.warning_pulse += self.warning_pulse_rate
+            # Pulse will be used in draw method for visual effect
+        
+        # Update animation for boss 8 projectiles
+        if self.boss_level == 8 and self.animation_frames:
+            self.animation_timer += self.animation_speed
+            if self.animation_timer >= 1:
+                self.animation_timer = 0
+                self.animation_frame_index = (self.animation_frame_index + 1) % len(self.animation_frames)
+                old_center = self.rect.center
+                self.image = self.animation_frames[self.animation_frame_index]
+                self.rect = self.image.get_rect()
+                self.rect.center = old_center
         
         # Update position history for trailing effect
         if self.trail_enabled:
@@ -256,8 +337,8 @@ class BossProjectile(pygame.sprite.Sprite):
                 self.kill()
         else:
             # Projectile is stationary - check if it should expire
-            if self.stationary_duration > 0:
-                time_as_stationary = current_time - (self.creation_time + self.stationary_time)
+            if self.stationary_duration > 0 and self.creation_time > 0:
+                time_as_stationary = current_time - self.creation_time
                 if time_as_stationary >= self.stationary_duration:
                     self.kill()
                     return
@@ -284,66 +365,150 @@ class BossProjectile(pygame.sprite.Sprite):
         if self.trail_enabled and self.position_history:
             # Draw each position in the history
             for i, (x, y, img) in enumerate(self.position_history):
-                # Calculate alpha (transparency) based on position in history
-                # Make the oldest ones more transparent
-                alpha = max(20, 150 - (i * 15))
+                # Gradually fade out older trail segments
+                alpha = int(255 * (i / len(self.position_history)))
+                # Create a copy with adjusted alpha
+                fade_img = img.copy()
+                fade_img.set_alpha(alpha)
+                surface.blit(fade_img, (x, y))
+        
+        # Special rendering for Boss 8 floor projectiles
+        if self.is_floor_projectile:
+            if self.creation_time == 0:
+                # Warning phase - pulsing glow effect - making it smaller
+                pulse_size = int(TILE_SIZE * (0.4 + 0.1 * abs(math.sin(self.warning_pulse))))  # Reduced from 0.6+0.2
+                pulse_alpha = int(100 + 100 * abs(math.sin(self.warning_pulse)))
                 
-                # Create a copy with alpha
-                ghost_img = img.copy()
-                ghost_img.set_alpha(alpha)
+                # Create a warning circle surface with transparency
+                warning_surface = pygame.Surface((pulse_size * 2, pulse_size * 2), pygame.SRCALPHA)
+                warning_color = (255, 165, 0, pulse_alpha)  # Orange with variable alpha
                 
-                # Scale factor for shrinking trail (smaller as they get older)
-                if self.is_homing:
-                    # For homing projectiles, create a more dramatic scaling effect
-                    scale_factor = 1.0 - (i * 0.06)  # Decrease size more rapidly
-                    if scale_factor > 0.1:  # Minimum size threshold
-                        # Calculate new dimensions
-                        new_width = int(img.get_width() * scale_factor)
-                        new_height = int(img.get_height() * scale_factor)
+                # Draw the warning circle
+                pygame.draw.circle(warning_surface, warning_color, (pulse_size, pulse_size), pulse_size)
+                
+                # Draw a darker inner circle for contrast
+                inner_size = int(pulse_size * 0.7)
+                inner_color = (200, 100, 0, pulse_alpha)
+                pygame.draw.circle(warning_surface, inner_color, (pulse_size, pulse_size), inner_size)
+                
+                # Position the warning circle under the projectile sprite
+                warning_x = self.rect.centerx - pulse_size
+                warning_y = self.rect.centery - pulse_size
+                surface.blit(warning_surface, (warning_x, warning_y))
+                
+                # Draw the main projectile sprite on top
+                surface.blit(self.image, self.rect.topleft)
+            else:
+                # Active phase - more intense but smaller glow
+                # Draw a bright glow around the projectile
+                glow_size = int(TILE_SIZE * 0.6)  # Reduced from 1.0
+                glow_surface = pygame.Surface((glow_size * 2, glow_size * 2), pygame.SRCALPHA)
+                
+                # Create a radial gradient glow
+                for radius in range(glow_size, 0, -3):
+                    alpha = int(150 * (radius / glow_size))
+                    color = (255, 100 + radius % 100, 0, alpha)  # Pulsing orange-red
+                    pygame.draw.circle(glow_surface, color, (glow_size, glow_size), radius)
+                
+                # Position the glow under the projectile sprite
+                glow_x = self.rect.centerx - glow_size
+                glow_y = self.rect.centery - glow_size
+                surface.blit(glow_surface, (glow_x, glow_y))
+                
+                # Draw the main projectile on top
+                surface.blit(self.image, self.rect.topleft)
+        else:
+            # Normal projectile rendering
+            surface.blit(self.image, self.rect.topleft)
+            
+            # Draw additional effects for orbiting projectiles
+            if self.is_orbiting and hasattr(self, 'orbit_boss') and self.orbit_boss:
+                # For boss 8, draw a small flame trail behind orbiting projectiles
+                if hasattr(self, 'boss_level') and self.boss_level == 8:
+                    # Create a small flame trail
+                    trail_size = int(TILE_SIZE * 0.4)  # Smaller than the projectile
+                    trail_surface = pygame.Surface((trail_size * 2, trail_size * 2), pygame.SRCALPHA)
+                    
+                    # Calculate trail direction (opposite to orbital movement)
+                    trail_angle = self.orbit_angle - math.pi  # Opposite direction
+                    
+                    # Draw the flame trail as a gradient
+                    for radius in range(trail_size, 0, -2):
+                        alpha = int(100 * (radius / trail_size))
+                        color = (255, 100 + radius % 100, 0, alpha)  # Orange-red
                         
-                        # Scale the image
-                        if new_width > 2 and new_height > 2:  # Prevent scaling to zero
-                            ghost_img = pygame.transform.scale(ghost_img, (new_width, new_height))
+                        # Calculate offset based on angle
+                        offset_x = int(math.cos(trail_angle) * (trail_size - radius) * 0.5)
+                        offset_y = int(math.sin(trail_angle) * (trail_size - radius) * 0.5)
+                        
+                        # Draw the flame circle with offset
+                        pygame.draw.circle(trail_surface, color, 
+                                          (trail_size + offset_x, trail_size + offset_y), radius)
+                    
+                    # Position the trail behind the projectile
+                    trail_x = self.rect.centerx - trail_size
+                    trail_y = self.rect.centery - trail_size
+                    surface.blit(trail_surface, (trail_x, trail_y))
+                    
+                    # Draw connection line AFTER the trail but BEFORE the projectile
+                    
+                # Draw a faint connection line to the boss
+                line_start = self.rect.center
+                if hasattr(self.orbit_boss, 'rect'):
+                    line_end = self.orbit_boss.rect.center
+                    
+                    # Create a semi-transparent surface for the line
+                    line_surface = pygame.Surface((abs(line_start[0] - line_end[0]) + 4, 
+                                                 abs(line_start[1] - line_end[1]) + 4), pygame.SRCALPHA)
+                    
+                    # Adjust coordinates for the line surface
+                    local_start = (2, 2)
+                    local_end = (line_surface.get_width() - 2, line_surface.get_height() - 2)
+                    if line_start[0] > line_end[0]:
+                        local_start, local_end = (local_end[0], local_start[1]), (local_start[0], local_end[1])
+                    if line_start[1] > line_end[1]:
+                        local_start, local_end = (local_start[0], local_end[1]), (local_end[0], local_start[1])
+                    
+                    # Draw pulsing energy line
+                    for i in range(1, 4):
+                        alpha = 100 - i * 25
+                        width = 5 - i
+                        
+                        # For boss 8, use orange-red color for the connection line
+                        if hasattr(self, 'boss_level') and self.boss_level == 8:
+                            line_color = (255, 100, 0, alpha)  # Orange-red for fire
+                        else:
+                            line_color = (100, 100, 255, alpha)  # Blue for other bosses
                             
-                            # Recenter the scaled image
-                            offset_x = (img.get_width() - new_width) // 2
-                            offset_y = (img.get_height() - new_height) // 2
-                            
-                            # Draw at adjusted position
-                            surface.blit(ghost_img, (x + offset_x, y + offset_y))
-                    continue  # Skip the regular drawing for homing projectiles
+                        pygame.draw.line(line_surface, line_color, local_start, local_end, width)
+                    
+                    # Position and blit the line surface
+                    line_x = min(line_start[0], line_end[0]) - 2
+                    line_y = min(line_start[1], line_end[1]) - 2
+                    surface.blit(line_surface, (line_x, line_y))
                 
-                # Regular (non-homing) trail drawing
-                surface.blit(ghost_img, (x, y))
+                # Draw the orbiting projectile on top of all effects
+                if hasattr(self, 'boss_level') and self.boss_level == 8:
+                    # For boss 8, redraw the projectile to ensure it's on top
+                    surface.blit(self.image, self.rect.topleft)
         
-        # Special effects for homing projectiles
-        if self.is_homing:
-            # Create a pulsing glow effect around the projectile
-            pulse_size = int(self.rect.width * (1.2 + 0.2 * math.sin(pygame.time.get_ticks() / 100)))
-            glow_surface = pygame.Surface((pulse_size, pulse_size), pygame.SRCALPHA)
-            
-            # Use the projectile color for the glow with some alpha
-            glow_color = self.color + (100,)  # Add alpha value
-            
-            # Draw circular glow
-            pygame.draw.circle(glow_surface, glow_color, (pulse_size // 2, pulse_size // 2), pulse_size // 2)
-            
-            # Draw the glow centered on the projectile
-            glow_x = self.rect.centerx - pulse_size // 2
-            glow_y = self.rect.centery - pulse_size // 2
-            surface.blit(glow_surface, (glow_x, glow_y))
-        
-        # Draw the main projectile
-        surface.blit(self.image, self.rect)
-        
-        # Add extra effect for homing projectiles on top
-        if self.is_homing:
-            # Add a small bright core
-            core_size = max(4, int(self.rect.width * 0.3))
-            core_surface = pygame.Surface((core_size, core_size), pygame.SRCALPHA)
-            
-            # White core with high alpha
-            pygame.draw.circle(core_surface, (255, 255, 255, 200), (core_size // 2, core_size // 2), core_size // 2)
+        # Add a glowing core to all projectiles
+        if not self.is_orbiting:
+            # For Boss 8 projectiles, use a smaller core to not obscure the fire animation
+            if hasattr(self, 'boss_level') and self.boss_level == 8:
+                # Create a smaller white core
+                core_size = int(TILE_SIZE // 5)  # Reduced size for Boss 8
+                core_surface = pygame.Surface((core_size, core_size), pygame.SRCALPHA)
+                
+                # White core with moderate alpha
+                pygame.draw.circle(core_surface, (255, 255, 255, 150), (core_size // 2, core_size // 2), core_size // 2)
+            else:
+                # Create a small white core at the center for extra brightness (original behavior)
+                core_size = int(TILE_SIZE // 3)
+                core_surface = pygame.Surface((core_size, core_size), pygame.SRCALPHA)
+                
+                # White core with high alpha
+                pygame.draw.circle(core_surface, (255, 255, 255, 200), (core_size // 2, core_size // 2), core_size // 2)
             
             # Draw the core centered in the projectile
             core_x = self.rect.centerx - core_size // 2
@@ -352,8 +517,16 @@ class BossProjectile(pygame.sprite.Sprite):
     
     def check_collision(self, player_rect):
         """Check if projectile collides with player"""
+        # For Boss 8 floor projectiles, check if they've been activated
+        if hasattr(self, 'boss_level') and self.boss_level == 8 and self.is_stationary:
+            # Only allow damage after casting has been completed
+            # During casting, creation_time=0 and projectiles are visible but don't damage
+            # After casting completes, creation_time is set to the current time in the boss's update method
+            if self.creation_time == 0:
+                return False
+                
         if self.rect.colliderect(player_rect):
-            # Always return True for collision detection, but let the caller decide whether to destroy
+            # Collision detected and projectile is in a damage-dealing state
             return True
         return False
 
@@ -1172,7 +1345,8 @@ class Enemy(pygame.sprite.Sprite):
             self.projectile_speed, 
             self.projectile_damage, 
             self.projectile_color,
-            is_homing=True  # Make the projectile homing
+            is_homing=True,  # Make the projectile homing
+            boss_level=self.level if hasattr(self, 'level') else None  # Pass the boss level if available
         )
         
         # Set the player as the target for homing
@@ -1348,13 +1522,20 @@ class Boss(Enemy):
         self.orbiting_projectiles_created = False
         
         # Boss 5 casting mode attributes
-        if level == 5:
+        if level == 5 or level == 8:
             self.casting_mode = False
             self.casting_mode_cooldown = 6000  # 6 seconds between casts
             self.casting_mode_duration = 2000  # 2 seconds in casting mode
             self.last_cast_time = 0
             self.cast_complete = False
             self.stationary_projectile_duration = 6000  # How long projectiles stay in place
+            
+            # Special settings for Boss 8
+            if level == 8:
+                self.casting_mode_cooldown = 12000  # 12 seconds between casts
+                self.casting_mode_duration = 3000   # 3 seconds in casting mode
+                self.stationary_projectile_duration = 10000  # 10 seconds lifetime for projectiles
+                self.floor_projectiles = []  # Store floor projectiles for activation after casting
         
         # Boss 6 teleportation attributes
         if level == 6:
@@ -1546,8 +1727,8 @@ class Boss(Enemy):
                     # Try to load the new boss_8.png image
                     boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_8.png")
                     if os.path.exists(boss_img_path):
-                        # Load and scale the image
-                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2.3, TILE_SIZE*2.3))
+                        # Load and scale the image - slightly larger for this boss
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2.2, TILE_SIZE*2.2))
                         
                         # Use this image for all animation states
                         self.animations['idle'][direction] = [boss_img]
@@ -1961,7 +2142,8 @@ class Boss(Enemy):
                     (center_dx, center_dy), 
                     1.4, 
                     self.damage * 1.5, 
-                    color=(20, 150, 255)  # Brighter blue
+                    color=(20, 150, 255),  # Brighter blue
+                    boss_level=self.level  # Pass the boss level
                 )
                 
                 left_projectile = BossProjectile(
@@ -1970,7 +2152,8 @@ class Boss(Enemy):
                     (left_dx, left_dy), 
                     1.4, 
                     self.damage * 1.5, 
-                    color=(255, 0, 255)  # Magenta
+                    color=(255, 0, 255),  # Magenta
+                    boss_level=self.level  # Pass the boss level
                 )
                 
                 right_projectile = BossProjectile(
@@ -1979,7 +2162,8 @@ class Boss(Enemy):
                     (right_dx, right_dy), 
                     1.4, 
                     self.damage * 1.5, 
-                    color=(255, 165, 0)  # Orange
+                    color=(255, 165, 0),  # Orange
+                    boss_level=self.level  # Pass the boss level
                 )
                 
                 # Add to projectile group
@@ -1988,8 +2172,8 @@ class Boss(Enemy):
                 return False
                 
             # Level 5 boss - create orbiting projectiles when first spotted
-            elif self.level == 5 and not self.orbiting_projectiles_created:
-                print("Creating orbiting projectiles for Boss 5")
+            elif self.level == 5 or self.level == 8:
+                print(f"Creating orbiting projectiles for Boss {self.level}")
                 
                 # Set the flag so we only create these once
                 self.orbiting_projectiles_created = True
@@ -2008,8 +2192,11 @@ class Boss(Enemy):
                     spawn_x = self.rect.centerx + math.cos(angle) * orbit_radius
                     spawn_y = self.rect.centery + math.sin(angle) * orbit_radius
                     
-                    # Color is ignored for orbiting projectiles which use the ghost sprite
-                    color = (255, 0, 0)  # Placeholder color
+                    # For boss 8, use the fire ball animation
+                    if self.level == 8:
+                        color = (255, 100, 0)  # Orange-red color for fire
+                    else:
+                        color = (255, 0, 0)  # Red color for boss 5
                     
                     # Create orbiting projectile - reduced damage by 97% to balance the continuous hits
                     projectile = BossProjectile(
@@ -2022,7 +2209,8 @@ class Boss(Enemy):
                         orbit_boss=self,
                         orbit_angle=angle,
                         orbit_radius=orbit_radius,
-                        orbit_speed=0.015  # Angular velocity - reduced by 50%
+                        orbit_speed=0.015,  # Angular velocity - reduced by 50%
+                        boss_level=self.level  # Pass the boss level for animated projectiles
                     )
                     
                     # Add to projectile group
@@ -2117,9 +2305,9 @@ class Boss(Enemy):
             detection_range *= 2  # Double the detection range
         
         if distance <= detection_range:
-            # If Boss 5 spots the player for the first time, create orbiting projectiles
-            if self.level == 5 and not self.has_spotted_player and not self.orbiting_projectiles_created:
-                print("Boss 5 spotted player, creating orbiting projectiles")
+            # If Boss 5 or Boss 8 spots the player for the first time, create orbiting projectiles
+            if (self.level == 5 or self.level == 8) and not self.has_spotted_player and not self.orbiting_projectiles_created:
+                print(f"Boss {self.level} spotted player, creating orbiting projectiles")
                 self.special_attack(player)
             
             self.has_spotted_player = True
@@ -2184,7 +2372,7 @@ class Boss(Enemy):
                     print(f"Level 4 boss leaving defensive mode at time {current_time}!")
         
         # Level 5 boss casting mode logic
-        if self.level == 5 and self.has_spotted_player:
+        if (self.level == 5 or self.level == 8) and self.has_spotted_player:
             if not self.casting_mode:
                 # Check if it's time to activate casting mode
                 time_since_last_cast = current_time - self.last_cast_time
@@ -2193,14 +2381,14 @@ class Boss(Enemy):
                     self.casting_mode = True
                     self.cast_complete = False
                     self.last_cast_time = current_time
-                    print(f"Boss 5 entering casting mode at time {current_time}")
+                    print(f"Boss {self.level} entering casting mode at time {current_time}")
             else:
                 # In casting mode
                 time_in_casting = current_time - self.last_cast_time
                 
                 # Fire projectiles when casting starts
                 if not self.cast_complete:
-                    # Create 4 projectiles in random directions
+                    # Create projectiles appropriate for this boss level
                     self.cast_projectiles(player)
                     self.cast_complete = True
                 
@@ -2208,7 +2396,16 @@ class Boss(Enemy):
                 if time_in_casting >= self.casting_mode_duration:
                     # Deactivate casting mode
                     self.casting_mode = False
-                    print(f"Boss 5 leaving casting mode at time {current_time}")
+                    print(f"Boss {self.level} leaving casting mode at time {current_time}")
+                    
+                    # For Boss 8, activate floor projectiles when casting completes
+                    if self.level == 8 and hasattr(self, 'floor_projectiles'):
+                        for projectile in self.floor_projectiles:
+                            # Set creation time to now for duration tracking
+                            projectile.creation_time = current_time
+                        print(f"Activated {len(self.floor_projectiles)} floor projectiles for damage")
+                        # Clear the list (but not the projectiles themselves)
+                        self.floor_projectiles = []
         
         # Boss 6 teleportation logic
         if self.level == 6 and self.has_spotted_player:
@@ -2297,7 +2494,8 @@ class Boss(Enemy):
                             1.6,  # Slightly faster than Boss 2 projectiles
                             self.damage * 1.2,  # 20% more damage than normal
                             color=(160, 32, 240),  # Purple color for teleport projectile
-                            is_homing=True  # Enable homing behavior
+                            is_homing=True,  # Enable homing behavior
+                            boss_level=self.level  # Pass the boss level for animated projectiles
                         )
                         
                         # Store reference to player for homing
@@ -2335,8 +2533,8 @@ class Boss(Enemy):
             self.velocity_x = 0
             self.velocity_y = 0
             self.attack(player)
-        elif self.has_spotted_player and not (self.level == 4 and self.defensive_mode) and not (self.level == 5 and self.casting_mode):
-            # Chase state - always chase once spotted (unless level 4 boss in defensive mode or level 5 boss in casting mode)
+        elif self.has_spotted_player and not (self.level == 4 and self.defensive_mode) and not ((self.level == 5 or self.level == 8) and self.casting_mode):
+            # Chase state - always chase once spotted (unless level 4 boss in defensive mode or level 5/8 boss in casting mode)
             # Level 7 boss can chase even during defensive mode after cast is complete
             self.state = 'chase'
             self.current_state = 'walk'
@@ -2348,9 +2546,9 @@ class Boss(Enemy):
             self.velocity_x = 0
             self.velocity_y = 0
         
-        # If level 4 boss is in defensive mode or level 5 boss is in casting mode, ensure it doesn't move
+        # If level 4 boss is in defensive mode or level 5/8 boss is in casting mode, ensure it doesn't move
         # Level 7 boss only stops during the actual shield casting, not after dropping the shield
-        if (self.level == 4 and self.defensive_mode) or (self.level == 5 and self.casting_mode) or (self.level == 7 and self.defensive_mode and not self.cursed_shield_dropped):
+        if (self.level == 4 and self.defensive_mode) or ((self.level == 5 or self.level == 8) and self.casting_mode) or (self.level == 7 and self.defensive_mode and not self.cursed_shield_dropped):
             self.velocity_x = 0
             self.velocity_y = 0
             self.state = 'idle'
@@ -2436,8 +2634,8 @@ class Boss(Enemy):
                 alpha_surface.set_alpha(self.teleport_alpha)
                 self.image = alpha_surface
         
-        # Update projectiles for level 2, 5, and 6 bosses
-        if self.level in [2, 5, 6]:
+        # Update projectiles for level 2, 5, 6, and 8 bosses
+        if self.level in [2, 5, 6, 8]:
             # Update projectiles
             for projectile in self.projectiles:
                 projectile.update()
@@ -2930,8 +3128,8 @@ class Boss(Enemy):
                 shield_y = draw_y + self.image.get_height()//2 - shield_radius
                 surface.blit(shield_surface, (shield_x, shield_y))
             
-            # Draw projectiles for level 2, 5 and 6 bosses
-            if self.level in [2, 5, 6] and self.projectiles:
+            # Draw projectiles for level 2, 5, 6 and 8 bosses
+            if self.level in [2, 5, 6, 8] and self.projectiles:
                 for projectile in self.projectiles:
                     projectile.draw(surface)
                     
@@ -2965,10 +3163,75 @@ class Boss(Enemy):
                 projectile.draw(surface)
         
     def cast_projectiles(self, player):
-        """Create projectiles that become stationary after a delay for Boss 5"""
-        if self.level != 5:
+        """Create projectiles that become stationary after a delay for Boss 5 and 8"""
+        if self.level != 5 and self.level != 8:
             return
             
+        # Different behavior for Boss 8
+        if self.level == 8:
+            # Clear any existing floor projectiles that haven't been activated yet
+            self.floor_projectiles = []
+            
+            # Select random half of the room (top, bottom, left, or right)
+            half_type = random.choice(['top', 'bottom', 'left', 'right'])
+            
+            # Calculate room dimensions in tiles
+            room_width_tiles = ROOM_WIDTH
+            room_height_tiles = ROOM_HEIGHT
+            
+            # Determine which tiles to cover based on the selected half
+            start_x, end_x = 0, room_width_tiles
+            start_y, end_y = 0, room_height_tiles
+            
+            if half_type == 'top':
+                end_y = room_height_tiles // 2
+            elif half_type == 'bottom':
+                start_y = room_height_tiles // 2
+            elif half_type == 'left':
+                end_x = room_width_tiles // 2
+            elif half_type == 'right':
+                start_x = room_width_tiles // 2
+            
+            print(f"Boss 8 casting on {half_type} half of room: x({start_x}-{end_x}), y({start_y}-{end_y})")
+            
+            # Place projectiles on each tile in the selected half
+            spacing = 2  # Place a projectile every 2 tiles to avoid overcrowding
+            
+            for y in range(start_y, end_y, spacing):
+                for x in range(start_x, end_x, spacing):
+                    # Convert tile coordinates to pixel coordinates
+                    pixel_x = x * TILE_SIZE + TILE_SIZE // 2
+                    pixel_y = y * TILE_SIZE + TILE_SIZE // 2
+                    
+                    # Create the projectile (inactive until casting completes)
+                    projectile = BossProjectile(
+                        pixel_x,
+                        pixel_y,
+                        (0, 0),  # No movement
+                        0,  # No speed
+                        self.damage * 0.15,  # Increased damage to 15% of boss damage
+                        color=(255, 100, 0),  # Orange-red for fire
+                        become_stationary=True,
+                        stationary_time=0,  # Already stationary
+                        boss_level=self.level  # For animation - same as orbiting projectiles
+                    )
+                    
+                    # Set to inactive until casting completes (creation_time=0 disables collision damage)
+                    projectile.is_stationary = True
+                    
+                    # Set the projectile's lifetime
+                    projectile.stationary_duration = self.stationary_projectile_duration
+                    
+                    # Add to our list of floor projectiles to be activated after casting
+                    self.floor_projectiles.append(projectile)
+                    
+                    # Add to sprite group for rendering
+                    self.projectiles.add(projectile)
+            
+            print(f"Boss 8 placed {len(self.floor_projectiles)} floor projectiles")
+            return
+        
+        # Original behavior for Boss 5
         # Create 4 projectiles in random directions
         for i in range(4):
             # Generate random angle and distance
@@ -2991,7 +3254,8 @@ class Boss(Enemy):
                 self.damage * 0.03,  # Very low damage like orbiting projectiles
                 color=color,
                 become_stationary=True,
-                stationary_time=self.casting_mode_duration  # Become stationary after cast completes
+                stationary_time=self.casting_mode_duration,  # Become stationary after cast completes
+                boss_level=self.level  # Pass the boss level for animated projectiles
             )
             
             # Set the stationary duration to match the cooldown
@@ -3000,7 +3264,7 @@ class Boss(Enemy):
             # Add to projectile group
             self.projectiles.add(projectile)
             
-        print(f"Boss 5 cast 4 projectiles that will become stationary")
+        print(f"Boss {self.level} cast 4 projectiles that will become stationary")
 
     def summon_homing_projectiles(self, player):
         """Summon 5 homing projectiles at random locations in the room"""
@@ -3036,7 +3300,8 @@ class Boss(Enemy):
                 speed=1.5,  # Moderate speed
                 damage=self.damage * 0.75,  # 75% of boss's damage
                 color=(160, 32, 240),  # Purple color to match the shield
-                is_homing=True  # Make it home in on the player
+                is_homing=True,  # Make it home in on the player
+                boss_level=self.level  # Pass the boss level for animated projectiles
             )
             
             # Configure homing behavior
