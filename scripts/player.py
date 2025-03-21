@@ -772,20 +772,16 @@ class Player(pygame.sprite.Sprite):
                     # Create a copy of the current player image for the ghost
                     ghost_image = self.animations[self.current_state][self.facing][self.frame].copy()
                     
-                    # Apply a white tint to the ghost that fades out
-                    white_overlay = pygame.Surface(ghost_image.get_size()).convert_alpha()
-                    white_overlay.fill((255, 255, 255, min(180, alpha)))
-                    ghost_image.blit(white_overlay, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
-                    
-                    # Create a fading alpha surface
+                    # Create a surface with the correct alpha
                     alpha_surface = pygame.Surface(ghost_image.get_size(), pygame.SRCALPHA)
                     alpha_surface.fill((255, 255, 255, alpha))
                     
-                    # Apply the alpha to the ghost image
-                    ghost_image.blit(alpha_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                    # Create the final ghost image with transparency
+                    final_ghost = ghost_image.copy()
+                    final_ghost.blit(alpha_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
                     
-                    # Draw ghost at the stored position with transparency
-                    surface.blit(ghost_image, (pos_x, pos_y))
+                    # Draw ghost at the stored position
+                    surface.blit(final_ghost, (pos_x, pos_y))
             else:
                 # Trail effect is complete - disable it
                 self.trailing_enabled = False

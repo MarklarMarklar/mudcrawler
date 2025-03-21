@@ -382,7 +382,7 @@ class Menu:
             
         # Try to load custom victory image
         try:
-            victory_custom_path = os.path.join(ASSET_PATH, "images/victory_screen.png")
+            victory_custom_path = os.path.join(ASSET_PATH, "images/victory.png")
             if os.path.exists(victory_custom_path):
                 self.victory_custom_img = self.asset_manager.load_image(victory_custom_path, scale=(WINDOW_WIDTH, WINDOW_HEIGHT))
                 self.use_victory_custom_img = True
@@ -452,10 +452,6 @@ class Menu:
             ("Pause", "Escape"),
             ("Toggle Fullscreen", "F11")
         ]
-        
-        # Custom victory screen image
-        self.victory_custom_img = None
-        self.use_victory_custom_img = False
         
         # Set initial positions
         self._update_button_positions('main_menu')
