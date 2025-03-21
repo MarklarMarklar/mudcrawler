@@ -991,7 +991,6 @@ class WeaponManager:
     
     def attack_bow(self, mouse_pos):
         # Check if player has arrows
-
         if self.player.arrow_count <= 0:
             return None
             
@@ -999,27 +998,41 @@ class WeaponManager:
         if self.bow.cooldown > 0:
             return None
             
-        # Calculate direction to mouse
-        dx = mouse_pos[0] - self.player.rect.centerx
-        dy = mouse_pos[1] - self.player.rect.centery
-        distance = math.sqrt(dx*dx + dy*dy)
+        # Get direction based on player's attack_direction (which is now based on mouse position)
+        dx, dy = 0, 0
         
-        if distance > 0:
-            # Normalize direction
-            dx /= distance
-            dy /= distance
+        # Calculate direction based on player's attack_direction
+        if 'right' in self.player.attack_direction:
+            dx += 1
+        if 'left' in self.player.attack_direction:
+            dx -= 1
+        if 'up' in self.player.attack_direction:
+            dy -= 1
+        if 'down' in self.player.attack_direction:
+            dy += 1
             
-            # Shoot arrow - pass the full mouse_pos to the player
-            if self.player.attack_bow(mouse_pos):
-                # Only create the arrow if player successfully shot
-                arrow = self.bow.add_arrow(self.player.rect.centerx, self.player.rect.centery, (dx, dy))
-                # Reset cooldown
-                self.bow.cooldown = self.bow.cooldown_time
-                
-                # For debugging
-                print(f"Created arrow at ({self.player.rect.centerx}, {self.player.rect.centery}) moving in direction ({dx}, {dy})")
-                
-                return arrow
+        # Alternatively, calculate direction directly from mouse position
+        # This gives more precise aiming than the 8-direction attack_direction
+        mouse_dx = mouse_pos[0] - self.player.rect.centerx
+        mouse_dy = mouse_pos[1] - self.player.rect.centery
+        distance = math.sqrt(mouse_dx*mouse_dx + mouse_dy*mouse_dy)
+        
+        # Use direct mouse vector for more precise aiming
+        if distance > 0:
+            dx = mouse_dx / distance
+            dy = mouse_dy / distance
+        
+        # Shoot arrow - pass the mouse_pos to the player as legacy parameter
+        if self.player.attack_bow(mouse_pos):
+            # Only create the arrow if player successfully shot
+            arrow = self.bow.add_arrow(self.player.rect.centerx, self.player.rect.centery, (dx, dy))
+            # Reset cooldown
+            self.bow.cooldown = self.bow.cooldown_time
+            
+            # For debugging
+            print(f"Created arrow at ({self.player.rect.centerx}, {self.player.rect.centery}) moving in direction ({dx}, {dy})")
+            
+            return arrow
         
         return None
     

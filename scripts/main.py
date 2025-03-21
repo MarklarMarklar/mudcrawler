@@ -218,6 +218,16 @@ class Game:
             if event.type == pygame.QUIT:
                 self.running = False
                 
+            # Update player's attack direction based on mouse position
+            # We need to do this continuously, not just on mouse click
+            if self.state == PLAYING and not self.death_sequence_active:
+                # Get screen mouse position
+                screen_mouse_pos = pygame.mouse.get_pos()
+                # Convert to world coordinates
+                world_mouse_pos = self.screen_to_world_coords(*screen_mouse_pos)
+                # Update player's attack direction
+                self.player.update_attack_direction_from_mouse(world_mouse_pos)
+
             # Check for any key press during death sequence 
             if self.state == PLAYING and self.death_sequence_active and self.player.death_animation_complete:
                 if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
@@ -408,13 +418,33 @@ class Game:
                         self.activate_special_attack()
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
-                        # Get screen mouse position
-                        screen_mouse_pos = pygame.mouse.get_pos()
-                        # Convert to world coordinates 
-                        world_mouse_pos = self.screen_to_world_coords(*screen_mouse_pos)
-                        # Attack with bow using world coordinates
-                        self.weapon_manager.attack_bow(world_mouse_pos)
-                        print(f"Mouse click at screen: {screen_mouse_pos}, world: {world_mouse_pos}")
+                        # Use player's attack direction instead of mouse position
+                        attack_dir = self.player.attack_direction
+                        
+                        # Calculate a point in the attack direction
+                        direction_vec = [0, 0]
+                        if 'right' in attack_dir:
+                            direction_vec[0] = 1
+                        if 'left' in attack_dir:
+                            direction_vec[0] = -1
+                        if 'up' in attack_dir:
+                            direction_vec[1] = -1
+                        if 'down' in attack_dir:
+                            direction_vec[1] = 1
+                            
+                        # Normalize the vector if it's diagonal
+                        if direction_vec[0] != 0 and direction_vec[1] != 0:
+                            length = math.sqrt(direction_vec[0]**2 + direction_vec[1]**2)
+                            direction_vec[0] /= length
+                            direction_vec[1] /= length
+                        
+                        # Create a point far in the attack direction
+                        target_x = self.player.rect.centerx + direction_vec[0] * 1000
+                        target_y = self.player.rect.centery + direction_vec[1] * 1000
+                        
+                        # Attack with bow using the calculated direction
+                        self.weapon_manager.attack_bow((target_x, target_y))
+                        print(f"Bow attack in direction: {attack_dir}")
                     elif event.button == 3:  # Right click
                         # Trigger dodge in the facing direction
                         if self.player.dodge():
@@ -431,6 +461,11 @@ class Game:
         # Ensure level is initialized
         if self.level is None:
             self.initialize_level()
+            
+        # Get mouse position and update player's attack direction
+        screen_mouse_pos = pygame.mouse.get_pos()
+        world_mouse_pos = self.screen_to_world_coords(*screen_mouse_pos)
+        self.player.update_attack_direction_from_mouse(world_mouse_pos)
             
         # Update screen shake effect
         self.update_screen_shake()

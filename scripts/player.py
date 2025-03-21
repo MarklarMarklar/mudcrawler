@@ -37,6 +37,13 @@ class Player(pygame.sprite.Sprite):
         # Initialize dodge cooldown tracking
         self.last_dodge_time = 0       # Initialize to 0 so dodge is available immediately
         
+        # Mouse position for aiming
+        self.mouse_pos = (0, 0)
+        
+        # Attack direction (separate from movement facing direction)
+        self.attack_direction = 'down'  # Default attack direction
+        self.attack_keys_pressed = {'up': False, 'down': False, 'left': False, 'right': False}  # Track arrow keys for attacks
+        
         # Load the sprite sheet
         sprite_sheet_path = os.path.join(PLAYER_SPRITES_PATH, "my_character_guides.png")
         if os.path.exists(sprite_sheet_path):
@@ -224,24 +231,42 @@ class Player(pygame.sprite.Sprite):
         self.velocity_x = 0
         self.velocity_y = 0
         
+        # Movement with WASD/direction keys
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             self.velocity_x = -self.speed
-            self.facing = 'left'
+            # Only update facing direction if not in attack animation
+            if self.current_state != 'attack':
+                self.facing = 'left'
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
             self.velocity_x = self.speed
-            self.facing = 'right'
+            # Only update facing direction if not in attack animation
+            if self.current_state != 'attack':
+                self.facing = 'right'
         if keys[pygame.K_UP] or keys[pygame.K_w]:
             self.velocity_y = -self.speed
-            self.facing = 'up'
+            # Only update facing direction if not in attack animation
+            if self.current_state != 'attack':
+                self.facing = 'up'
         if keys[pygame.K_DOWN] or keys[pygame.K_s]:
             self.velocity_y = self.speed
-            self.facing = 'down'
+            # Only update facing direction if not in attack animation
+            if self.current_state != 'attack':
+                self.facing = 'down'
+            
+        # Track arrow key presses for attack direction
+        self.attack_keys_pressed['up'] = keys[pygame.K_UP]
+        self.attack_keys_pressed['down'] = keys[pygame.K_DOWN]
+        self.attack_keys_pressed['left'] = keys[pygame.K_LEFT]
+        self.attack_keys_pressed['right'] = keys[pygame.K_RIGHT]
+        
+        # We no longer update attack_direction from arrow keys
+        # since we're using mouse position instead
             
         # Update animation state based on movement
         previous_state = self.current_state
-        if self.velocity_x == 0 and self.velocity_y == 0:
+        if self.velocity_x == 0 and self.velocity_y == 0 and self.current_state != 'attack':
             self.current_state = 'idle'
-        else:
+        elif self.current_state != 'attack':
             self.current_state = 'walk'
             
         # Handle walk sound state transitions - only play sounds if player is alive
@@ -429,7 +454,21 @@ class Player(pygame.sprite.Sprite):
             self.frame = 0  # Reset animation frame
             self.animation_time = 0  # Reset animation time
             
-            # Create sword hitbox based on facing direction with 30% increased range (15% + 15%)
+            # IMPORTANT: Store the current movement facing direction
+            # so we can restore it after attack animation is done
+            self.movement_facing = self.facing
+            
+            # Get primary direction if diagonal
+            primary_direction = self.attack_direction
+            if '-' in self.attack_direction:
+                primary_direction = self.attack_direction.split('-')[0]
+                
+            # Set facing to attack direction for animation purposes
+            # This will be used for the attack animation
+            print(f"Attack direction: {self.attack_direction}, Setting facing to: {primary_direction}")
+            self.facing = primary_direction
+            
+            # Create sword hitbox based on attack direction with 30% increased range (15% + 15%)
             attack_size = int(TILE_SIZE * 1.32)  # 32% larger than normal tile size (1.15 * 1.15 ≈ 1.32)
             
             # Check if this is a fire sword attack and adjust range if needed
@@ -437,8 +476,8 @@ class Player(pygame.sprite.Sprite):
                 # Make fire sword 20% larger range than normal sword
                 attack_size = int(attack_size * 1.2)
             
-            # Create directional hitboxes that only extend in the facing direction
-            if self.facing == 'right':
+            # Create directional hitboxes that only extend in the attack direction
+            if 'right' in self.attack_direction:
                 # Right attack - create a wide but short rectangle extending to the right
                 hitbox = pygame.Rect(
                     self.rect.right,  # Start at right edge
@@ -446,7 +485,7 @@ class Player(pygame.sprite.Sprite):
                     attack_size,  # Full length horizontally
                     attack_size * 2 // 3  # Shorter height for more precise hits
                 )
-            elif self.facing == 'left':
+            elif 'left' in self.attack_direction:
                 # Left attack - create a wide but short rectangle extending to the left
                 hitbox = pygame.Rect(
                     self.rect.left - attack_size,  # Start attack_size pixels to the left
@@ -454,7 +493,7 @@ class Player(pygame.sprite.Sprite):
                     attack_size,  # Full length horizontally
                     attack_size * 2 // 3  # Shorter height for more precise hits
                 )
-            elif self.facing == 'up':
+            elif 'up' in self.attack_direction:
                 # Up attack - create a tall but narrow rectangle extending upward
                 hitbox = pygame.Rect(
                     self.rect.centerx - attack_size // 3,  # Centered horizontally
@@ -462,7 +501,7 @@ class Player(pygame.sprite.Sprite):
                     attack_size * 2 // 3,  # Shorter width for more precise hits
                     attack_size  # Full length vertically
                 )
-            elif self.facing == 'down':
+            elif 'down' in self.attack_direction:
                 # Down attack - create a tall but narrow rectangle extending downward
                 hitbox = pygame.Rect(
                     self.rect.centerx - attack_size // 3,  # Centered horizontally
@@ -470,7 +509,7 @@ class Player(pygame.sprite.Sprite):
                     attack_size * 2 // 3,  # Shorter width for more precise hits
                     attack_size  # Full length vertically
                 )
-                
+            
             return hitbox
         return None
         
@@ -493,19 +532,18 @@ class Player(pygame.sprite.Sprite):
         # Decrement arrow count when shooting
         self.arrow_count -= 1
         
-        # Calculate direction vector to mouse position (for animation only)
-        dx = mouse_pos[0] - self.rect.centerx
-        dy = mouse_pos[1] - self.rect.centery
-        distance = math.sqrt(dx * dx + dy * dy)
-        if distance > 0:
-            dx = dx / distance
-            dy = dy / distance
+        # Store the current movement facing direction
+        self.movement_facing = self.facing
+        
+        # Get primary direction from attack_direction
+        if '-' in self.attack_direction:
+            primary_direction = self.attack_direction.split('-')[0]
+        else:
+            primary_direction = self.attack_direction
             
-            # Update facing direction based on mouse position
-            if abs(dx) > abs(dy):
-                self.facing = 'right' if dx > 0 else 'left'
-            else:
-                self.facing = 'down' if dy > 0 else 'up'
+        # Set facing to attack direction for animation
+        print(f"Bow attack direction: {self.attack_direction}, Setting facing to: {primary_direction}")
+        self.facing = primary_direction
         
         # Return True to indicate that the arrow was successfully shot
         return True
@@ -650,12 +688,19 @@ class Player(pygame.sprite.Sprite):
         
         # If the attack animation is done, go back to idle
         if self.current_state == 'attack' and self.animation_time >= len(self.animations[self.current_state][self.facing]):
+            print(f"Attack animation complete. Returning facing from {self.facing} to {self.movement_facing}")
+            # Animation complete, switch back to idle state
             self.current_state = 'idle'
             self.animation_time = 0
             
+            # Restore the original movement facing direction after attack animation
+            if hasattr(self, 'movement_facing'):
+                self.facing = self.movement_facing
+            
         # Calculate current frame
-        self.frame = int(self.animation_time) % len(self.animations[self.current_state][self.facing])
-        self.image = self.animations[self.current_state][self.facing][self.frame]
+        animation_frames = self.animations[self.current_state][self.facing]
+        self.frame = int(self.animation_time) % len(animation_frames)
+        self.image = animation_frames[self.frame]
     
     def update_x(self):
         """Update player position on X axis only"""
@@ -707,55 +752,60 @@ class Player(pygame.sprite.Sprite):
     def draw(self, surface):
         # Draw trail effect if enabled (much simpler implementation)
         if self.trailing_enabled:
+            # Calculate how far through the trail effect we are (0.0 to 1.0)
             current_time = pygame.time.get_ticks()
-            time_in_effect = current_time - self.trail_start_time
+            elapsed = current_time - self.trail_start_time
+            progress = min(elapsed / self.trail_duration, 1.0)
             
-            # Only draw trails during the effect duration
-            if time_in_effect < self.trail_duration:
-                # Draw ghost images with decreasing opacity and staggered disappearance
-                for i, (ghost_x, ghost_y) in enumerate(self.trail_positions):
-                    # Calculate a staggered duration for each ghost image
-                    # Furthest ghost (i=0) disappears first, closest ghost (i=3) disappears last
-                    staggered_duration = self.trail_duration * (0.7 + (i * 0.1))  # 70%, 80%, 90%, 100% of total duration
+            # Only draw trail while active
+            if progress < 1.0:
+                # Draw ghost images in reverse order (oldest first, newest last)
+                for i, (pos_x, pos_y) in enumerate(self.trail_positions):
+                    # Calculate alpha based on position in trail and overall progress
+                    # Convert to an 8-bit alpha value (0-255)
+                    alpha = int(255 * (1.0 - i / len(self.trail_positions)) * (1.0 - progress))
                     
-                    # Skip this ghost image if its staggered time has expired
-                    if time_in_effect > staggered_duration:
+                    # Skip very transparent ghosts
+                    if alpha < 30:
                         continue
                         
-                    # Calculate alpha based on remaining time (fade out)
-                    # Each ghost fades relative to its own duration
-                    alpha_factor = 1.0 - (time_in_effect / staggered_duration)
-                    alpha_factor = alpha_factor * alpha_factor  # Quadratic falloff for faster fade
+                    # Create a copy of the current player image for the ghost
+                    ghost_image = self.animations[self.current_state][self.facing][self.frame].copy()
                     
-                    ghost_img = self.image.copy().convert_alpha()
+                    # Apply a white tint to the ghost that fades out
+                    white_overlay = pygame.Surface(ghost_image.get_size()).convert_alpha()
+                    white_overlay.fill((255, 255, 255, min(180, alpha)))
+                    ghost_image.blit(white_overlay, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
                     
-                    # Calculate alpha for this trail image (further back = more transparent)
-                    # Base alpha decreases with distance
-                    base_alpha = 90 - i * 15  # 90, 75, 60, 45 - decreasing transparency
-                    trail_alpha = int(base_alpha * alpha_factor)
-                    ghost_img.set_alpha(trail_alpha)
+                    # Create a fading alpha surface
+                    alpha_surface = pygame.Surface(ghost_image.get_size(), pygame.SRCALPHA)
+                    alpha_surface.fill((255, 255, 255, alpha))
                     
-                    # Draw ghost image at its fixed position
-                    surface.blit(ghost_img, (ghost_x, ghost_y))
-        
-        # Then draw the player
+                    # Apply the alpha to the ghost image
+                    ghost_image.blit(alpha_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                    
+                    # Draw ghost at the stored position with transparency
+                    surface.blit(ghost_image, (pos_x, pos_y))
+            else:
+                # Trail effect is complete - disable it
+                self.trailing_enabled = False
+                
+        # Draw the player
         surface.blit(self.image, self.rect)
         
-        # Draw attack range for debugging
-        if DEBUG_MODE:
-            # Draw player hitbox in green
-            pygame.draw.rect(surface, (0, 255, 0), self.rect, 2)
+        # Draw attack direction crosshair
+        self.draw_attack_crosshair(surface)
+        
+        # Draw hurtbox/hitbox for debugging only
+        if DEBUG_HITBOXES:
+            # Draw the hitbox as a red rectangle
+            pygame.draw.rect(surface, RED, self.hitbox, 1)
             
-            # Draw current attack range in blue
-            attack_box = self.get_attack_hitbox()
-            
-            # Draw attack range hitbox in blue with some transparency
-            attack_surface = pygame.Surface((attack_box.width, attack_box.height), pygame.SRCALPHA)
-            pygame.draw.rect(attack_surface, (0, 100, 255, 100), attack_surface.get_rect())
-            surface.blit(attack_surface, attack_box)
-            
-            # Draw attack range outline in bright blue
-            pygame.draw.rect(surface, (0, 150, 255), attack_box, 2)
+            # Draw the attack hitbox if currently attacking
+            if self.current_state == 'attack':
+                attack_hitbox = self.get_attack_hitbox()
+                if attack_hitbox:
+                    pygame.draw.rect(surface, (255, 0, 0), attack_hitbox, 1)
         
         # Draw dodge cooldown indicator (small blue bar above player's head)
         if hasattr(self, 'last_dodge_time'):
@@ -789,7 +839,7 @@ class Player(pygame.sprite.Sprite):
     
     def get_attack_hitbox(self):
         """Creates and returns the current attack hitbox without triggering an attack or cooldown check"""
-        # Create sword hitbox based on facing direction with 30% increased range (15% + 15%)
+        # Create sword hitbox based on attack direction with 30% increased range (15% + 15%)
         attack_size = int(TILE_SIZE * 1.32)  # 32% larger than normal tile size (1.15 * 1.15 ≈ 1.32)
         
         # Check if this is a fire sword attack and adjust range if needed
@@ -797,8 +847,13 @@ class Player(pygame.sprite.Sprite):
             # Make fire sword 20% larger range than normal sword
             attack_size = int(attack_size * 1.2)
         
-        # Create directional hitboxes that only extend in the facing direction
-        if self.facing == 'right':
+        # Get primary direction if diagonal
+        primary_direction = self.attack_direction
+        if '-' in self.attack_direction:
+            primary_direction = self.attack_direction.split('-')[0]
+        
+        # Create directional hitboxes that only extend in the attack direction
+        if 'right' in self.attack_direction:
             # Right attack - create a wide but short rectangle extending to the right
             hitbox = pygame.Rect(
                 self.rect.right,  # Start at right edge
@@ -806,7 +861,7 @@ class Player(pygame.sprite.Sprite):
                 attack_size,  # Full length horizontally
                 attack_size * 2 // 3  # Shorter height for more precise hits
             )
-        elif self.facing == 'left':
+        elif 'left' in self.attack_direction:
             # Left attack - create a wide but short rectangle extending to the left
             hitbox = pygame.Rect(
                 self.rect.left - attack_size,  # Start attack_size pixels to the left
@@ -814,7 +869,7 @@ class Player(pygame.sprite.Sprite):
                 attack_size,  # Full length horizontally
                 attack_size * 2 // 3  # Shorter height for more precise hits
             )
-        elif self.facing == 'up':
+        elif 'up' in self.attack_direction:
             # Up attack - create a tall but narrow rectangle extending upward
             hitbox = pygame.Rect(
                 self.rect.centerx - attack_size // 3,  # Centered horizontally
@@ -822,7 +877,7 @@ class Player(pygame.sprite.Sprite):
                 attack_size * 2 // 3,  # Shorter width for more precise hits
                 attack_size  # Full length vertically
             )
-        elif self.facing == 'down':
+        elif 'down' in self.attack_direction:
             # Down attack - create a tall but narrow rectangle extending downward
             hitbox = pygame.Rect(
                 self.rect.centerx - attack_size // 3,  # Centered horizontally
@@ -832,3 +887,77 @@ class Player(pygame.sprite.Sprite):
             )
             
         return hitbox 
+    
+    def draw_attack_crosshair(self, surface):
+        """Draw a simple crosshair to indicate the attack direction"""
+        if self.is_dead:
+            return
+            
+        # Use mouse position for crosshair instead of attack_direction
+        # Calculate crosshair position based on mouse position
+        crosshair_size = TILE_SIZE // 3  # Size of the crosshair
+        
+        # The crosshair should be exactly at mouse position
+        end_x, end_y = self.mouse_pos
+        
+        # Start position at player center
+        start_x = self.rect.centerx
+        start_y = self.rect.centery
+        
+        # Only draw the line in debug mode
+        if DEBUG_HITBOXES:
+            # Draw line from player to crosshair (light and semi-transparent)
+            pygame.draw.line(
+                surface, 
+                (255, 255, 255, 128),  # White with transparency
+                (start_x, start_y),
+                (int(end_x), int(end_y)),
+                2
+            )
+        
+        # Always draw the crosshair
+        pygame.draw.circle(surface, (255, 0, 0), (int(end_x), int(end_y)), crosshair_size // 2, 2)
+        pygame.draw.line(
+            surface,
+            (255, 0, 0),
+            (int(end_x - crosshair_size // 2), int(end_y)),
+            (int(end_x + crosshair_size // 2), int(end_y)),
+            2
+        )
+        pygame.draw.line(
+            surface,
+            (255, 0, 0),
+            (int(end_x), int(end_y - crosshair_size // 2)),
+            (int(end_x), int(end_y + crosshair_size // 2)),
+            2
+        )
+
+    def update_attack_direction_from_mouse(self, world_mouse_pos):
+        """Update attack direction based on mouse position relative to player"""
+        # Store mouse position for drawing the crosshair
+        self.mouse_pos = world_mouse_pos
+        
+        # Calculate direction vector from player to mouse
+        dx = world_mouse_pos[0] - self.rect.centerx
+        dy = world_mouse_pos[1] - self.rect.centery
+        
+        # Determine attack direction based on angle
+        angle = math.degrees(math.atan2(dy, dx))
+        
+        # Convert angle to 8-directional attack direction
+        if -22.5 <= angle <= 22.5:
+            self.attack_direction = 'right'
+        elif 22.5 < angle <= 67.5:
+            self.attack_direction = 'down-right'
+        elif 67.5 < angle <= 112.5:
+            self.attack_direction = 'down'
+        elif 112.5 < angle <= 157.5:
+            self.attack_direction = 'down-left'
+        elif angle > 157.5 or angle <= -157.5:
+            self.attack_direction = 'left'
+        elif -157.5 < angle <= -112.5:
+            self.attack_direction = 'up-left'
+        elif -112.5 < angle <= -67.5:
+            self.attack_direction = 'up'
+        elif -67.5 < angle < -22.5:
+            self.attack_direction = 'up-right' 
