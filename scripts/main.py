@@ -488,7 +488,11 @@ class Game:
         
         # Handle special attack if active
         if self.special_attack_active:
-            print(f"Special attack active - state: {self.special_attack_data['state']}, enemy index: {self.special_attack_data['current_enemy_index']}")
+            # Update debug print to handle both boss and regular enemy special attacks
+            if self.special_attack_data.get('is_boss_attack', False):
+                print(f"Special attack active - state: {self.special_attack_data['state']}, boss attack: {self.special_attack_data['attack_count'] + 1}/{self.special_attack_data['max_attacks']}")
+            else:
+                print(f"Special attack active - state: {self.special_attack_data['state']}, enemy index: {self.special_attack_data['current_enemy_index']}")
             self._update_special_attack()
             # Skip normal updates when special attack is active
             return
@@ -1634,8 +1638,13 @@ class Game:
         current_room = self.level.rooms[self.level.current_room_coords]
         visible_enemies = [enemy for enemy in current_room.enemies.sprites() if enemy.health > 0]
         
-        if not visible_enemies:
-            print("No enemies in range for special attack")
+        # Check if there's a boss to attack
+        boss = None
+        if hasattr(current_room, 'boss') and current_room.boss and current_room.boss.health > 0:
+            boss = current_room.boss
+        
+        if not visible_enemies and not boss:
+            print("No enemies or boss in range for special attack")
             return
             
         # Store original player position for return after attack
@@ -1651,17 +1660,36 @@ class Game:
         self.camera.view_height = self.camera.height / self.camera.zoom
         print(f"Camera zoomed out to {self.camera.zoom:.2f}x for special attack")
         
-        # Initialize special attack data
-        self.special_attack_data = {
-            'state': 'init',
-            'enemies': visible_enemies,
-            'current_enemy_index': 0,
-            'original_player_pos': original_pos,
-            'original_camera_zoom': original_zoom,
-            'start_time': pygame.time.get_ticks(),
-            'transition_time': 500,  # 500ms for each enemy transition
-            'damage': 50  # Damage per enemy hit
-        }
+        # Initialize special attack data with different behavior for boss
+        if boss:
+            # For boss, we attack 3 times from different angles
+            self.special_attack_data = {
+                'state': 'init',
+                'boss': boss,
+                'attack_count': 0,
+                'max_attacks': 3,
+                'original_player_pos': original_pos,
+                'original_camera_zoom': original_zoom,
+                'start_time': pygame.time.get_ticks(),
+                'transition_time': 500,  # 500ms for each transition
+                'damage': 50,  # Damage per boss hit (reduced from 100)
+                'is_boss_attack': True
+            }
+            print(f"Special attack activated targeting boss")
+        else:
+            # Regular enemy special attack
+            self.special_attack_data = {
+                'state': 'init',
+                'enemies': visible_enemies,
+                'current_enemy_index': 0,
+                'original_player_pos': original_pos,
+                'original_camera_zoom': original_zoom,
+                'start_time': pygame.time.get_ticks(),
+                'transition_time': 500,  # 500ms for each enemy transition
+                'damage': 50,  # Damage per enemy hit (reduced from 100)
+                'is_boss_attack': False
+            }
+            print(f"Special attack activated targeting {len(visible_enemies)} enemies")
         
         # Activate special attack
         self.special_attack_active = True
@@ -1669,8 +1697,6 @@ class Game:
         # Play special attack sound
         self.sound_manager.play_sound("effects/sword_attack")  # Replace with special sound when available
         
-        print(f"Special attack activated targeting {len(visible_enemies)} enemies")
-    
     def _update_special_attack(self):
         """Update special attack animation and effects"""
         if not self.special_attack_active or not self.special_attack_data:
@@ -1679,118 +1705,259 @@ class Game:
         current_time = pygame.time.get_ticks()
         data = self.special_attack_data
         
-        # Get references to necessary objects
-        enemies = data['enemies']
-        
-        # Handle different states of the special attack
-        if data['state'] == 'init':
-            # Just started, initiate movement to first enemy
-            if enemies:
-                data['state'] = 'moving'
-                data['target_pos'] = (enemies[0].rect.centerx, enemies[0].rect.centery)
-                data['move_start_time'] = current_time
-                print(f"Moving to enemy 1/{len(enemies)}")
-            else:
-                # No enemies to attack, finish
-                self._finish_special_attack()
-                
-        elif data['state'] == 'moving':
-            # Moving to next enemy
-            elapsed = current_time - data['move_start_time']
+        # Handle boss special attack differently
+        if data.get('is_boss_attack', False):
+            boss = data['boss']
             
-            if elapsed >= data['transition_time']:
-                # Arrived at enemy, damage it
-                enemy_idx = data['current_enemy_index']
-                if enemy_idx < len(enemies):
-                    enemy = enemies[enemy_idx]
+            # Handle different states of the boss special attack
+            if data['state'] == 'init':
+                # Just started, set up first attack position
+                if boss.health > 0:
+                    # Calculate first attack angle (above the boss)
+                    angle = random.uniform(0, 2 * math.pi)  # Random first angle
+                    distance = TILE_SIZE * 2  # Distance from boss
+                    target_x = boss.rect.centerx + math.cos(angle) * distance
+                    target_y = boss.rect.centery + math.sin(angle) * distance
                     
-                    # Apply damage to the enemy
-                    if enemy.take_damage(data['damage']):
-                        # Enemy was killed during special attack
-                        # We don't increment the kill counter for special attack kills
-                        print("Enemy killed during special attack")
+                    data['state'] = 'moving'
+                    data['target_pos'] = (target_x, target_y)
+                    data['move_start_time'] = current_time
+                    data['current_angle'] = angle
+                    print(f"Moving to boss attack position 1/{data['max_attacks']}")
+                else:
+                    # Boss already defeated
+                    self._finish_special_attack()
                     
-                    # Create blood particles for damage visualization
-                    self.particle_system.create_blood_splash(
-                        enemy.rect.centerx, enemy.rect.centery,
-                        amount=max(5, int(data['damage'] * 0.5))
-                    )
-                    
-                    # Apply screen shake for impact feedback
-                    self.trigger_screen_shake(amount=5, duration=10)
-                    
-                    # Play hit sound
-                    self.sound_manager.play_sound("effects/enemy_hit")
-                    
-                    # Prepare for next enemy or finish
-                    data['current_enemy_index'] += 1
-                    if data['current_enemy_index'] < len(enemies):
-                        # Move to next enemy
-                        next_enemy = enemies[data['current_enemy_index']]
-                        data['target_pos'] = (next_enemy.rect.centerx, next_enemy.rect.centery)
-                        data['move_start_time'] = current_time
-                        data['state'] = 'moving'
-                        print(f"Moving to enemy {data['current_enemy_index']+1}/{len(enemies)}")
-                    else:
-                        # All enemies damaged, return to original position
-                        data['target_pos'] = data['original_player_pos']
-                        data['move_start_time'] = current_time
-                        data['state'] = 'returning'
-                        print("All enemies hit, returning to original position")
-            else:
-                # Update player position during movement (visually only)
-                current_enemy_idx = data['current_enemy_index']
+            elif data['state'] == 'moving':
+                # Moving to attack position
+                elapsed = current_time - data['move_start_time']
                 
-                # If moving to an enemy (not returning), set player position
-                if current_enemy_idx < len(enemies):
+                if elapsed >= data['transition_time']:
+                    # Arrived at position, now attack the boss
+                    data['state'] = 'attacking'
+                    data['attack_start_time'] = current_time
+                    print(f"Attacking boss - hit {data['attack_count'] + 1}")
+                else:
+                    # Update player position during movement
                     progress = min(1.0, elapsed / data['transition_time'])
                     
-                    # Calculate interpolation between current position and target
-                    if data['state'] == 'moving':
-                        # Get start position (either original or previous enemy)
-                        if current_enemy_idx == 0:
-                            start_pos = data['original_player_pos']
-                        else:
-                            prev_enemy = enemies[current_enemy_idx - 1]
-                            start_pos = (prev_enemy.rect.centerx, prev_enemy.rect.centery)
-                            
-                        # Interpolate position
-                        self.player.rect.centerx = int(start_pos[0] + (data['target_pos'][0] - start_pos[0]) * progress)
-                        self.player.rect.centery = int(start_pos[1] + (data['target_pos'][1] - start_pos[1]) * progress)
+                    # Get start position
+                    if data['attack_count'] == 0:
+                        # First attack, start from original position
+                        start_pos = data['original_player_pos']
+                    else:
+                        # After first attack, start from previous attack position
+                        prev_angle = data['current_angle'] - (2 * math.pi / 3)  # 120° back
+                        prev_distance = TILE_SIZE * 2
+                        start_pos = (
+                            boss.rect.centerx + math.cos(prev_angle) * prev_distance,
+                            boss.rect.centery + math.sin(prev_angle) * prev_distance
+                        )
                         
-                        # Track positions for trail effect - store every few frames
-                        # We create more points than dodge for a longer trail
-                        if 'last_trail_time' not in data or current_time - data['last_trail_time'] > 30:  # Save position every 30ms
-                            # Add current position to trail
-                            self.special_attack_trail_positions.append((self.player.rect.centerx, self.player.rect.centery))
-                            
-                            # Keep only the last 10 positions (longer than dodge's 4)
-                            if len(self.special_attack_trail_positions) > 10:
-                                self.special_attack_trail_positions.pop(0)
-                            
-                            # Update last trail time
-                            data['last_trail_time'] = current_time
+                    # Interpolate position
+                    self.player.rect.centerx = int(start_pos[0] + (data['target_pos'][0] - start_pos[0]) * progress)
+                    self.player.rect.centery = int(start_pos[1] + (data['target_pos'][1] - start_pos[1]) * progress)
+                    
+                    # Track positions for trail effect
+                    if 'last_trail_time' not in data or current_time - data['last_trail_time'] > 30:
+                        self.special_attack_trail_positions.append((self.player.rect.centerx, self.player.rect.centery))
+                        if len(self.special_attack_trail_positions) > 10:
+                            self.special_attack_trail_positions.pop(0)
+                        data['last_trail_time'] = current_time
+                    
+            elif data['state'] == 'attacking':
+                # Check if attack animation should be complete
+                elapsed = current_time - data['attack_start_time']
                 
-        elif data['state'] == 'returning':
-            # Returning to original position
-            elapsed = current_time - data['move_start_time']
+                if elapsed >= 300:  # 300ms for attack animation
+                    # Attack complete, damage the boss
+                    if boss.health > 0:
+                        # Apply damage to the boss
+                        boss.take_damage(data['damage'])
+                        
+                        # Create blood particles for damage visualization
+                        self.particle_system.create_blood_splash(
+                            boss.rect.centerx, boss.rect.centery,
+                            amount=max(8, int(data['damage'] * 0.5))
+                        )
+                        
+                        # Apply screen shake for impact feedback
+                        self.trigger_screen_shake(amount=5, duration=10)
+                        
+                        # Play hit sound
+                        self.sound_manager.play_sound("effects/enemy_hit")
+                        
+                        # Increment attack count
+                        data['attack_count'] += 1
+                        
+                        if data['attack_count'] < data['max_attacks']:
+                            # Move to next attack position (120° rotated)
+                            angle = data['current_angle'] + (2 * math.pi / 3)  # 120° rotation
+                            distance = TILE_SIZE * 2
+                            target_x = boss.rect.centerx + math.cos(angle) * distance
+                            target_y = boss.rect.centery + math.sin(angle) * distance
+                            
+                            data['state'] = 'moving'
+                            data['target_pos'] = (target_x, target_y)
+                            data['move_start_time'] = current_time
+                            data['current_angle'] = angle
+                            print(f"Moving to boss attack position {data['attack_count'] + 1}/{data['max_attacks']}")
+                        else:
+                            # All attacks complete, return to original position
+                            data['state'] = 'returning'
+                            data['target_pos'] = data['original_player_pos']
+                            data['move_start_time'] = current_time
+                            print("All boss attacks complete, returning to original position")
+                    else:
+                        # Boss defeated during special attack
+                        data['state'] = 'returning'
+                        data['target_pos'] = data['original_player_pos']
+                        data['move_start_time'] = current_time
+                        print("Boss defeated, returning to original position")
+                        
+            elif data['state'] == 'returning':
+                # Returning to original position
+                elapsed = current_time - data['move_start_time']
+                
+                if elapsed >= data['transition_time']:
+                    # Return complete, end special attack
+                    self._finish_special_attack()
+                else:
+                    # Update player position during return
+                    progress = min(1.0, elapsed / data['transition_time'])
+                    
+                    # Get start position (last attack position)
+                    angle = data['current_angle']
+                    distance = TILE_SIZE * 2
+                    start_pos = (
+                        boss.rect.centerx + math.cos(angle) * distance,
+                        boss.rect.centery + math.sin(angle) * distance
+                    )
+                    
+                    # Interpolate position
+                    self.player.rect.centerx = int(start_pos[0] + (data['target_pos'][0] - start_pos[0]) * progress)
+                    self.player.rect.centery = int(start_pos[1] + (data['target_pos'][1] - start_pos[1]) * progress)
+                    
+                    # Track positions for trail effect
+                    if 'last_trail_time' not in data or current_time - data['last_trail_time'] > 30:
+                        self.special_attack_trail_positions.append((self.player.rect.centerx, self.player.rect.centery))
+                        if len(self.special_attack_trail_positions) > 10:
+                            self.special_attack_trail_positions.pop(0)
+                        data['last_trail_time'] = current_time
+        else:
+            # Regular enemy special attack code
+            # Get references to necessary objects
+            enemies = data['enemies']
             
-            if elapsed >= data['transition_time']:
-                # Return complete, end special attack
-                self.player.rect.centerx = data['original_player_pos'][0]
-                self.player.rect.centery = data['original_player_pos'][1]
-                self._finish_special_attack()
-            else:
-                # Update player position during return
-                progress = min(1.0, elapsed / data['transition_time'])
+            # Handle different states of the special attack
+            if data['state'] == 'init':
+                # Just started, initiate movement to first enemy
+                if enemies:
+                    data['state'] = 'moving'
+                    data['target_pos'] = (enemies[0].rect.centerx, enemies[0].rect.centery)
+                    data['move_start_time'] = current_time
+                    print(f"Moving to enemy 1/{len(enemies)}")
+                else:
+                    # No enemies to attack, finish
+                    self._finish_special_attack()
+                    
+            elif data['state'] == 'moving':
+                # Moving to next enemy
+                elapsed = current_time - data['move_start_time']
                 
-                # Get start position (last enemy)
-                last_enemy = enemies[len(enemies) - 1]
-                start_pos = (last_enemy.rect.centerx, last_enemy.rect.centery)
+                if elapsed >= data['transition_time']:
+                    # Arrived at enemy, damage it
+                    enemy_idx = data['current_enemy_index']
+                    if enemy_idx < len(enemies):
+                        enemy = enemies[enemy_idx]
+                        
+                        # Apply damage to the enemy
+                        if enemy.take_damage(data['damage']):
+                            # Enemy was killed during special attack
+                            # We don't increment the kill counter for special attack kills
+                            print("Enemy killed during special attack")
+                        
+                        # Create blood particles for damage visualization
+                        self.particle_system.create_blood_splash(
+                            enemy.rect.centerx, enemy.rect.centery,
+                            amount=max(5, int(data['damage'] * 0.5))
+                        )
+                        
+                        # Apply screen shake for impact feedback
+                        self.trigger_screen_shake(amount=5, duration=10)
+                        
+                        # Play hit sound
+                        self.sound_manager.play_sound("effects/enemy_hit")
+                        
+                        # Prepare for next enemy or finish
+                        data['current_enemy_index'] += 1
+                        if data['current_enemy_index'] < len(enemies):
+                            # Move to next enemy
+                            next_enemy = enemies[data['current_enemy_index']]
+                            data['target_pos'] = (next_enemy.rect.centerx, next_enemy.rect.centery)
+                            data['move_start_time'] = current_time
+                            data['state'] = 'moving'
+                            print(f"Moving to enemy {data['current_enemy_index']+1}/{len(enemies)}")
+                        else:
+                            # All enemies damaged, return to original position
+                            data['target_pos'] = data['original_player_pos']
+                            data['move_start_time'] = current_time
+                            data['state'] = 'returning'
+                            print("All enemies hit, returning to original position")
+                else:
+                    # Update player position during movement (visually only)
+                    current_enemy_idx = data['current_enemy_index']
+                    
+                    # If moving to an enemy (not returning), set player position
+                    if current_enemy_idx < len(enemies):
+                        progress = min(1.0, elapsed / data['transition_time'])
+                        
+                        # Calculate interpolation between current position and target
+                        if data['state'] == 'moving':
+                            # Get start position (either original or previous enemy)
+                            if current_enemy_idx == 0:
+                                start_pos = data['original_player_pos']
+                            else:
+                                prev_enemy = enemies[current_enemy_idx - 1]
+                                start_pos = (prev_enemy.rect.centerx, prev_enemy.rect.centery)
+                                
+                            # Interpolate position
+                            self.player.rect.centerx = int(start_pos[0] + (data['target_pos'][0] - start_pos[0]) * progress)
+                            self.player.rect.centery = int(start_pos[1] + (data['target_pos'][1] - start_pos[1]) * progress)
+                            
+                            # Track positions for trail effect - store every few frames
+                            # We create more points than dodge for a longer trail
+                            if 'last_trail_time' not in data or current_time - data['last_trail_time'] > 30:  # Save position every 30ms
+                                # Add current position to trail
+                                self.special_attack_trail_positions.append((self.player.rect.centerx, self.player.rect.centery))
+                                
+                                # Keep only the last 10 positions (longer than dodge's 4)
+                                if len(self.special_attack_trail_positions) > 10:
+                                    self.special_attack_trail_positions.pop(0)
+                                
+                                # Update last trail time
+                                data['last_trail_time'] = current_time
+                    
+            elif data['state'] == 'returning':
+                # Returning to original position
+                elapsed = current_time - data['move_start_time']
                 
-                # Interpolate position
-                self.player.rect.centerx = int(start_pos[0] + (data['target_pos'][0] - start_pos[0]) * progress)
-                self.player.rect.centery = int(start_pos[1] + (data['target_pos'][1] - start_pos[1]) * progress)
+                if elapsed >= data['transition_time']:
+                    # Return complete, end special attack
+                    self.player.rect.centerx = data['original_player_pos'][0]
+                    self.player.rect.centery = data['original_player_pos'][1]
+                    self._finish_special_attack()
+                else:
+                    # Update player position during return
+                    progress = min(1.0, elapsed / data['transition_time'])
+                    
+                    # Get start position (last enemy)
+                    last_enemy = enemies[len(enemies) - 1]
+                    start_pos = (last_enemy.rect.centerx, last_enemy.rect.centery)
+                    
+                    # Interpolate position
+                    self.player.rect.centerx = int(start_pos[0] + (data['target_pos'][0] - start_pos[0]) * progress)
+                    self.player.rect.centery = int(start_pos[1] + (data['target_pos'][1] - start_pos[1]) * progress)
         
         # Make camera follow player during special attack
         self.camera.center_on_point(self.player.rect.centerx, self.player.rect.centery)
