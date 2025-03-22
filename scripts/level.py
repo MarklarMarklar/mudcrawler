@@ -1939,11 +1939,30 @@ class Level:
         for direction in ['north', 'east', 'south', 'west']:
             self.rooms[(0, 0)].generate_room()
             
-        # After all rooms are generated, choose a random room for the exit
-        # Exit can be in any room, including the boss room
-        exit_room_coords = random.choice(list(self.rooms.keys()))
-        self.rooms[exit_room_coords].add_exit_door()
-        print(f"Exit door placed in room at {exit_room_coords}")
+        # After all rooms are generated, place the exit door
+        # For level 10, always place the exit in the boss room
+        if self.level_number == 10:
+            # Find the boss room
+            boss_room_coords = None
+            for coords, room in self.rooms.items():
+                if room.room_type == 'boss':
+                    boss_room_coords = coords
+                    break
+            
+            # If boss room exists, place exit there, otherwise use a random room
+            if boss_room_coords:
+                self.rooms[boss_room_coords].add_exit_door()
+                print(f"Level 10: Exit door placed in boss room at {boss_room_coords}")
+            else:
+                # Fallback to random room if no boss room exists (shouldn't happen)
+                exit_room_coords = random.choice(list(self.rooms.keys()))
+                self.rooms[exit_room_coords].add_exit_door()
+                print(f"WARNING: No boss room found in level 10. Exit door placed in room at {exit_room_coords}")
+        else:
+            # For other levels, place the exit in a random room
+            exit_room_coords = random.choice(list(self.rooms.keys()))
+            self.rooms[exit_room_coords].add_exit_door()
+            print(f"Exit door placed in room at {exit_room_coords}")
         
     def _spawn_resurrectible_minions(self, room, num_minions):
         """Spawn special minions in the level 3 boss room that can be resurrected"""

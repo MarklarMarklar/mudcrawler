@@ -63,6 +63,7 @@ class SoundManager:
             'level7': os.path.join(self.sound_dir, "level_7-8.mp3"),  # Added new track for levels 7-8
             'level9': os.path.join(self.sound_dir, "level_9-10.mp3"),  # Now only for level 9
             'level10': os.path.join(self.sound_dir, "Level_10.mp3"),  # Dedicated track for level 10
+            'level10_boss': os.path.join(self.sound_dir, "level_10_boss.mp3"),  # Special music for level 10 boss room
             'victory': os.path.join(self.sound_dir, "victory.mp3"),  # Victory music track
             # 'game_over': os.path.join(self.sound_dir, "game_over.mp3"),  # To be added later
         }

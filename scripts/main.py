@@ -696,6 +696,11 @@ class Game:
                     self.camera.center_on_point(self.player.rect.centerx, self.player.rect.centery)
                     self.boss_intro_original_camera_pos = (self.camera.x, self.camera.y)
                     print("Starting boss introduction sequence")
+                    
+                    # Play level 10 boss music if in level 10 boss room
+                    if self.current_level == 10:
+                        self.sound_manager.play_music('level10_boss')
+                        print("Playing level 10 boss music")
         except Exception as e:
             print(f"Error during door transition: {e}")
             
@@ -1617,6 +1622,15 @@ class Game:
 
     def play_level_appropriate_music(self):
         """Helper method to play the appropriate music for the current level"""
+        # Check if player is in a level 10 boss room
+        if self.current_level == 10 and hasattr(self, 'level') and self.level:
+            current_room = self.level.rooms.get(self.level.current_room_coords)
+            if current_room and current_room.room_type == 'boss':
+                self.sound_manager.play_music('level10_boss')
+                print(f"Playing level 10 boss music in boss room")
+                return
+                
+        # Regular level music based on level number
         if self.current_level >= 3 and self.current_level <= 4:
             self.sound_manager.play_music('level3')
             print(f"Playing level 3-4 music for level {self.current_level}")
