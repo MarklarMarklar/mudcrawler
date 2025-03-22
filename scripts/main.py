@@ -1534,9 +1534,12 @@ class Game:
         elif self.current_level >= 7 and self.current_level <= 8:
             self.sound_manager.play_music('level7')
             print(f"Playing level 7-8 music for level {self.current_level}")
-        elif self.current_level >= 9 and self.current_level <= 10:
+        elif self.current_level == 9:
             self.sound_manager.play_music('level9')
-            print(f"Playing level 9-10 music for level {self.current_level}")
+            print(f"Playing level 9 music for level {self.current_level}")
+        elif self.current_level == 10:
+            self.sound_manager.play_music('level10')
+            print(f"Playing dedicated level 10 music for final level")
         else:
             self.sound_manager.play_music('game')
             print(f"Playing standard game music for level {self.current_level}")
