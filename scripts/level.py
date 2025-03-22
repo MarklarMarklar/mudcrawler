@@ -1538,7 +1538,6 @@ class Room:
             print(f"Error creating chest sparkle burst: {e}")
 
 class Level:
-    """Represents an entire dungeon level composed of multiple rooms"""
     def __init__(self, level_number):
         self.level_number = level_number
         
@@ -1583,6 +1582,8 @@ class Level:
         # Level properties
         self.rooms = {}  # Dictionary of rooms indexed by (x,y) grid position
         self.current_room_coords = (0, 0)  # Start at origin
+        self.width = 3  # Grid width
+        self.height = 3  # Grid height
         self.num_rooms = 4 + level_number  # Number of rooms scales with level
         self.max_enemies_per_room = 2 + level_number // 2  # More enemies in later levels
         
@@ -1595,6 +1596,14 @@ class Level:
         
         # Level progression
         self.has_key = False
+        self.key_room_coords = None
+        
+        # Flag to track if the player is currently in a boss room with a living boss
+        self.in_active_boss_room = False
+        
+        # Game instance reference
+        self.game = None
+        self.particle_system = None
         
         # Generate level
         self.generate_level()
@@ -1606,6 +1615,7 @@ class Level:
         self.notification_text = None
         self.notification_color = (255, 255, 0)  # Default yellow
         self.notification_time = 0
+        self.notification_message = ""
         self.notification_duration = 0
         
         # Initialize cursed shields group for level 7 boss
@@ -2113,6 +2123,15 @@ class Level:
         door_direction = current_room.check_door_collision(player_rect)
         
         if door_direction:
+            # Prevent leaving a boss room until the boss is defeated
+            if current_room.room_type == 'boss' and hasattr(current_room, 'boss') and current_room.boss and current_room.boss.health > 0:
+                # Show a message if player tries to leave a boss room
+                if pygame.time.get_ticks() % 60 == 0:  # Only show message once per second
+                    print("You cannot leave until you defeat the boss!")
+                    if hasattr(self, 'game') and hasattr(self.game, 'display_message'):
+                        self.game.display_message("Defeat the boss to continue!", (255, 50, 50))
+                return None, None
+            
             # Check if there's a room in that direction
             new_pos = self.get_player_position_after_door(door_direction)
             if new_pos:
@@ -2170,6 +2189,14 @@ class Level:
         """Update only the current room"""
         current_room = self.rooms[self.current_room_coords]
         current_room.update(player)
+        
+        # Update the boss room status
+        if current_room.room_type == 'boss' and hasattr(current_room, 'boss') and current_room.boss:
+            # We're in a boss room with a living boss
+            self.in_active_boss_room = current_room.boss.health > 0
+        else:
+            # Not in a boss room or boss is defeated
+            self.in_active_boss_room = False
         
         # Check if player picked up the key
         self.check_key_pickup(player.hitbox)

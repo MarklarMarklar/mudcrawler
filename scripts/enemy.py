@@ -3011,19 +3011,15 @@ class Boss(Enemy):
                 for projectile in self.projectiles:
                     projectile.draw(surface)
             
-            # Draw health bar
-            health_bar_width = 50  # Reduced from 60
-            health_bar_height = 4  # Reduced from 6
-            health_ratio = self.health / self.enemy_data['health']
-            
-            # Position health bar relative to the visual representation
-            health_bar_x = draw_x + (self.image.get_width() - health_bar_width) // 2
-            health_bar_y = draw_y - 10  # Moved closer to boss (was -12)
-            
-            pygame.draw.rect(surface, RED, (health_bar_x, health_bar_y,
-                                          health_bar_width, health_bar_height))
-            pygame.draw.rect(surface, GREEN, (health_bar_x, health_bar_y,
-                                            health_bar_width * health_ratio, health_bar_height)) 
+            # Health bar is removed since it's shown in the HUD at the top of the screen
+            # The following code has been removed:
+            # health_bar_width = 50  # Reduced from 60
+            # health_bar_height = 4  # Reduced from 6
+            # health_ratio = self.health / self.enemy_data['health']
+            # health_bar_x = draw_x + (self.image.get_width() - health_bar_width) // 2
+            # health_bar_y = draw_y - 10  # Moved closer to boss (was -12)
+            # pygame.draw.rect(surface, RED, (health_bar_x, health_bar_y, health_bar_width, health_bar_height))
+            # pygame.draw.rect(surface, GREEN, (health_bar_x, health_bar_y, health_bar_width * health_ratio, health_bar_height))
 
     def cast_projectiles(self, player):
         """Create projectiles that become stationary after a delay for Boss 5 and 8"""

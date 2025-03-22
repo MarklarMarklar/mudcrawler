@@ -41,6 +41,16 @@ class Game:
         self.death_original_zoom = 2.0  # Store original zoom level
         self.death_target_zoom = 4.0  # Target zoom level for death sequence
         
+        # Boss introduction sequence
+        self.boss_intro_active = False
+        self.boss_intro_start_time = 0
+        self.boss_intro_duration = 2000  # 2 seconds for boss intro
+        self.boss_intro_original_zoom = 2.0
+        self.boss_intro_target_zoom = 3.0
+        self.boss_intro_complete = False
+        self.boss_intro_original_camera_pos = None
+        self.boss_intro_target_camera_pos = None
+        
         # Special attack variables
         self.special_attack_active = False
         self.special_attack_data = None
@@ -486,6 +496,65 @@ class Game:
         # Update particle system
         self.particle_system.update()
         
+        # Handle boss introduction sequence
+        if self.boss_intro_active:
+            current_time = pygame.time.get_ticks()
+            elapsed = current_time - self.boss_intro_start_time
+            
+            if not self.boss_intro_complete:
+                # Calculate progress (0.0 to 1.0)
+                progress = min(1.0, elapsed / self.boss_intro_duration)
+                
+                # Use easing function for smoother zoom (ease-in-out)
+                if progress < 0.5:
+                    # Ease in (slow start)
+                    t = 2 * progress * progress
+                else:
+                    # Ease out (slow end)
+                    t = -1 + (4 - 2 * progress) * progress
+                
+                # Interpolate zoom level
+                new_zoom = self.boss_intro_original_zoom + (self.boss_intro_target_zoom - self.boss_intro_original_zoom) * t
+                
+                # Update camera zoom
+                self.camera.zoom = new_zoom
+                self.camera.view_width = self.camera.width / self.camera.zoom
+                self.camera.view_height = self.camera.height / self.camera.zoom
+                
+                # Get current room and boss
+                current_room = self.level.rooms[self.level.current_room_coords]
+                if current_room and current_room.boss:
+                    # Calculate target camera position to center on boss
+                    target_x = current_room.boss.rect.centerx - (self.camera.view_width / 2)
+                    target_y = current_room.boss.rect.centery - (self.camera.view_height / 2)
+                    
+                    # Interpolate camera position
+                    if self.boss_intro_original_camera_pos:
+                        self.camera.x = int(self.boss_intro_original_camera_pos[0] + 
+                                          (target_x - self.boss_intro_original_camera_pos[0]) * t)
+                        self.camera.y = int(self.boss_intro_original_camera_pos[1] + 
+                                          (target_y - self.boss_intro_original_camera_pos[1]) * t)
+                
+                # Mark as complete when we reach the end
+                if progress >= 1.0:
+                    self.boss_intro_complete = True
+            else:
+                # After 2 seconds, return to player
+                if elapsed >= self.boss_intro_duration + 2000:  # Wait 2 seconds after zoom
+                    # Reset camera to follow player
+                    self.camera.zoom = self.boss_intro_original_zoom
+                    self.camera.view_width = self.camera.width / self.camera.zoom
+                    self.camera.view_height = self.camera.height / self.camera.zoom
+                    self.camera.center_on_point(self.player.rect.centerx, self.player.rect.centery)
+                    
+                    # End boss intro sequence
+                    self.boss_intro_active = False
+                    self.boss_intro_complete = False
+                    self.boss_intro_start_time = 0
+                    self.boss_intro_original_camera_pos = None
+                    self.boss_intro_target_camera_pos = None
+            return  # Skip normal updates during boss intro
+        
         # Handle special attack if active
         if self.special_attack_active:
             # Update debug print to handle both boss and regular enemy special attacks
@@ -614,6 +683,19 @@ class Game:
                 
                 # Clear all arrows when moving between rooms
                 self.weapon_manager.clear_arrows()
+                
+                # Check if entering a boss room
+                current_room = self.level.rooms[self.level.current_room_coords]
+                if current_room.room_type == 'boss' and current_room.boss and current_room.boss.health > 0:
+                    # Start boss introduction sequence
+                    self.boss_intro_active = True
+                    self.boss_intro_start_time = pygame.time.get_ticks()
+                    self.boss_intro_original_zoom = self.camera.zoom
+                    
+                    # Make sure camera is positioned on player before starting the transition
+                    self.camera.center_on_point(self.player.rect.centerx, self.player.rect.centery)
+                    self.boss_intro_original_camera_pos = (self.camera.x, self.camera.y)
+                    print("Starting boss introduction sequence")
         except Exception as e:
             print(f"Error during door transition: {e}")
             
@@ -1196,24 +1278,34 @@ class Game:
             light_effect = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
             light_effect.fill((0, 0, 0, self.darkness_level))  # Semi-transparent black overlay
             
-            # Calculate the player's actual position on screen by getting their relative position to camera
-            # This works even at screen edges
+            # Calculate torch position based on current camera view
             
-            # Get player's world position
-            player_world_x = self.player.rect.centerx
-            player_world_y = self.player.rect.centery
-            
-            # Calculate relative position to camera
-            rel_x = player_world_x - self.camera.x
-            rel_y = player_world_y - self.camera.y
-            
-            # Scale by zoom factor
-            player_screen_x = rel_x * self.camera.zoom
-            player_screen_y = rel_y * self.camera.zoom
+            # During boss intro, we need to use the camera's current position for the light
+            if self.boss_intro_active:
+                # Get the screen center (where the torch should be during intro)
+                screen_center_x = WINDOW_WIDTH // 2
+                screen_center_y = WINDOW_HEIGHT // 2
+                
+                # Use screen center for torch position during intro
+                torch_screen_x = screen_center_x
+                torch_screen_y = screen_center_y
+            else:
+                # Normal gameplay - light follows player
+                # Get player's world position
+                player_world_x = self.player.rect.centerx
+                player_world_y = self.player.rect.centery
+                
+                # Calculate relative position to camera
+                rel_x = player_world_x - self.camera.x
+                rel_y = player_world_y - self.camera.y
+                
+                # Scale by zoom factor
+                torch_screen_x = rel_x * self.camera.zoom
+                torch_screen_y = rel_y * self.camera.zoom
             
             # Ensure coordinates are integers for drawing
-            player_screen_x = int(player_screen_x)
-            player_screen_y = int(player_screen_y)
+            torch_screen_x = int(torch_screen_x)
+            torch_screen_y = int(torch_screen_y)
             
             # Inner fully lit area (radius where light is 100%)
             fully_lit_radius = 80
@@ -1246,7 +1338,7 @@ class Game:
                     alpha = int(self.darkness_level * falloff)
                 
                 # Draw the circle with calculated alpha
-                pygame.draw.circle(light_effect, (0, 0, 0, alpha), (player_screen_x, player_screen_y), radius)
+                pygame.draw.circle(light_effect, (0, 0, 0, alpha), (torch_screen_x, torch_screen_y), radius)
             
             # Apply the lighting effect
             self.screen.blit(light_effect, (0, 0))
