@@ -536,18 +536,14 @@ class Enemy(pygame.sprite.Sprite):
         super().__init__()
         self.asset_manager = get_asset_manager()
         self.sound_manager = get_sound_manager()
-        self.enemy_type = enemy_type
         self.enemy_data = ENEMY_TYPES[f'level{level}']
-        
-        # Store level information
-        self.level = level
         self.level_instance = level_instance
         
-        # Animation properties
+        # Animation states and directions
         self.animations = {
-            'idle': {'up': [], 'down': [], 'left': [], 'right': []},
-            'walk': {'up': [], 'down': [], 'left': [], 'right': []},
-            'attack': {'up': [], 'down': [], 'left': [], 'right': []}
+            'idle': {},
+            'walk': {},
+            'attack': {}
         }
         
         # Get the enemy name
@@ -744,22 +740,14 @@ class Enemy(pygame.sprite.Sprite):
             self.projectile_damage = self.damage * 0.8  # 80% of normal damage
             self.projectile_color = (200, 50, 50)  # Red projectiles
         
-        # Enemy state and animation properties
-        self.state = 'idle'  # idle, chase, attack, patrol
-        self.current_state = 'idle'  # For animation purposes
-        self.facing = 'down'  # Initial facing direction
-        self.frame = 0
-        self.animation_time = 0
-        self.animation_speed = 0.2
-        
-        # Jump attack animation properties
+        # Add jump attack animation variables
         self.is_jumping = False
-        self.jump_start_time = 0
-        self.jump_duration = 300  # ms
-        self.original_pos = (self.rect.x, self.rect.y)
-        self.jump_target_pos = (0, 0)
-        self.jump_return_time = 0
+        self.jump_state = None  # 'forward', 'attacking', 'backward'
         self.jump_progress = 0
+        self.jump_duration = 300  # 300ms for the full jump animation
+        self.jump_target_pos = None
+        self.original_pos = None
+        self.jump_start_time = 0
     
     def take_damage(self, amount):
         self.health -= amount
@@ -1021,39 +1009,45 @@ class Enemy(pygame.sprite.Sprite):
         
     def attack(self, player):
         if self.can_attack():
-            # Store current time and mark the start of attack
-            current_time = pygame.time.get_ticks()
-            self.last_attack_time = current_time
+            self.last_attack_time = pygame.time.get_ticks()
             self.current_state = 'attack'
             self.frame = 0  # Reset animation frame
             
-            # Start jump attack animation for normal enemies (not for bosses)
+            # Implement jump attack animation for normal enemies (not for bosses)
             if not isinstance(self, Boss):
-                self.is_jumping = True
-                self.jump_start_time = current_time
-                self.jump_return_time = 0
-                self.original_pos = (self.rect.x, self.rect.y)
+                # Calculate position to jump to (close to the player)
+                player_dist = math.sqrt((player.rect.centerx - self.rect.centerx)**2 + 
+                                      (player.rect.centery - self.rect.centery)**2)
                 
-                # Calculate target position (closer to player)
-                dx = player.rect.centerx - self.rect.centerx
-                dy = player.rect.centery - self.rect.centery
-                distance = math.sqrt(dx * dx + dy * dy)
-                
-                if distance > 0:
-                    # Normalize direction vector
-                    dx = dx / distance
-                    dy = dy / distance
+                # Only jump if not too close to avoid clipping through player
+                if player_dist > TILE_SIZE // 2:
+                    # Store original position
+                    self.original_pos = (self.rect.centerx, self.rect.centery)
                     
-                    # Jump about halfway to the player or at least 20 pixels
-                    jump_distance = min(distance * 0.5, TILE_SIZE)
-                    self.jump_target_pos = (
-                        self.rect.x + dx * jump_distance,
-                        self.rect.y + dy * jump_distance
-                    )
+                    # Calculate direction vector to player
+                    dx = player.rect.centerx - self.rect.centerx
+                    dy = player.rect.centery - self.rect.centery
+                    dist = math.sqrt(dx*dx + dy*dy)
                     
-                    print(f"Enemy jumping to attack: {self.original_pos} -> {self.jump_target_pos}")
+                    if dist > 0:
+                        # Normalize direction vector
+                        dx = dx / dist
+                        dy = dy / dist
+                        
+                        # Calculate jump target (70% of the way to the player)
+                        jump_dist = min(dist * 0.7, TILE_SIZE * 1.2)
+                        target_x = self.rect.centerx + dx * jump_dist
+                        target_y = self.rect.centery + dy * jump_dist
+                        self.jump_target_pos = (target_x, target_y)
+                        
+                        # Start jump animation
+                        self.is_jumping = True
+                        self.jump_state = 'forward'
+                        self.jump_progress = 0
+                        self.jump_start_time = pygame.time.get_ticks()
+                        
+                        print(f"Enemy starting jump attack from {self.original_pos} to {self.jump_target_pos}")
             
-            # Apply damage to player
             return player.take_damage(self.damage)
         return False
         
@@ -1116,45 +1110,60 @@ class Enemy(pygame.sprite.Sprite):
             # Skip the rest of the update if still in blood puddle state
             return
         
-        current_time = pygame.time.get_ticks()
-        
-        # Handle jump attack animation
-        if self.is_jumping:
-            # Calculate progress of the jump (0.0 to 1.0)
-            if self.jump_return_time == 0:
-                # Moving toward player
-                elapsed = current_time - self.jump_start_time
-                progress = min(1.0, elapsed / (self.jump_duration / 2))
-                
-                # Interpolate position
-                self.rect.x = int(self.original_pos[0] + (self.jump_target_pos[0] - self.original_pos[0]) * progress)
-                self.rect.y = int(self.original_pos[1] + (self.jump_target_pos[1] - self.original_pos[1]) * progress)
-                
-                # If reached the player, start returning
-                if progress >= 1.0:
-                    self.jump_return_time = current_time
-            else:
-                # Returning to original position
-                elapsed = current_time - self.jump_return_time
-                progress = min(1.0, elapsed / (self.jump_duration / 2))
-                
-                # Interpolate position back to original
-                self.rect.x = int(self.jump_target_pos[0] + (self.original_pos[0] - self.jump_target_pos[0]) * progress)
-                self.rect.y = int(self.jump_target_pos[1] + (self.original_pos[1] - self.jump_target_pos[1]) * progress)
-                
-                # If returned to original position, end jump
-                if progress >= 1.0:
+        # Handle jump attack animation for normal enemies (not bosses)
+        if not isinstance(self, Boss) and self.is_jumping:
+            current_time = pygame.time.get_ticks()
+            elapsed = current_time - self.jump_start_time
+            
+            # Calculate jump progress (0 to 1)
+            if self.jump_state == 'forward':
+                # Forward jump (towards player)
+                if elapsed >= self.jump_duration // 3:
+                    # Forward jump complete, start attack phase
+                    self.jump_state = 'attacking'
+                    self.jump_start_time = current_time
+                else:
+                    # Update jump progress
+                    self.jump_progress = elapsed / (self.jump_duration // 3)
+            
+            elif self.jump_state == 'attacking':
+                # Attacking phase (stay at target position briefly)
+                if elapsed >= self.jump_duration // 3:
+                    # Attack phase complete, start returning
+                    self.jump_state = 'backward'
+                    self.jump_start_time = current_time
+            
+            elif self.jump_state == 'backward':
+                # Backward jump (returning to original position)
+                if elapsed >= self.jump_duration // 3:
+                    # Jump animation complete
                     self.is_jumping = False
-                    self.rect.x = self.original_pos[0]
-                    self.rect.y = self.original_pos[1]
+                    self.jump_state = None
+                    
+                    # Restore original position
+                    self.rect.centerx = self.original_pos[0]
+                    self.rect.centery = self.original_pos[1]
+                else:
+                    # Update jump progress
+                    self.jump_progress = elapsed / (self.jump_duration // 3)
             
-            # Update animation
-            self.animation_time += self.animation_speed
-            self.frame = int(self.animation_time) % len(self.animations[self.current_state][self.facing])
-            self.image = self.animations[self.current_state][self.facing][self.frame]
-            
-            return
-            
+            # Skip regular movement updates during jump animation
+            if self.is_jumping:
+                # Update animation
+                self.animation_time += self.animation_speed
+                
+                # If the attack animation is done, go back to previous state
+                if self.current_state == 'attack' and self.animation_time >= len(self.animations[self.current_state][self.facing]):
+                    self.current_state = 'idle' if self.state == 'idle' else 'walk'
+                    self.animation_time = 0
+                    
+                # Calculate current frame
+                self.frame = int(self.animation_time) % len(self.animations[self.current_state][self.facing])
+                self.image = self.animations[self.current_state][self.facing][self.frame]
+                
+                # Skip the rest of the update for jumping enemies
+                return
+        
         # Calculate distance to player
         dx = player.rect.centerx - self.rect.centerx
         dy = player.rect.centery - self.rect.centery
@@ -1269,28 +1278,45 @@ class Enemy(pygame.sprite.Sprite):
                 self.shoot_projectile(player)
         
     def draw(self, surface):
-        # Add a motion blur/trail effect when jumping
-        if self.is_jumping:
-            # Draw a faded trail at the original position when jumping away
-            if self.jump_return_time == 0:
-                # Draw faded copy at original position
-                ghost_image = self.image.copy()
-                ghost_image.set_alpha(100)  # Semi-transparent
-                ghost_rect = self.rect.copy()
-                ghost_rect.x = self.original_pos[0]
-                ghost_rect.y = self.original_pos[1]
-                surface.blit(ghost_image, ghost_rect)
-            else:
-                # Draw faded copy at jump target position
-                ghost_image = self.image.copy()
-                ghost_image.set_alpha(100)  # Semi-transparent
-                ghost_rect = self.rect.copy()
-                ghost_rect.x = self.jump_target_pos[0]
-                ghost_rect.y = self.jump_target_pos[1]
-                surface.blit(ghost_image, ghost_rect)
-        
-        # Draw the enemy
-        surface.blit(self.image, self.rect)
+        # Special draw handling for jump animation (only for normal enemies, not bosses)
+        if not isinstance(self, Boss) and self.is_jumping and self.original_pos and self.jump_target_pos:
+            # Store actual position to restore later
+            actual_pos = (self.rect.centerx, self.rect.centery)
+            
+            # Calculate animated position
+            if self.jump_state == 'forward':
+                # Moving from original to target position
+                self.rect.centerx = int(self.original_pos[0] + (self.jump_target_pos[0] - self.original_pos[0]) * self.jump_progress)
+                self.rect.centery = int(self.original_pos[1] + (self.jump_target_pos[1] - self.original_pos[1]) * self.jump_progress)
+            elif self.jump_state == 'attacking':
+                # Staying at target position
+                self.rect.centerx = int(self.jump_target_pos[0])
+                self.rect.centery = int(self.jump_target_pos[1])
+            elif self.jump_state == 'backward':
+                # Moving from target back to original position
+                self.rect.centerx = int(self.jump_target_pos[0] + (self.original_pos[0] - self.jump_target_pos[0]) * self.jump_progress)
+                self.rect.centery = int(self.jump_target_pos[1] + (self.original_pos[1] - self.jump_target_pos[1]) * self.jump_progress)
+            
+            # Draw shadow at original position (to show where enemy will return)
+            shadow_alpha = 100
+            shadow_size = int(TILE_SIZE * 0.8)
+            shadow_surf = pygame.Surface((shadow_size, shadow_size//2), pygame.SRCALPHA)
+            pygame.draw.ellipse(shadow_surf, (0, 0, 0, shadow_alpha), shadow_surf.get_rect())
+            shadow_rect = shadow_surf.get_rect(center=(self.original_pos[0], self.original_pos[1] + TILE_SIZE//4))
+            surface.blit(shadow_surf, shadow_rect)
+            
+            # Normal drawing (with temporarily modified position)
+            surface.blit(self.image, self.rect)
+            
+            # Restore actual position
+            self.rect.centerx, self.rect.centery = actual_pos
+        else:
+            # Regular drawing for non-jumping enemies or bosses
+            surface.blit(self.image, self.rect)
+            
+        # Draw the healthbar if enemy is damaged
+        if self.health < self.max_health and not self.is_dead:
+            self.draw_health_bar(surface)
         
         # Draw resurrection effects if in blood puddle state
         if self.is_dead:
@@ -1329,7 +1355,7 @@ class Enemy(pygame.sprite.Sprite):
                         # Draw the spark with a purple color
                         spark_color = (180 + int(75 * progress), 50, 255)
                         pygame.draw.circle(surface, spark_color, (int(spark_x), int(spark_y)), spark_size)
-            
+        
             # If just resurrected
             if current_time >= self.resurrection_time and current_time <= self.resurrection_time + 200:
                 # Create visual effect for resurrection
@@ -1479,13 +1505,8 @@ class Enemy(pygame.sprite.Sprite):
 class Boss(Enemy):
     def __init__(self, x, y, level, level_instance=None):
         super().__init__(x, y, None, level, level_instance)
-        
-        # Ensure is_jumping is False for bosses
-        self.is_jumping = False
-        
         self.asset_manager = get_asset_manager()
         self.sound_manager = get_sound_manager()
-        
         self.enemy_data = BOSS_TYPES[f'level{level}']
         self.level = level  # Explicitly save the level
         
@@ -1682,99 +1703,261 @@ class Boss(Enemy):
         # Get boss name
         boss_name = self.enemy_data['name'].lower().replace(' ', '_')
         
-        # Create default colored image with boss name as placeholder
-        placeholder = pygame.Surface((TILE_SIZE*1.5, TILE_SIZE*1.5))
-        placeholder.fill((150, 0, 0))  # Darker red for bosses
-        font = pygame.font.Font(None, 16)
-        text = font.render(f"BOSS: {boss_name[:8]}", True, WHITE)
-        text_rect = text.get_rect(center=(TILE_SIZE*1.5//2, TILE_SIZE*1.5//2))
-        placeholder.blit(text, text_rect)
-        
-        # Initialize with placeholder for all animations and directions
-        for anim_type in ['idle', 'walk', 'attack', 'special']:
-            self.animations[anim_type] = {
-                'down': [placeholder], 
-                'up': [placeholder], 
-                'left': [placeholder], 
-                'right': [placeholder]
-            }
-        
-        # Load boss image based on level - do this only once
-        boss_img = None
-        boss_img_path = os.path.join(BOSS_SPRITES_PATH, f"boss_{level}.png")
-        
-        # Determine the scale based on the boss level
-        scale_factor = 2.0  # Default scale factor
-        if level >= 4 and level <= 6 or level == 8:
-            scale_factor = 2.2
-        elif level == 7:
-            scale_factor = 2.3
-        elif level == 9:
-            scale_factor = 2.4
-        elif level == 10:
-            scale_factor = 2.5
-        
-        # Try to load the boss image
-        try:
-            if os.path.exists(boss_img_path):
-                # Load and scale the image
-                boss_img = self.asset_manager.load_image(
-                    boss_img_path, 
-                    scale=(TILE_SIZE*scale_factor, TILE_SIZE*scale_factor)
-                )
-                print(f"Using boss_{level}.png for level {level} boss animations")
-                
-                # Use this image for all animation states and directions
-                for direction in ['down', 'up', 'left', 'right']:
-                    self.animations['idle'][direction] = [boss_img]
-                    self.animations['walk'][direction] = [boss_img]
-                    self.animations['attack'][direction] = [boss_img]
-                    self.animations['special'][direction] = [boss_img]
-        except Exception as e:
-            print(f"Failed to load boss_{level}.png for level {level} boss: {e}")
-            # Continue with the placeholder
-        
-        # If boss image wasn't loaded, try to load traditional animation files
-        if boss_img is None:
+        # Load animations for each direction
+        for direction in ['down', 'up', 'left', 'right']:
+            # Create default colored image with boss name as placeholder
+            placeholder = pygame.Surface((TILE_SIZE*1.5, TILE_SIZE*1.5))
+            placeholder.fill((150, 0, 0))  # Darker red for bosses
+            font = pygame.font.Font(None, 16)
+            text = font.render(f"BOSS: {boss_name[:8]}", True, WHITE)
+            text_rect = text.get_rect(center=(TILE_SIZE*1.5//2, TILE_SIZE*1.5//2))
+            placeholder.blit(text, text_rect)
+            
+            # Set default animations to placeholder
+            self.animations['idle'][direction] = [placeholder]
+            self.animations['walk'][direction] = [placeholder]
+            self.animations['attack'][direction] = [placeholder]
+            self.animations['special'][direction] = [placeholder]
+            
+            # Set up base path for this boss
             base_path = os.path.join(BOSS_SPRITES_PATH, boss_name)
             
-            # Try to load actual animations for each direction
-            for direction in ['down', 'up', 'left', 'right']:
+            # First, check for level 1 boss to use boss_1.png
+            if level == 1:
                 try:
-                    if os.path.exists(base_path):
-                        idle_path = os.path.join(base_path, f"idle_{direction}")
-                        if os.path.exists(idle_path):
-                            self.animations['idle'][direction] = self.asset_manager.load_animation(
-                                idle_path, "idle_", 4, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
+                    # Try to load the new boss_1.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_1.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2, TILE_SIZE*2))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_1.png for level 1 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
                 except Exception as e:
-                    print(f"Could not load idle animation for boss {boss_name} {direction}: {e}")
-                    
+                    print(f"Failed to load boss_1.png for level 1 boss: {e}")
+                    # Continue with the normal animation loading
+            
+            # Check for level 2 boss to use boss_2.png
+            elif level == 2:
                 try:
-                    if os.path.exists(base_path):
-                        walk_path = os.path.join(base_path, f"walk_{direction}")
-                        if os.path.exists(walk_path):
-                            self.animations['walk'][direction] = self.asset_manager.load_animation(
-                                walk_path, "walk_", 4, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
+                    # Try to load the new boss_2.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_2.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2, TILE_SIZE*2))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_2.png for level 2 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
                 except Exception as e:
-                    print(f"Could not load walk animation for boss {boss_name} {direction}: {e}")
-                    
+                    print(f"Failed to load boss_2.png for level 2 boss: {e}")
+                    # Continue with the normal animation loading
+            
+            # Check for level 3 boss to use boss_3.png
+            elif level == 3:
                 try:
-                    if os.path.exists(base_path):
-                        attack_path = os.path.join(base_path, f"attack_{direction}")
-                        if os.path.exists(attack_path):
-                            self.animations['attack'][direction] = self.asset_manager.load_animation(
-                                attack_path, "attack_", 4, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
+                    # Try to load the new boss_3.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_3.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2, TILE_SIZE*2))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_3.png for level 3 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
                 except Exception as e:
-                    print(f"Could not load attack animation for boss {boss_name} {direction}: {e}")
-                    
+                    print(f"Failed to load boss_3.png for level 3 boss: {e}")
+                    # Continue with the normal animation loading
+            
+            # Check for level 4 boss to use boss_4.png
+            elif level == 4:
                 try:
-                    if os.path.exists(base_path):
-                        special_path = os.path.join(base_path, f"special_{direction}")
-                        if os.path.exists(special_path):
-                            self.animations['special'][direction] = self.asset_manager.load_animation(
-                                special_path, "special_", 6, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
+                    # Try to load the new boss_4.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_4.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2.2, TILE_SIZE*2.2))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_4.png for level 4 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
                 except Exception as e:
-                    print(f"Could not load special animation for boss {boss_name} {direction}: {e}")
+                    print(f"Failed to load boss_4.png for level 4 boss: {e}")
+                    # Continue with the normal animation loading
+            
+            # Check for level 5 boss to use boss_5.png
+            elif level == 5:
+                try:
+                    # Try to load the new boss_5.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_5.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image - slightly larger for this boss
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2.2, TILE_SIZE*2.2))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_5.png for level 5 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
+                except Exception as e:
+                    print(f"Failed to load boss_5.png for level 5 boss: {e}")
+                    # Continue with the normal animation loading
+            
+            # Check for level 6 boss to use boss_6.png
+            elif level == 6:
+                try:
+                    # Try to load the new boss_6.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_6.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2.2, TILE_SIZE*2.2))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_6.png for level 6 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
+                except Exception as e:
+                    print(f"Failed to load boss_6.png for level 6 boss: {e}")
+                    # Continue with the normal animation loading
+            
+            # Check for level 7 boss to use boss_7.png
+            elif level == 7:
+                try:
+                    # Try to load the new boss_7.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_7.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2.3, TILE_SIZE*2.3))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_7.png for level 7 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
+                except Exception as e:
+                    print(f"Failed to load boss_7.png for level 7 boss: {e}")
+                    # Continue with the normal animation loading
+            
+            # Check for level 8 boss to use boss_8.png
+            elif level == 8:
+                try:
+                    # Try to load the new boss_8.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_8.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image - slightly larger for this boss
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2.2, TILE_SIZE*2.2))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_8.png for level 8 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
+                except Exception as e:
+                    print(f"Failed to load boss_8.png for level 8 boss: {e}")
+                    # Continue with the normal animation loading
+            
+            # Check for level 9 boss to use boss_9.png
+            elif level == 9:
+                try:
+                    # Try to load the new boss_9.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_9.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2.4, TILE_SIZE*2.4))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_9.png for level 9 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
+                except Exception as e:
+                    print(f"Failed to load boss_9.png for level 9 boss: {e}")
+                    # Continue with the normal animation loading
+            
+            # Check for level 10 boss to use boss_10.png
+            elif level == 10:
+                try:
+                    # Try to load the new boss_10.png image
+                    boss_img_path = os.path.join(BOSS_SPRITES_PATH, "boss_10.png")
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image
+                        boss_img = self.asset_manager.load_image(boss_img_path, scale=(TILE_SIZE*2.5, TILE_SIZE*2.5))
+                        
+                        # Use this image for all animation states
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                        print(f"Using boss_10.png for level 10 boss {direction} animations")
+                        continue  # Skip the rest of this iteration
+                except Exception as e:
+                    print(f"Failed to load boss_10.png for level 10 boss: {e}")
+                    # Continue with the normal animation loading
+            
+            # Now try to load actual animations but don't crash if they're missing
+            try:
+                if os.path.exists(base_path):
+                    idle_path = os.path.join(base_path, f"idle_{direction}")
+                    if os.path.exists(idle_path):
+                        self.animations['idle'][direction] = self.asset_manager.load_animation(
+                            idle_path, "idle_", 4, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
+            except Exception as e:
+                print(f"Could not load idle animation for boss {boss_name} {direction}: {e}")
+                
+            try:
+                if os.path.exists(base_path):
+                    walk_path = os.path.join(base_path, f"walk_{direction}")
+                    if os.path.exists(walk_path):
+                        self.animations['walk'][direction] = self.asset_manager.load_animation(
+                            walk_path, "walk_", 4, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
+            except Exception as e:
+                print(f"Could not load walk animation for boss {boss_name} {direction}: {e}")
+                
+            try:
+                if os.path.exists(base_path):
+                    attack_path = os.path.join(base_path, f"attack_{direction}")
+                    if os.path.exists(attack_path):
+                        self.animations['attack'][direction] = self.asset_manager.load_animation(
+                            attack_path, "attack_", 4, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
+            except Exception as e:
+                print(f"Could not load attack animation for boss {boss_name} {direction}: {e}")
+                
+            try:
+                if os.path.exists(base_path):
+                    special_path = os.path.join(base_path, f"special_{direction}")
+                    if os.path.exists(special_path):
+                        self.animations['special'][direction] = self.asset_manager.load_animation(
+                            special_path, "special_", 6, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
+            except Exception as e:
+                print(f"Could not load special animation for boss {boss_name} {direction}: {e}")
         
         # Create smaller collision rectangle - MUCH smaller to fit through tight passages
         self.original_rect = self.rect.copy()
@@ -2246,12 +2429,7 @@ class Boss(Enemy):
             
             # Skip the rest of the update if still in blood puddle state
             return
-        
-        current_time = pygame.time.get_ticks()
-        
-        # Note: We skip the jump animation check here since bosses don't jump
-        # This fixes the double texture loading issue
-        
+            
         # Calculate distance to player
         dx = player.rect.centerx - self.rect.centerx
         dy = player.rect.centery - self.rect.centery
@@ -2883,31 +3061,45 @@ class Boss(Enemy):
                                 player.level.game.display_message("Shield damage!", (150, 50, 255))
         
     def draw(self, surface):
-        # Skip the motion blur/trail effect when jumping (bosses don't jump)
-        # This prevents duplicate texture blitting
+        # Special draw handling for jump animation (only for normal enemies, not bosses)
+        if not isinstance(self, Boss) and self.is_jumping and self.original_pos and self.jump_target_pos:
+            # Store actual position to restore later
+            actual_pos = (self.rect.centerx, self.rect.centery)
             
-        # Draw trailing effect for level 1 and 2 bosses (BEFORE drawing the main sprite)
-        if self.trail_enabled and self.position_history:
-            # Draw position history for trailing effect
-            for i, (x, y, img) in enumerate(reversed(self.position_history)):
-                # Calculate alpha (transparency) based on position in history
-                # Make the oldest ones more transparent
-                alpha = max(20, 150 - (i * 15))
-                
-                # Create a copy of the sprite with alpha transparency
-                ghost_img = img.copy()
-                # Set the alpha of the entire surface
-                ghost_img.set_alpha(alpha)
-                
-                # Draw the ghost sprite at the historical position
-                surface.blit(ghost_img, (x - self.visual_offset_x, y - self.visual_offset_y))
-        
-        # Calculate position with visual offset
-        draw_x = self.rect.x - self.visual_offset_x
-        draw_y = self.rect.y - self.visual_offset_y
-        
-        # Draw boss character (drawn AFTER the trail)
-        surface.blit(self.image, (draw_x, draw_y))
+            # Calculate animated position
+            if self.jump_state == 'forward':
+                # Moving from original to target position
+                self.rect.centerx = int(self.original_pos[0] + (self.jump_target_pos[0] - self.original_pos[0]) * self.jump_progress)
+                self.rect.centery = int(self.original_pos[1] + (self.jump_target_pos[1] - self.original_pos[1]) * self.jump_progress)
+            elif self.jump_state == 'attacking':
+                # Staying at target position
+                self.rect.centerx = int(self.jump_target_pos[0])
+                self.rect.centery = int(self.jump_target_pos[1])
+            elif self.jump_state == 'backward':
+                # Moving from target back to original position
+                self.rect.centerx = int(self.jump_target_pos[0] + (self.original_pos[0] - self.jump_target_pos[0]) * self.jump_progress)
+                self.rect.centery = int(self.jump_target_pos[1] + (self.original_pos[1] - self.jump_target_pos[1]) * self.jump_progress)
+            
+            # Draw shadow at original position (to show where enemy will return)
+            shadow_alpha = 100
+            shadow_size = int(TILE_SIZE * 0.8)
+            shadow_surf = pygame.Surface((shadow_size, shadow_size//2), pygame.SRCALPHA)
+            pygame.draw.ellipse(shadow_surf, (0, 0, 0, shadow_alpha), shadow_surf.get_rect())
+            shadow_rect = shadow_surf.get_rect(center=(self.original_pos[0], self.original_pos[1] + TILE_SIZE//4))
+            surface.blit(shadow_surf, shadow_rect)
+            
+            # Normal drawing (with temporarily modified position)
+            surface.blit(self.image, self.rect)
+            
+            # Restore actual position
+            self.rect.centerx, self.rect.centery = actual_pos
+        else:
+            # Regular drawing for non-jumping enemies or bosses
+            surface.blit(self.image, self.rect)
+            
+        # Draw the healthbar if enemy is damaged
+        if self.health < self.max_health and not self.is_dead:
+            self.draw_health_bar(surface)
         
         # Draw resurrection effects if in blood puddle state
         if self.is_dead:
@@ -2969,8 +3161,8 @@ class Boss(Enemy):
             surface.blit(self.image, self.rect)
             
         else:
-            # Draw trailing effect for level 1 and 2 bosses (BEFORE drawing the main sprite)
-            if self.trail_enabled and self.position_history:
+            # For boss class with trail effects
+            if hasattr(self, 'trail_enabled') and hasattr(self, 'position_history') and self.trail_enabled and self.position_history:
                 # Draw position history for trailing effect
                 for i, (x, y, img) in enumerate(reversed(self.position_history)):
                     # Calculate alpha (transparency) based on position in history
@@ -2983,174 +3175,195 @@ class Boss(Enemy):
                     ghost_img.set_alpha(alpha)
                     
                     # Draw the ghost sprite at the historical position
-                    surface.blit(ghost_img, (x - self.visual_offset_x, y - self.visual_offset_y))
+                    if hasattr(self, 'visual_offset_x') and hasattr(self, 'visual_offset_y'):
+                        surface.blit(ghost_img, (x - self.visual_offset_x, y - self.visual_offset_y))
+                    else:
+                        surface.blit(ghost_img, (x, y))
             
-            # Calculate position with visual offset
-            draw_x = self.rect.x - self.visual_offset_x
-            draw_y = self.rect.y - self.visual_offset_y
-            
-            # Draw boss character (drawn AFTER the trail)
-            surface.blit(self.image, (draw_x, draw_y))
-            
-            # Debug: Draw hitboxes to visualize them if in debug mode
-            if DEBUG_MODE:
-                # Draw movement hitbox in yellow
-                pygame.draw.rect(surface, (255, 255, 0), self.rect, 2)
-                # Draw damage hitbox in red - draw it at the proper visual position
-                pygame.draw.rect(surface, (255, 0, 0), self.damage_hitbox, 2)
-            
-            # Draw defensive mode effect for level 4 boss
-            if self.level == 4 and self.defensive_mode:
-                current_time = pygame.time.get_ticks()
+            # For Boss class, apply visual offset if available
+            if isinstance(self, Boss) and hasattr(self, 'visual_offset_x') and hasattr(self, 'visual_offset_y'):
+                # Calculate position with visual offset
+                draw_x = self.rect.x - self.visual_offset_x
+                draw_y = self.rect.y - self.visual_offset_y
                 
-                # Create a pulsing shield effect
-                shield_size = self.image.get_width() * 1.2  # Slightly larger than boss
-                shield_pulse = 0.1 * math.sin(current_time / 100)  # Subtle pulsing effect
-                shield_radius = int(shield_size / 2 * (1 + shield_pulse))
+                # Draw boss character (drawn AFTER the trail)
+                surface.blit(self.image, (draw_x, draw_y))
                 
-                # Create a transparent surface for the shield
-                shield_surface = pygame.Surface((shield_radius * 2, shield_radius * 2), pygame.SRCALPHA)
+                # Debug: Draw hitboxes to visualize them if in debug mode
+                if DEBUG_MODE:
+                    # Draw movement hitbox in yellow
+                    pygame.draw.rect(surface, (255, 255, 0), self.rect, 2)
+                    # Draw damage hitbox in red - draw it at the proper visual position
+                    if hasattr(self, 'damage_hitbox'):
+                        pygame.draw.rect(surface, (255, 0, 0), self.damage_hitbox, 2)
                 
-                # Blue shield color with pulsing opacity
-                shield_alpha = int(100 + 50 * math.sin(current_time / 150))
-                
-                # Change shield color if damage was just reflected - make it brighter
-                if hasattr(self, 'reflected_damage') and self.reflected_damage > 0:
-                    shield_color = (50, 150, 255, shield_alpha + 50)  # Brighter blue shield
-                    # Also add an extra outer ring to show reflection
-                    reflection_radius = shield_radius + 10
-                    pygame.draw.circle(shield_surface, (255, 255, 255, shield_alpha // 2), 
-                                      (shield_radius, shield_radius), reflection_radius, 3)
-                else:
-                    shield_color = (0, 128, 255, shield_alpha)  # Regular blue shield
-                
-                # Draw shield
-                center = (shield_radius, shield_radius)
-                pygame.draw.circle(shield_surface, shield_color, center, shield_radius, 5)  # Outline shield
-                
-                # Draw energy lines within the shield
-                for i in range(8):  # 8 energy lines
-                    angle = i * math.pi / 4 + current_time / 500  # Rotate over time
-                    start_x = center[0] + math.cos(angle) * (shield_radius * 0.3)
-                    start_y = center[1] + math.sin(angle) * (shield_radius * 0.3)
-                    end_x = center[0] + math.cos(angle) * (shield_radius * 0.9)
-                    end_y = center[1] + math.sin(angle) * (shield_radius * 0.9)
+                # Draw defensive mode effect for level 4 boss
+                if self.level == 4 and hasattr(self, 'defensive_mode') and self.defensive_mode:
+                    current_time = pygame.time.get_ticks()
                     
-                    line_color = (100, 200, 255, shield_alpha)
-                    pygame.draw.line(shield_surface, line_color, (start_x, start_y), (end_x, end_y), 2)
-                
-                # Draw energy particles
-                for _ in range(5):  # Add 5 particles
-                    angle = random.uniform(0, math.pi * 2)
-                    dist = random.uniform(shield_radius * 0.5, shield_radius * 0.9)
-                    particle_x = center[0] + math.cos(angle) * dist
-                    particle_y = center[1] + math.sin(angle) * dist
-                    particle_size = random.randint(2, 4)
+                    # Create a pulsing shield effect
+                    shield_size = self.image.get_width() * 1.2  # Slightly larger than boss
+                    shield_pulse = 0.1 * math.sin(current_time / 100)  # Subtle pulsing effect
+                    shield_radius = int(shield_size / 2 * (1 + shield_pulse))
                     
-                    particle_color = (150, 220, 255, 200)
-                    pygame.draw.circle(shield_surface, particle_color, 
-                                      (int(particle_x), int(particle_y)), particle_size)
-                
-                # Position and draw the shield
-                shield_x = draw_x + self.image.get_width()//2 - shield_radius
-                shield_y = draw_y + self.image.get_height()//2 - shield_radius
-                surface.blit(shield_surface, (shield_x, shield_y))
-            
-            # Draw shield mode effect for level 7 boss (based on level 4)
-            if self.level == 7 and self.defensive_mode:
-                current_time = pygame.time.get_ticks()
-                
-                # Create an expanding shield effect (grows to 300% of original size instead of 200%)
-                base_shield_size = self.image.get_width() * 1.2  # Base size (same as level 4)
-                expansion_factor = 1.0 + (self.shield_growth * 2.0)  # Grows from 1x to 3x (300% growth)
-                shield_pulse = 0.1 * math.sin(current_time / 100)  # Subtle pulsing effect
-                shield_radius = int(base_shield_size / 2 * expansion_factor * (1 + shield_pulse))
-                
-                # Store the current shield radius for collision detection
-                self.shield_radius = shield_radius
-                
-                # Create a transparent surface for the shield
-                shield_surface = pygame.Surface((shield_radius * 2, shield_radius * 2), pygame.SRCALPHA)
-                
-                # Purple shield color with pulsing opacity (different from level 4's blue)
-                shield_alpha = int(100 + 50 * math.sin(current_time / 150))
-                
-                # Change shield color if damage was just reflected - make it brighter
-                if hasattr(self, 'reflected_damage') and self.reflected_damage > 0:
-                    shield_color = (150, 50, 255, shield_alpha + 50)  # Brighter purple shield
-                    # Also add an extra outer ring to show reflection
-                    reflection_radius = shield_radius + 10
-                    pygame.draw.circle(shield_surface, (255, 255, 255, shield_alpha // 2), 
-                                      (shield_radius, shield_radius), reflection_radius, 3)
-                else:
-                    shield_color = (128, 0, 255, shield_alpha)  # Regular purple shield
-                
-                # Draw shield
-                center = (shield_radius, shield_radius)
-                pygame.draw.circle(shield_surface, shield_color, center, shield_radius, 5)  # Outline shield
-                
-                # Draw energy lines within the shield
-                for i in range(8):  # 8 energy lines
-                    angle = i * math.pi / 4 + current_time / 500  # Rotate over time
-                    start_x = center[0] + math.cos(angle) * (shield_radius * 0.3)
-                    start_y = center[1] + math.sin(angle) * (shield_radius * 0.3)
-                    end_x = center[0] + math.cos(angle) * (shield_radius * 0.9)
-                    end_y = center[1] + math.sin(angle) * (shield_radius * 0.9)
+                    # Create a transparent surface for the shield
+                    shield_surface = pygame.Surface((shield_radius * 2, shield_radius * 2), pygame.SRCALPHA)
                     
-                    line_color = (200, 100, 255, shield_alpha)
-                    pygame.draw.line(shield_surface, line_color, (start_x, start_y), (end_x, end_y), 2)
-                
-                # Draw energy particles
-                for _ in range(5):  # Add 5 particles
-                    angle = random.uniform(0, math.pi * 2)
-                    dist = random.uniform(shield_radius * 0.5, shield_radius * 0.9)
-                    particle_x = center[0] + math.cos(angle) * dist
-                    particle_y = center[1] + math.sin(angle) * dist
-                    particle_size = random.randint(2, 4)
+                    # Blue shield color with pulsing opacity
+                    shield_alpha = int(100 + 50 * math.sin(current_time / 150))
                     
-                    particle_color = (220, 150, 255, 200)
-                    pygame.draw.circle(shield_surface, particle_color, 
-                                      (int(particle_x), int(particle_y)), particle_size)
-                
-                # Position and draw the shield
-                shield_x = draw_x + self.image.get_width()//2 - shield_radius
-                shield_y = draw_y + self.image.get_height()//2 - shield_radius
-                surface.blit(shield_surface, (shield_x, shield_y))
-            
-            # Draw projectiles for level 2, 5, 6 and 8 bosses
-            if self.level in [2, 5, 6, 8] and self.projectiles:
-                for projectile in self.projectiles:
-                    projectile.draw(surface)
+                    # Change shield color if damage was just reflected - make it brighter
+                    if hasattr(self, 'reflected_damage') and self.reflected_damage > 0:
+                        shield_color = (50, 150, 255, shield_alpha + 50)  # Brighter blue shield
+                        # Also add an extra outer ring to show reflection
+                        reflection_radius = shield_radius + 10
+                        pygame.draw.circle(shield_surface, (255, 255, 255, shield_alpha // 2), 
+                                          (shield_radius, shield_radius), reflection_radius, 3)
+                    else:
+                        shield_color = (0, 128, 255, shield_alpha)  # Regular blue shield
                     
-            # Draw projectiles for level 7 boss
-            if self.level == 7 and self.projectiles:
-                for projectile in self.projectiles:
-                    projectile.draw(surface)
-            
-            # Draw poison trails for Boss 6
-            if self.level == 6 and self.poison_trails:
-                for trail in self.poison_trails:
-                    surface.blit(trail.image, trail.rect)
-            
-            # Draw health bar
-            health_bar_width = 50  # Reduced from 60
-            health_bar_height = 4  # Reduced from 6
-            health_ratio = self.health / self.enemy_data['health']
-            
-            # Position health bar relative to the visual representation
-            health_bar_x = draw_x + (self.image.get_width() - health_bar_width) // 2
-            health_bar_y = draw_y - 10  # Moved closer to boss (was -12)
-            
-            pygame.draw.rect(surface, RED, (health_bar_x, health_bar_y,
-                                          health_bar_width, health_bar_height))
-            pygame.draw.rect(surface, GREEN, (health_bar_x, health_bar_y,
-                                            health_bar_width * health_ratio, health_bar_height)) 
-
-        # Draw projectiles for level 6 enemies
-        if self.can_shoot and self.projectiles:
-            for projectile in self.projectiles:
-                projectile.draw(surface)
+                    # Draw shield
+                    center = (shield_radius, shield_radius)
+                    pygame.draw.circle(shield_surface, shield_color, center, shield_radius, 5)  # Outline shield
+                    
+                    # Draw energy lines within the shield
+                    for i in range(8):  # 8 energy lines
+                        angle = i * math.pi / 4 + current_time / 500  # Rotate over time
+                        start_x = center[0] + math.cos(angle) * (shield_radius * 0.3)
+                        start_y = center[1] + math.sin(angle) * (shield_radius * 0.3)
+                        end_x = center[0] + math.cos(angle) * (shield_radius * 0.9)
+                        end_y = center[1] + math.sin(angle) * (shield_radius * 0.9)
+                        
+                        line_color = (100, 200, 255, shield_alpha)
+                        pygame.draw.line(shield_surface, line_color, (start_x, start_y), (end_x, end_y), 2)
+                    
+                    # Draw energy particles
+                    for _ in range(5):  # Add 5 particles
+                        angle = random.uniform(0, math.pi * 2)
+                        dist = random.uniform(shield_radius * 0.5, shield_radius * 0.9)
+                        particle_x = center[0] + math.cos(angle) * dist
+                        particle_y = center[1] + math.sin(angle) * dist
+                        particle_size = random.randint(2, 4)
+                        
+                        particle_color = (150, 220, 255, 200)
+                        pygame.draw.circle(shield_surface, particle_color, 
+                                          (int(particle_x), int(particle_y)), particle_size)
+                    
+                    # Position and draw the shield
+                    shield_x = draw_x + self.image.get_width()//2 - shield_radius
+                    shield_y = draw_y + self.image.get_height()//2 - shield_radius
+                    surface.blit(shield_surface, (shield_x, shield_y))
+                
+                # Draw shield effect for level 7 boss
+                if self.level == 7 and hasattr(self, 'shield_active') and self.shield_active:
+                    current_time = pygame.time.get_ticks()
+                    
+                    # Create an expanding shield effect (grows to 300% of original size instead of 200%)
+                    base_shield_size = self.image.get_width() * 1.2  # Base size (same as level 4)
+                    if hasattr(self, 'shield_growth'):
+                        expansion_factor = 1.0 + (self.shield_growth * 2.0)  # Grows from 1x to 3x (300% growth)
+                    else:
+                        expansion_factor = 1.0  # Default if shield_growth not defined
+                        
+                    shield_pulse = 0.1 * math.sin(current_time / 100)  # Subtle pulsing effect
+                    shield_radius = int(base_shield_size / 2 * expansion_factor * (1 + shield_pulse))
+                    
+                    # Store the current shield radius for collision detection
+                    if hasattr(self, 'shield_radius'):
+                        self.shield_radius = shield_radius
+                    
+                    # Create a transparent surface for the shield
+                    shield_surface = pygame.Surface((shield_radius * 2, shield_radius * 2), pygame.SRCALPHA)
+                    
+                    # Purple shield color with pulsing opacity (different from level 4's blue)
+                    shield_alpha = int(100 + 50 * math.sin(current_time / 150))
+                    
+                    # Change shield color if damage was just reflected - make it brighter
+                    if hasattr(self, 'reflected_damage') and self.reflected_damage > 0:
+                        shield_color = (150, 50, 255, shield_alpha + 50)  # Brighter purple shield
+                        # Also add an extra outer ring to show reflection
+                        reflection_radius = shield_radius + 10
+                        pygame.draw.circle(shield_surface, (255, 255, 255, shield_alpha // 2), 
+                                          (shield_radius, shield_radius), reflection_radius, 3)
+                    else:
+                        shield_color = (128, 0, 255, shield_alpha)  # Regular purple shield
+                    
+                    # Draw shield
+                    center = (shield_radius, shield_radius)
+                    pygame.draw.circle(shield_surface, shield_color, center, shield_radius, 5)  # Outline shield
+                    
+                    # Draw energy lines within the shield
+                    for i in range(8):  # 8 energy lines
+                        angle = i * math.pi / 4 + current_time / 500  # Rotate over time
+                        start_x = center[0] + math.cos(angle) * (shield_radius * 0.3)
+                        start_y = center[1] + math.sin(angle) * (shield_radius * 0.3)
+                        end_x = center[0] + math.cos(angle) * (shield_radius * 0.9)
+                        end_y = center[1] + math.sin(angle) * (shield_radius * 0.9)
+                        
+                        line_color = (200, 100, 255, shield_alpha)
+                        pygame.draw.line(shield_surface, line_color, (start_x, start_y), (end_x, end_y), 2)
+                    
+                    # Draw energy particles
+                    for _ in range(5):  # Add 5 particles
+                        angle = random.uniform(0, math.pi * 2)
+                        dist = random.uniform(shield_radius * 0.5, shield_radius * 0.9)
+                        particle_x = center[0] + math.cos(angle) * dist
+                        particle_y = center[1] + math.sin(angle) * dist
+                        particle_size = random.randint(2, 4)
+                        
+                        particle_color = (220, 150, 255, 200)
+                        pygame.draw.circle(shield_surface, particle_color, 
+                                          (int(particle_x), int(particle_y)), particle_size)
+                    
+                    # Position and draw the shield
+                    shield_x = draw_x + self.image.get_width()//2 - shield_radius
+                    shield_y = draw_y + self.image.get_height()//2 - shield_radius
+                    surface.blit(shield_surface, (shield_x, shield_y))
+                    
+                # Draw boss health bar with appropriate position
+                if self.health < self.max_health:
+                    health_bar_width = 50  # Size for boss health bar
+                    health_bar_height = 4  # Thickness
+                    health_ratio = self.health / self.max_health
+                    
+                    # Position health bar relative to the visual representation
+                    health_bar_x = draw_x + (self.image.get_width() - health_bar_width) // 2
+                    health_bar_y = draw_y - 10  # Slightly above boss sprite
+                    
+                    pygame.draw.rect(surface, RED, (health_bar_x, health_bar_y,
+                                               health_bar_width, health_bar_height))
+                    pygame.draw.rect(surface, GREEN, (health_bar_x, health_bar_y,
+                                                 health_bar_width * health_ratio, health_bar_height))
+                
+                # Draw projectiles for bosses
+                if hasattr(self, 'projectiles') and self.projectiles:
+                    for projectile in self.projectiles:
+                        projectile.draw(surface)
+                        
+                # Draw poison trails for Boss 6
+                if self.level == 6 and hasattr(self, 'poison_trails') and self.poison_trails:
+                    for trail in self.poison_trails:
+                        surface.blit(trail.image, trail.rect)
+            else:
+                # Regular drawing for non-boss enemies
+                if not isinstance(self, Boss):
+                    surface.blit(self.image, self.rect)
+                
+                # Draw projectiles for non-boss enemies
+                if hasattr(self, 'projectiles') and self.projectiles:
+                    for projectile in self.projectiles:
+                        projectile.draw(surface)
         
+        # Draw health bar for normal enemies if not in blood puddle state and not a Boss
+        if not isinstance(self, Boss) and not self.is_dead and self.health < self.max_health:
+            health_bar_width = 40  # Smaller for normal enemies 
+            health_bar_height = 3  # Thinner for normal enemies
+            health_ratio = self.health / self.max_health
+            pygame.draw.rect(surface, RED, (self.rect.x, self.rect.y - 8,
+                                          health_bar_width, health_bar_height))
+            pygame.draw.rect(surface, GREEN, (self.rect.x, self.rect.y - 8,
+                                            health_bar_width * health_ratio, health_bar_height))
+
     def cast_projectiles(self, player):
         """Create projectiles that become stationary after a delay for Boss 5 and 8"""
         if self.level != 5 and self.level != 8:
@@ -3256,10 +3469,7 @@ class Boss(Enemy):
         print(f"Boss {self.level} cast 4 projectiles that will become stationary")
 
     def summon_homing_projectiles(self, player):
-        """Summon homing projectiles that track the player (for level 6 boss)"""
-        if self.level != 6:
-            return
-
+        """Summon 5 homing projectiles at random locations in the room"""
         print("Boss 7 is summoning homing projectiles!")
         
         # Calculate room dimensions
@@ -3314,157 +3524,6 @@ class Boss(Enemy):
         
         # Play sound effect for summoning
         self.sound_manager.play_sound("effects/boss_cast")
-
-    def attack(self, player):
-        """Override the attack method to avoid setting is_jumping to True for bosses"""
-        if self.can_attack():
-            self.last_attack_time = pygame.time.get_ticks()
-            self.current_state = 'attack'
-            self.frame = 0  # Reset animation frame
-            return player.take_damage(self.damage)
-        return False
-        
-    def move_towards_player(self, player):
-        # Skip movement if Boss 6 is teleporting
-        if self.level == 6 and self.is_teleporting:
-            self.velocity_x = 0
-            self.velocity_y = 0
-            return
-
-        # Calculate direction vector to player
-        dx = player.rect.centerx - self.rect.centerx
-        dy = player.rect.centery - self.rect.centery
-        distance = math.sqrt(dx * dx + dy * dy)
-        
-        # Always use direct movement for level 2 boss to ensure reliable chasing
-        # Also use direct movement for level 7 boss (unlike other bosses) and for short distances
-        if self.level == 2 or self.level == 7 or distance < TILE_SIZE * 5:
-            # Use direct movement - much more reliable
-            if distance > 0:
-                dx = dx / distance
-                dy = dy / distance
-                
-                # Set velocity with full speed
-                self.velocity_x = dx * self.speed
-                self.velocity_y = dy * self.speed
-                
-                # Update facing direction
-                if abs(dx) > abs(dy):
-                    self.facing = 'right' if dx > 0 else 'left'
-                else:
-                    self.facing = 'down' if dy > 0 else 'up'
-            return
-
-        # For other bosses (or longer distances for non-level-2 bosses), try pathfinding
-        target_pos = (player.rect.centerx, player.rect.centery)
-        
-        # Update path more frequently to avoid getting stuck
-        should_update_path = (
-            not self.path or 
-            self.path_update_timer >= 10 or
-            self.movement_failed_counter >= 2 or
-            (self.last_target_position and 
-            ((abs(self.last_target_position[0] - target_pos[0]) > TILE_SIZE) or 
-             (abs(self.last_target_position[1] - target_pos[1]) > TILE_SIZE)))
-        )
-        
-        if should_update_path and hasattr(player, 'level'):
-            # Find path to player
-            self.path = self.find_path(
-                self.rect.centerx, 
-                self.rect.centery, 
-                player.rect.centerx, 
-                player.rect.centery,
-                player.level
-            )
-            
-            # Reset timer and counters
-            self.path_update_timer = 0
-            self.movement_failed_counter = 0
-            self.last_target_position = target_pos
-        else:
-            # Increment timer
-            self.path_update_timer += 1
-        
-        # If we have a path, follow it
-        if self.path:
-            # Get the next point in the path
-            next_point = self.path[0]
-            
-            # Calculate direction to next point
-            dx = next_point[0] - self.rect.centerx
-            dy = next_point[1] - self.rect.centery
-            distance = math.sqrt(dx * dx + dy * dy)
-            
-            # If we've reached this point (or close enough), move to the next point
-            if distance < self.speed:
-                self.path.pop(0)
-                # If path is now empty, we're done
-                if not self.path:
-                    # If we're close to player, stop moving
-                    if math.sqrt((player.rect.centerx - self.rect.centerx)**2 + 
-                               (player.rect.centery - self.rect.centery)**2) < self.attack_range:
-                        self.velocity_x = 0
-                        self.velocity_y = 0
-                        return
-                    # Otherwise, calculate a new path
-                    self.path = self.find_path(
-                        self.rect.centerx, 
-                        self.rect.centery, 
-                        player.rect.centerx, 
-                        player.rect.centery,
-                        player.level
-                    )
-                    
-                    # If we couldn't find a path, use the old method (direct movement)
-                    if not self.path:
-                        # Old direct movement code
-                        dx = player.rect.centerx - self.rect.centerx
-                        dy = player.rect.centery - self.rect.centery
-                        distance = math.sqrt(dx * dx + dy * dy)
-                        
-                        if distance > 0:
-                            dx = dx / distance
-                            dy = dy / distance
-                            self.velocity_x = dx * self.speed
-                            self.velocity_y = dy * self.speed
-                            
-                            # Update facing direction based on movement
-                            if abs(dx) > abs(dy):
-                                self.facing = 'right' if dx > 0 else 'left'
-                            else:
-                                self.facing = 'down' if dy > 0 else 'up'
-                        return
-            else:
-                # Move towards next point
-                if distance > 0:
-                    dx = dx / distance
-                    dy = dy / distance
-                    self.velocity_x = dx * self.speed
-                    self.velocity_y = dy * self.speed
-                    
-                    # Update facing direction based on movement
-                    if abs(dx) > abs(dy):
-                        self.facing = 'right' if dx > 0 else 'left'
-                    else:
-                        self.facing = 'down' if dy > 0 else 'up'
-        else:
-            # If there's no path, fall back to direct movement
-            dx = player.rect.centerx - self.rect.centerx
-            dy = player.rect.centery - self.rect.centery
-            distance = math.sqrt(dx * dx + dy * dy)
-            
-            if distance > 0:
-                dx = dx / distance
-                dy = dy / distance
-                self.velocity_x = dx * self.speed
-                self.velocity_y = dy * self.speed
-                
-                # Update facing direction based on movement
-                if abs(dx) > abs(dy):
-                    self.facing = 'right' if dx > 0 else 'left'
-                else:
-                    self.facing = 'down' if dy > 0 else 'up'
 
 class PoisonTrail(pygame.sprite.Sprite):
     def __init__(self, x, y, size, damage):
