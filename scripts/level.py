@@ -1566,6 +1566,17 @@ class Level:
         if level_number == 4:
             self.selected_goblin_texture = self.get_random_enemy_texture('goblins')
         
+        # Add knight texture selection for level 5
+        self.selected_knight_texture = None
+        if level_number == 5:
+            self.selected_knight_texture = self.get_random_enemy_texture('knights')
+            print(f"Selected knight texture for level 5: {self.selected_knight_texture}")
+        
+        # Add wizard texture selection for level 6
+        self.selected_wizard_texture = None
+        if level_number == 6:
+            self.selected_wizard_texture = self.get_random_enemy_texture('wizard')
+        
         # Load tile textures
         self.tiles = self.load_tile_textures()
         

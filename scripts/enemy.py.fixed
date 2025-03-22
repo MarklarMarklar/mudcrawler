@@ -506,10 +506,10 @@ class BossProjectile(pygame.sprite.Sprite):
             else:
                 # Create a small white core at the center for extra brightness (original behavior)
                 core_size = int(TILE_SIZE // 3)
-                core_surface = pygame.Surface((core_size, core_size), pygame.SRCALPHA)
-                
-                # White core with high alpha
-                pygame.draw.circle(core_surface, (255, 255, 255, 200), (core_size // 2, core_size // 2), core_size // 2)
+            core_surface = pygame.Surface((core_size, core_size), pygame.SRCALPHA)
+            
+            # White core with high alpha
+            pygame.draw.circle(core_surface, (255, 255, 255, 200), (core_size // 2, core_size // 2), core_size // 2)
             
             # Draw the core centered in the projectile
             core_x = self.rect.centerx - core_size // 2
@@ -621,10 +621,8 @@ class Enemy(pygame.sprite.Sprite):
                         selected_texture = self.level_instance.selected_ghost_texture
                     elif enemy_name == 'goblin':
                         selected_texture = self.level_instance.selected_goblin_texture
-                    elif enemy_name == 'dark_knight':
+                    elif enemy_name == 'Dark Knight' and level == 5:
                         selected_texture = self.level_instance.selected_knight_texture
-                    elif enemy_name == 'wizard' and self.level == 6:
-                        selected_texture = self.level_instance.selected_wizard_texture
                         
                     if selected_texture:
                         custom_texture_path = selected_texture
@@ -764,7 +762,7 @@ class Enemy(pygame.sprite.Sprite):
         self.jump_target_pos = (0, 0)
         self.jump_return_time = 0
         self.jump_progress = 0
-    
+        
     def take_damage(self, amount):
         self.health -= amount
         if self.health <= 0:
@@ -1687,14 +1685,14 @@ class Boss(Enemy):
         # Get boss name
         boss_name = self.enemy_data['name'].lower().replace(' ', '_')
         
-        # Create default colored image with boss name as placeholder
-        placeholder = pygame.Surface((TILE_SIZE*1.5, TILE_SIZE*1.5))
-        placeholder.fill((150, 0, 0))  # Darker red for bosses
-        font = pygame.font.Font(None, 16)
-        text = font.render(f"BOSS: {boss_name[:8]}", True, WHITE)
-        text_rect = text.get_rect(center=(TILE_SIZE*1.5//2, TILE_SIZE*1.5//2))
-        placeholder.blit(text, text_rect)
-        
+            # Create default colored image with boss name as placeholder
+            placeholder = pygame.Surface((TILE_SIZE*1.5, TILE_SIZE*1.5))
+            placeholder.fill((150, 0, 0))  # Darker red for bosses
+            font = pygame.font.Font(None, 16)
+            text = font.render(f"BOSS: {boss_name[:8]}", True, WHITE)
+            text_rect = text.get_rect(center=(TILE_SIZE*1.5//2, TILE_SIZE*1.5//2))
+            placeholder.blit(text, text_rect)
+            
         # Initialize with placeholder for all animations and directions
         for anim_type in ['idle', 'walk', 'attack', 'special']:
             self.animations[anim_type] = {
@@ -1712,7 +1710,7 @@ class Boss(Enemy):
         scale_factor = 2.0  # Default scale factor
         if level >= 4 and level <= 6 or level == 8:
             scale_factor = 2.2
-        elif level == 7:
+            elif level == 7:
             scale_factor = 2.3
         elif level == 9:
             scale_factor = 2.4
@@ -1721,8 +1719,8 @@ class Boss(Enemy):
         
         # Try to load the boss image
         try:
-            if os.path.exists(boss_img_path):
-                # Load and scale the image
+                    if os.path.exists(boss_img_path):
+                        # Load and scale the image
                 boss_img = self.asset_manager.load_image(
                     boss_img_path, 
                     scale=(TILE_SIZE*scale_factor, TILE_SIZE*scale_factor)
@@ -1731,11 +1729,11 @@ class Boss(Enemy):
                 
                 # Use this image for all animation states and directions
                 for direction in ['down', 'up', 'left', 'right']:
-                    self.animations['idle'][direction] = [boss_img]
-                    self.animations['walk'][direction] = [boss_img]
-                    self.animations['attack'][direction] = [boss_img]
-                    self.animations['special'][direction] = [boss_img]
-        except Exception as e:
+                        self.animations['idle'][direction] = [boss_img]
+                        self.animations['walk'][direction] = [boss_img]
+                        self.animations['attack'][direction] = [boss_img]
+                        self.animations['special'][direction] = [boss_img]
+                except Exception as e:
             print(f"Failed to load boss_{level}.png for level {level} boss: {e}")
             # Continue with the placeholder
         
@@ -1745,41 +1743,41 @@ class Boss(Enemy):
             
             # Try to load actual animations for each direction
             for direction in ['down', 'up', 'left', 'right']:
-                try:
-                    if os.path.exists(base_path):
-                        idle_path = os.path.join(base_path, f"idle_{direction}")
-                        if os.path.exists(idle_path):
-                            self.animations['idle'][direction] = self.asset_manager.load_animation(
-                                idle_path, "idle_", 4, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
-                except Exception as e:
-                    print(f"Could not load idle animation for boss {boss_name} {direction}: {e}")
-                    
-                try:
-                    if os.path.exists(base_path):
-                        walk_path = os.path.join(base_path, f"walk_{direction}")
-                        if os.path.exists(walk_path):
-                            self.animations['walk'][direction] = self.asset_manager.load_animation(
-                                walk_path, "walk_", 4, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
-                except Exception as e:
-                    print(f"Could not load walk animation for boss {boss_name} {direction}: {e}")
-                    
-                try:
-                    if os.path.exists(base_path):
-                        attack_path = os.path.join(base_path, f"attack_{direction}")
-                        if os.path.exists(attack_path):
-                            self.animations['attack'][direction] = self.asset_manager.load_animation(
-                                attack_path, "attack_", 4, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
-                except Exception as e:
-                    print(f"Could not load attack animation for boss {boss_name} {direction}: {e}")
-                    
-                try:
-                    if os.path.exists(base_path):
-                        special_path = os.path.join(base_path, f"special_{direction}")
-                        if os.path.exists(special_path):
-                            self.animations['special'][direction] = self.asset_manager.load_animation(
-                                special_path, "special_", 6, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
-                except Exception as e:
-                    print(f"Could not load special animation for boss {boss_name} {direction}: {e}")
+            try:
+                if os.path.exists(base_path):
+                    idle_path = os.path.join(base_path, f"idle_{direction}")
+                    if os.path.exists(idle_path):
+                        self.animations['idle'][direction] = self.asset_manager.load_animation(
+                            idle_path, "idle_", 4, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
+            except Exception as e:
+                print(f"Could not load idle animation for boss {boss_name} {direction}: {e}")
+                
+            try:
+                if os.path.exists(base_path):
+                    walk_path = os.path.join(base_path, f"walk_{direction}")
+                    if os.path.exists(walk_path):
+                        self.animations['walk'][direction] = self.asset_manager.load_animation(
+                            walk_path, "walk_", 4, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
+            except Exception as e:
+                print(f"Could not load walk animation for boss {boss_name} {direction}: {e}")
+                
+            try:
+                if os.path.exists(base_path):
+                    attack_path = os.path.join(base_path, f"attack_{direction}")
+                    if os.path.exists(attack_path):
+                        self.animations['attack'][direction] = self.asset_manager.load_animation(
+                            attack_path, "attack_", 4, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
+            except Exception as e:
+                print(f"Could not load attack animation for boss {boss_name} {direction}: {e}")
+                
+            try:
+                if os.path.exists(base_path):
+                    special_path = os.path.join(base_path, f"special_{direction}")
+                    if os.path.exists(special_path):
+                        self.animations['special'][direction] = self.asset_manager.load_animation(
+                            special_path, "special_", 6, scale=(TILE_SIZE*1.5, TILE_SIZE*1.5))
+            except Exception as e:
+                print(f"Could not load special animation for boss {boss_name} {direction}: {e}")
         
         # Create smaller collision rectangle - MUCH smaller to fit through tight passages
         self.original_rect = self.rect.copy()
@@ -2251,7 +2249,7 @@ class Boss(Enemy):
             
             # Skip the rest of the update if still in blood puddle state
             return
-        
+            
         current_time = pygame.time.get_ticks()
         
         # Note: We skip the jump animation check here since bosses don't jump
