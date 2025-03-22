@@ -50,7 +50,7 @@ ENEMY_TYPES = {
     'level4': {'name': 'Goblin', 'health': 70, 'damage': 20, 'speed': 2.5},
     'level5': {'name': 'Dark Knight', 'health': 80, 'damage': 23, 'speed': 2},
     'level6': {'name': 'Wizard', 'health': 65, 'damage': 25, 'speed': 1.5},
-    'level7': {'name': 'Demon', 'health': 90, 'damage': 20, 'speed': 1},
+    'level7': {'name': 'Demon', 'health': 90, 'damage': 1, 'speed': 1},
     'level8': {'name': 'Dragon Spawn', 'health': 100, 'damage': 20, 'speed': 2},
     'level9': {'name': 'Shadow', 'health': 85, 'damage': 35, 'speed': 3},
     'level10': {'name': 'Dark Elf', 'health': 110, 'damage': 40, 'speed': 0.5}

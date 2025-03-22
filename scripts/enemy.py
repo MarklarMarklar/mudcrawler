@@ -773,7 +773,7 @@ class Enemy(pygame.sprite.Sprite):
         return False
         
     def find_path(self, start_x, start_y, target_x, target_y, level):
-        """Find a path from start to target position using A* algorithm"""
+        """Find a path from start to target position using A* algorithm with improved movement"""
         # Convert pixel positions to tile positions
         start_tile_x, start_tile_y = start_x // TILE_SIZE, start_y // TILE_SIZE
         target_tile_x, target_tile_y = target_x // TILE_SIZE, target_y // TILE_SIZE
@@ -822,8 +822,8 @@ class Enemy(pygame.sprite.Sprite):
         
         tiebreaker = 0  # To break ties when f_scores are equal
         
-        # Define possible movement directions (4-way)
-        directions = [(0, -1), (1, 0), (0, 1), (-1, 0)]  # Up, right, down, left
+        # Define possible movement directions (8-way)
+        directions = [(0, -1), (1, 0), (0, 1), (-1, 0), (1, 1), (-1, 1), (1, -1), (-1, -1)]
         
         found_path = False
         max_iterations = 1000  # Prevent infinite loops
@@ -853,6 +853,29 @@ class Enemy(pygame.sprite.Sprite):
                 path.append((target_tile_x * TILE_SIZE + TILE_SIZE // 2, 
                             target_tile_y * TILE_SIZE + TILE_SIZE // 2))
                 
+                # Smooth the path by removing unnecessary points
+                if len(path) > 2:
+                    smoothed_path = [path[0]]
+                    current_direction = None
+                    
+                    for i in range(1, len(path) - 1):
+                        prev_point = path[i - 1]
+                        curr_point = path[i]
+                        next_point = path[i + 1]
+                        
+                        # Calculate direction vectors
+                        dx1 = curr_point[0] - prev_point[0]
+                        dy1 = curr_point[1] - prev_point[1]
+                        dx2 = next_point[0] - curr_point[0]
+                        dy2 = next_point[1] - curr_point[1]
+                        
+                        # If direction changed, keep this point
+                        if (dx1 != dx2 or dy1 != dy2):
+                            smoothed_path.append(curr_point)
+                    
+                    smoothed_path.append(path[-1])
+                    return smoothed_path
+                
                 return path
                 
             # Skip if we've already explored this node
@@ -878,15 +901,16 @@ class Enemy(pygame.sprite.Sprite):
                 if (neighbor_x, neighbor_y) in closed_set:
                     continue
                     
-                # Calculate tentative g_score
-                tentative_g_score = g_scores[(current_x, current_y)] + 1
+                # Calculate tentative g_score (higher cost for diagonal movement)
+                cost = 1.4 if abs(dx) == 1 and abs(dy) == 1 else 1.0
+                tentative_g_score = g_scores[(current_x, current_y)] + cost
                 
                 # If we found a better path to this neighbor, update it
                 if (neighbor_x, neighbor_y) not in g_scores or tentative_g_score < g_scores[(neighbor_x, neighbor_y)]:
                     # Update g_score
                     g_scores[(neighbor_x, neighbor_y)] = tentative_g_score
                     
-                    # Calculate f_score
+                    # Calculate f_score with better heuristic
                     h_score = self.manhattan_distance(neighbor_x, neighbor_y, target_tile_x, target_tile_y)
                     f_score = tentative_g_score + h_score
                     f_scores[(neighbor_x, neighbor_y)] = f_score
@@ -903,25 +927,47 @@ class Enemy(pygame.sprite.Sprite):
         return abs(x1 - x2) + abs(y1 - y2)
     
     def move_towards_player(self, player):
-        """Move towards player using pathfinding"""
-        # Check if we need to update the path
+        """Move towards player using direct movement by default, pathfinding only when needed"""
+        # Calculate distance to player
+        dx = player.rect.centerx - self.rect.centerx
+        dy = player.rect.centery - self.rect.centery
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        # If we're very close to the player, move directly
+        if distance < TILE_SIZE * 1.5:
+            if distance > 0:
+                dx = dx / distance
+                dy = dy / distance
+                self.velocity_x = dx * self.speed
+                self.velocity_y = dy * self.speed
+                
+                # Update facing direction based on movement
+                if abs(dx) > abs(dy):
+                    self.facing = 'right' if dx > 0 else 'left'
+                else:
+                    self.facing = 'down' if dy > 0 else 'up'
+            return
+            
+        # Check if we need to use pathfinding
         target_pos = (player.rect.centerx, player.rect.centery)
         
-        # Only update path if:
-        # 1. We don't have a path, or
-        # 2. The target has moved significantly, or
-        # 3. It's time to update the path based on timer, or
-        # 4. We've had too many consecutive movement failures
-        should_update_path = (
-            not self.path or 
+        # Only use pathfinding if:
+        # 1. We don't have a direct line of sight to the player, or
+        # 2. We've had too many movement failures, or
+        # 3. The player has moved significantly and we're not making progress
+        should_use_pathfinding = (
+            # No direct line of sight
+            (hasattr(player, 'level') and player.level.check_collision(self.rect)) or
+            # Too many movement failures
+            self.movement_failed_counter >= 3 or
+            # Player moved significantly and we're not making progress
             (self.last_target_position and 
-              ((abs(self.last_target_position[0] - target_pos[0]) > TILE_SIZE * 2) or 
-               (abs(self.last_target_position[1] - target_pos[1]) > TILE_SIZE * 2))) or
-             self.path_update_timer >= self.path_update_frequency or
-             self.movement_failed_counter >= self.max_movement_failures
+             ((abs(self.last_target_position[0] - target_pos[0]) > TILE_SIZE * 2) or 
+              (abs(self.last_target_position[1] - target_pos[1]) > TILE_SIZE * 2)) and
+             self.movement_failed_counter > 0)
         )
         
-        if should_update_path and hasattr(player, 'level'):
+        if should_use_pathfinding and hasattr(player, 'level'):
             # Find path to player
             self.path = self.find_path(
                 self.rect.centerx, 
@@ -931,65 +977,36 @@ class Enemy(pygame.sprite.Sprite):
                 player.level
             )
             
-            # Reset timer and counters
-            self.path_update_timer = 0
-            self.movement_failed_counter = 0
-            self.last_target_position = target_pos
-        else:
-            # Increment timer
-            self.path_update_timer += 1
-        
-        # If we have a path, follow it
-        if self.path:
-            # Get the next point in the path
-            next_point = self.path[0]
-            
-            # Calculate direction to next point
-            dx = next_point[0] - self.rect.centerx
-            dy = next_point[1] - self.rect.centery
-            distance = math.sqrt(dx * dx + dy * dy)
-            
-            # If we've reached this point (or close enough), move to the next point
-            if distance < self.speed:
-                self.path.pop(0)
-                # If path is now empty, we're done
-                if not self.path:
-                    # If we're close to player, stop moving
-                    if math.sqrt((player.rect.centerx - self.rect.centerx)**2 + 
-                               (player.rect.centery - self.rect.centery)**2) < self.attack_range:
-                        self.velocity_x = 0
-                        self.velocity_y = 0
-                        return
-                    # Otherwise, calculate a new path
-                    self.path = self.find_path(
-                        self.rect.centerx, 
-                        self.rect.centery, 
-                        player.rect.centerx, 
-                        player.rect.centery,
-                        player.level
-                    )
+            # Reset movement failure counter if we found a path
+            if self.path:
+                self.movement_failed_counter = 0
+                self.last_target_position = target_pos
+                
+                # Follow the path
+                next_point = self.path[0]
+                dx = next_point[0] - self.rect.centerx
+                dy = next_point[1] - self.rect.centery
+                distance = math.sqrt(dx * dx + dy * dy)
+                
+                if distance > 0:
+                    dx = dx / distance
+                    dy = dy / distance
+                    self.velocity_x = dx * self.speed
+                    self.velocity_y = dy * self.speed
                     
-                    # If we couldn't find a path, use the old method (direct movement)
+                    # Update facing direction based on movement
+                    if abs(dx) > abs(dy):
+                        self.facing = 'right' if dx > 0 else 'left'
+                    else:
+                        self.facing = 'down' if dy > 0 else 'up'
+                
+                # If we've reached this point (or close enough), move to the next point
+                if distance < self.speed * 1.2:
+                    self.path.pop(0)
                     if not self.path:
-                        # Old direct movement code
-                        dx = player.rect.centerx - self.rect.centerx
-                        dy = player.rect.centery - self.rect.centery
-                        distance = math.sqrt(dx * dx + dy * dy)
-                        
-                        if distance > 0:
-                            dx = dx / distance
-                            dy = dy / distance
-                            self.velocity_x = dx * self.speed
-                            self.velocity_y = dy * self.speed
-                            
-                            # Update facing direction based on movement
-                            if abs(dx) > abs(dy):
-                                self.facing = 'right' if dx > 0 else 'left'
-                            else:
-                                self.facing = 'down' if dy > 0 else 'up'
-                        return
+                        self.path = None
             else:
-                # Move towards next point
+                # If pathfinding failed, try direct movement
                 if distance > 0:
                     dx = dx / distance
                     dy = dy / distance
@@ -1002,11 +1019,7 @@ class Enemy(pygame.sprite.Sprite):
                     else:
                         self.facing = 'down' if dy > 0 else 'up'
         else:
-            # If there's no path, fall back to direct movement
-            dx = player.rect.centerx - self.rect.centerx
-            dy = player.rect.centery - self.rect.centery
-            distance = math.sqrt(dx * dx + dy * dy)
-            
+            # Use direct movement by default
             if distance > 0:
                 dx = dx / distance
                 dy = dy / distance
@@ -1018,6 +1031,10 @@ class Enemy(pygame.sprite.Sprite):
                     self.facing = 'right' if dx > 0 else 'left'
                 else:
                     self.facing = 'down' if dy > 0 else 'up'
+            
+            # Reset path and movement failure counter when using direct movement
+            self.path = None
+            self.movement_failed_counter = 0
 
     def can_attack(self):
         current_time = pygame.time.get_ticks()
@@ -1200,21 +1217,30 @@ class Enemy(pygame.sprite.Sprite):
         # Try moving horizontally
         self.rect.x += self.velocity_x
         
-        # If collision occurs, try with half the velocity
+        # If collision occurs, try to slide along the wall
         if has_level and player.level.check_collision(self.rect):
             self.rect = old_rect.copy()
-            self.rect.x += self.velocity_x * 0.5  # Try half speed
-            
-            # If still colliding, revert and mark as movement failure
-            if has_level and player.level.check_collision(self.rect):
-                self.rect = old_rect.copy()
+            # Try to move vertically while sliding along the wall
+            if self.velocity_x != 0:
+                self.velocity_y = self.velocity_x * 0.5  # Use half of horizontal velocity for vertical movement
+                self.rect.y += self.velocity_y
+                if has_level and player.level.check_collision(self.rect):
+                    self.rect.y = old_rect.y
+                    self.velocity_y = -self.velocity_x * 0.5  # Try the other direction
+                    self.rect.y += self.velocity_y
+                    if has_level and player.level.check_collision(self.rect):
+                        self.rect.y = old_rect.y
+                        self.velocity_y = 0
+                        self.velocity_x = 0
+                        if self.state == 'chase':
+                            self.movement_failed_counter += 1
+                else:
+                    # Successfully slid along the wall
+                    self.movement_failed_counter = 0
+            else:
                 self.velocity_x = 0
-                
                 if self.state == 'chase':
                     self.movement_failed_counter += 1
-            else:
-                # Half speed worked, reset failure counter
-                self.movement_failed_counter = 0
         else:
             # Movement succeeded, reset failure counter
             if old_velocity_x != 0 and self.state == 'chase':
@@ -1223,21 +1249,30 @@ class Enemy(pygame.sprite.Sprite):
         # Now try moving vertically
         self.rect.y += self.velocity_y
         
-        # If collision occurs, try with half the velocity
+        # If collision occurs, try to slide along the wall
         if has_level and player.level.check_collision(self.rect):
-            self.rect.y = old_rect.y  # Revert only Y position
-            self.rect.y += self.velocity_y * 0.5  # Try half speed
-            
-            # If still colliding, revert and mark as movement failure
-            if has_level and player.level.check_collision(self.rect):
-                self.rect.y = old_rect.y
+            self.rect.y = old_rect.y
+            # Try to move horizontally while sliding along the wall
+            if self.velocity_y != 0:
+                self.velocity_x = self.velocity_y * 0.5  # Use half of vertical velocity for horizontal movement
+                self.rect.x += self.velocity_x
+                if has_level and player.level.check_collision(self.rect):
+                    self.rect.x = old_rect.x
+                    self.velocity_x = -self.velocity_y * 0.5  # Try the other direction
+                    self.rect.x += self.velocity_x
+                    if has_level and player.level.check_collision(self.rect):
+                        self.rect.x = old_rect.x
+                        self.velocity_x = 0
+                        self.velocity_y = 0
+                        if self.state == 'chase':
+                            self.movement_failed_counter += 1
+                else:
+                    # Successfully slid along the wall
+                    self.movement_failed_counter = 0
+            else:
                 self.velocity_y = 0
-                
                 if self.state == 'chase':
                     self.movement_failed_counter += 1
-            else:
-                # Half speed worked, reset failure counter
-                self.movement_failed_counter = 0
         else:
             # Movement succeeded, reset failure counter
             if old_velocity_y != 0 and self.state == 'chase':
@@ -3446,6 +3481,7 @@ class Boss(Enemy):
                         distance = math.sqrt(dx * dx + dy * dy)
                         
                         if distance > 0:
+                            # Normalize and apply speed directly without smoothing
                             dx = dx / distance
                             dy = dy / distance
                             self.velocity_x = dx * self.speed
@@ -3458,7 +3494,7 @@ class Boss(Enemy):
                                 self.facing = 'down' if dy > 0 else 'up'
                         return
             else:
-                # Move towards next point
+                # Move towards next point with direct velocity
                 if distance > 0:
                     dx = dx / distance
                     dy = dy / distance
@@ -3477,6 +3513,7 @@ class Boss(Enemy):
             distance = math.sqrt(dx * dx + dy * dy)
             
             if distance > 0:
+                # Normalize and apply speed directly without smoothing
                 dx = dx / distance
                 dy = dy / distance
                 self.velocity_x = dx * self.speed
