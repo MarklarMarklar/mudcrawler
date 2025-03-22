@@ -1723,6 +1723,8 @@ class Game:
                     data['target_pos'] = (target_x, target_y)
                     data['move_start_time'] = current_time
                     data['current_angle'] = angle
+                    # Play dodge sound when starting to move to a new position
+                    self.sound_manager.play_sound("effects/dodge")
                     print(f"Moving to boss attack position 1/{data['max_attacks']}")
                 else:
                     # Boss already defeated
@@ -1801,18 +1803,24 @@ class Game:
                             data['target_pos'] = (target_x, target_y)
                             data['move_start_time'] = current_time
                             data['current_angle'] = angle
+                            # Play dodge sound when moving to another attack position
+                            self.sound_manager.play_sound("effects/dodge")
                             print(f"Moving to boss attack position {data['attack_count'] + 1}/{data['max_attacks']}")
                         else:
                             # All attacks complete, return to original position
                             data['state'] = 'returning'
                             data['target_pos'] = data['original_player_pos']
                             data['move_start_time'] = current_time
+                            # Play dodge sound when returning
+                            self.sound_manager.play_sound("effects/dodge")
                             print("All boss attacks complete, returning to original position")
                     else:
                         # Boss defeated during special attack
                         data['state'] = 'returning'
                         data['target_pos'] = data['original_player_pos']
                         data['move_start_time'] = current_time
+                        # Play dodge sound when returning after boss defeat
+                        self.sound_manager.play_sound("effects/dodge")
                         print("Boss defeated, returning to original position")
                         
             elif data['state'] == 'returning':
@@ -1856,6 +1864,8 @@ class Game:
                     data['state'] = 'moving'
                     data['target_pos'] = (enemies[0].rect.centerx, enemies[0].rect.centery)
                     data['move_start_time'] = current_time
+                    # Play dodge sound when starting to move to first enemy
+                    self.sound_manager.play_sound("effects/dodge")
                     print(f"Moving to enemy 1/{len(enemies)}")
                 else:
                     # No enemies to attack, finish
@@ -1897,12 +1907,16 @@ class Game:
                             data['target_pos'] = (next_enemy.rect.centerx, next_enemy.rect.centery)
                             data['move_start_time'] = current_time
                             data['state'] = 'moving'
+                            # Play dodge sound when moving to next enemy
+                            self.sound_manager.play_sound("effects/dodge")
                             print(f"Moving to enemy {data['current_enemy_index']+1}/{len(enemies)}")
                         else:
                             # All enemies damaged, return to original position
                             data['target_pos'] = data['original_player_pos']
                             data['move_start_time'] = current_time
                             data['state'] = 'returning'
+                            # Play dodge sound when returning after hitting all enemies
+                            self.sound_manager.play_sound("effects/dodge")
                             print("All enemies hit, returning to original position")
                 else:
                     # Update player position during movement (visually only)

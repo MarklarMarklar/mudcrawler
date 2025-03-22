@@ -123,6 +123,7 @@ class Player(pygame.sprite.Sprite):
         # Walking sound management
         self.last_movement_state = 'idle'  # Track the previous movement state
         self.walk_sound_channel = None     # Track the sound channel for walking
+        self.was_walking = False           # Additional flag to track if player was walking
         
         # Movement
         self.velocity_x = 0
@@ -228,6 +229,7 @@ class Player(pygame.sprite.Sprite):
                 self.animations['idle'][direction] = [frames[0]]
         
     def move(self, keys):
+        was_moving = self.velocity_x != 0 or self.velocity_y != 0
         self.velocity_x = 0
         self.velocity_y = 0
         
@@ -264,24 +266,33 @@ class Player(pygame.sprite.Sprite):
             
         # Update animation state based on movement
         previous_state = self.current_state
-        if self.velocity_x == 0 and self.velocity_y == 0 and self.current_state != 'attack':
+        is_moving = self.velocity_x != 0 or self.velocity_y != 0
+        if not is_moving and self.current_state != 'attack':
             self.current_state = 'idle'
         elif self.current_state != 'attack':
             self.current_state = 'walk'
             
         # Handle walk sound state transitions - only play sounds if player is alive
         if self.health > 0:
-            if previous_state == 'idle' and self.current_state == 'walk':
+            # Check for actual state changes to avoid sound issues
+            if not self.was_walking and is_moving:
                 # Player started walking - play the new shorter walking sound and loop it
+                # Stop any existing sound first to avoid overlaps
+                if self.walk_sound_channel is not None:
+                    self.sound_manager.stop_sound_channel(self.walk_sound_channel)
                 self.walk_sound_channel = self.sound_manager.play_sound("effects/walk", loop=-1)
-            elif previous_state == 'walk' and self.current_state == 'idle':
+                self.was_walking = True
+            elif self.was_walking and not is_moving:
                 # Player stopped walking - stop sound
-                self.sound_manager.stop_sound_channel(self.walk_sound_channel)
-                self.walk_sound_channel = None
+                if self.walk_sound_channel is not None:
+                    self.sound_manager.stop_sound_channel(self.walk_sound_channel)
+                    self.walk_sound_channel = None
+                self.was_walking = False
         elif self.walk_sound_channel is not None:
             # Player is dead but sound is still playing - stop it
             self.sound_manager.stop_sound_channel(self.walk_sound_channel)
             self.walk_sound_channel = None
+            self.was_walking = False
             
         # Normalize diagonal movement
         if self.velocity_x != 0 and self.velocity_y != 0:
@@ -647,6 +658,7 @@ class Player(pygame.sprite.Sprite):
             if self.walk_sound_channel is not None:
                 self.sound_manager.stop_sound_channel(self.walk_sound_channel)
                 self.walk_sound_channel = None
+                self.was_walking = False
         
     def heal(self, amount):
         """Heal the player by the given amount, capped at max health"""
@@ -670,6 +682,11 @@ class Player(pygame.sprite.Sprite):
             current_time = pygame.time.get_ticks()
             if current_time - self.death_time > 4000:  # 4 seconds
                 self.death_animation_complete = True
+                # Ensure walking sound is stopped
+                if self.walk_sound_channel is not None:
+                    self.sound_manager.stop_sound_channel(self.walk_sound_channel)
+                    self.walk_sound_channel = None
+                    self.was_walking = False
         
         # Update trailing effect (for dodge)
         current_time = pygame.time.get_ticks()
