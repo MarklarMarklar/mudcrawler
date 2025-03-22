@@ -3225,9 +3225,26 @@ class Boss(Enemy):
             print(f"Boss 8 placed {len(self.floor_projectiles)} floor projectiles")
             return
         
+        # Calculate the distance to the player
+        dx = player.rect.centerx - self.rect.centerx
+        dy = player.rect.centery - self.rect.centery
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        # Check if health is below 50% and player is within 10 tiles range
+        health_percentage = self.health / self.enemy_data['health']
+        is_close = distance <= TILE_SIZE * 10
+        is_low_health = health_percentage <= 0.5
+        
+        # Determine number of projectiles to cast
+        num_projectiles = 8 if (is_low_health and is_close) else 4
+        
+        # Log the enhanced attack if applicable
+        if num_projectiles > 4:
+            print(f"Boss 5 is below 50% health and player is in close range - firing {num_projectiles} projectiles!")
+        
         # Original behavior for Boss 5
-        # Create 4 projectiles in random directions
-        for i in range(4):
+        # Create projectiles in random directions
+        for i in range(num_projectiles):
             # Generate random angle and distance
             angle = random.uniform(0, math.pi * 2)
             distance = random.uniform(TILE_SIZE * 2, TILE_SIZE * 4)
@@ -3258,7 +3275,7 @@ class Boss(Enemy):
             # Add to projectile group
             self.projectiles.add(projectile)
             
-        print(f"Boss {self.level} cast 4 projectiles that will become stationary")
+        print(f"Boss {self.level} cast {num_projectiles} projectiles that will become stationary")
 
     def summon_homing_projectiles(self, player):
         """Summon homing projectiles that track the player (for level 6 boss)"""
