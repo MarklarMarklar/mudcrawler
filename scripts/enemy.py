@@ -1044,8 +1044,9 @@ class Enemy(pygame.sprite.Sprite):
                     dx = dx / distance
                     dy = dy / distance
                     
-                    # Jump about halfway to the player or at least 20 pixels
-                    jump_distance = min(distance * 0.5, TILE_SIZE)
+                    # Jump farther toward the player - 75% of distance or up to 1.5 tiles
+                    # This makes the jump more visible and aggressive
+                    jump_distance = min(distance * 0.75, TILE_SIZE * 1.5) 
                     self.jump_target_pos = (
                         self.rect.x + dx * jump_distance,
                         self.rect.y + dy * jump_distance
@@ -2832,7 +2833,7 @@ class Boss(Enemy):
                     
                     # Play the boss voice when leaving shield mode
                     voice_file = f"effects/boss_4_voice"  # Fallback to level 4 voice
-                    if os.path.exists(os.path.join(SOUND_PATH, f"effects/boss_7_voice.mp3")):
+                    if os.path.exists(os.path.join(SOUNDS_PATH, f"effects/boss_7_voice.mp3")):
                         voice_file = f"effects/boss_7_voice"
                     self.sound_manager.play_sound(voice_file)
                     self.last_voice_time = current_time
