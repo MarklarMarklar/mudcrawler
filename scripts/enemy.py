@@ -1648,11 +1648,16 @@ class Boss(Enemy):
             self.teleport_target_pos = None
             self.teleport_alpha = 255  # For fade effect
             
+            # Add casting state attributes
+            self.casting_mode = False
+            self.casting_mode_duration = 1000  # 1 second casting time
+            self.cast_start_time = 0
+            
             # Poison trail attributes
             self.poison_trails = pygame.sprite.Group()
             self.last_trail_time = 0
             self.trail_interval = 300  # Create trail every 300ms
-            self.trail_size = int(TILE_SIZE * 1.0)  # Increased size of trail segments (was 0.6)
+            self.trail_size = int(TILE_SIZE * 1.0)  # Increased size of trail segments
             self.trail_damage = self.damage * 0.05  # Trail does 5% of boss damage
         
         # Phase system for special attacks
@@ -2279,115 +2284,77 @@ class Boss(Enemy):
         
         # Boss 6 teleportation logic
         if self.level == 6 and self.has_spotted_player:
-            # Get current time
             current_time = pygame.time.get_ticks()
             
-            if not self.is_teleporting:
-                # Check if it's time to teleport
+            if not self.is_teleporting and not self.casting_mode:
+                # Check if it's time to start casting for teleport
                 time_since_last_teleport = current_time - self.last_teleport_time
                 if time_since_last_teleport >= self.teleport_cooldown:
-                    # Start teleportation
-                    self.is_teleporting = True
-                    self.teleport_start_time = current_time
-                    self.teleport_alpha = 255
+                    # Start casting mode
+                    self.casting_mode = True
+                    self.cast_start_time = current_time
+                    self.teleport_alpha = 255  # Start fully visible
                     
-                    # Store the current image to restore later
+                    # Store current image to restore later
                     self.normal_image = self.image
                     
                     # Switch to teleport cast image if available
                     if self.teleport_cast_image:
                         self.image = self.teleport_cast_image
-                        print(f"Switching to teleport cast image: {id(self.teleport_cast_image)}")
+                        print(f"Switching to teleport cast image for casting")
                     
-                    print(f"Boss 6 starting teleportation at time {current_time}")
-            else:
+                    # Play casting sound
+                    self.sound_manager.play_sound("effects/boss_cast")
+                    print(f"Boss 6 starting casting at time {current_time}")
+            elif self.casting_mode:
+                # In casting mode
+                time_in_casting = current_time - self.cast_start_time
+                
+                # Stop movement during casting
+                self.velocity_x = 0
+                self.velocity_y = 0
+                
+                # Fade out during casting
+                self.teleport_alpha = int(255 * (1 - (time_in_casting / self.casting_mode_duration)))
+                
+                # Check if casting is complete
+                if time_in_casting >= self.casting_mode_duration:
+                    # End casting and start teleportation
+                    self.casting_mode = False
+                    self.is_teleporting = True
+                    self.teleport_start_time = current_time
+                    self.teleport_alpha = 0  # Start invisible for teleport
+                    print(f"Boss 6 casting complete, starting teleportation at time {current_time}")
+            elif self.is_teleporting:
                 # In teleportation process
                 time_in_teleport = current_time - self.teleport_start_time
                 
-                # Fade out
+                # First half: stay invisible
                 if time_in_teleport < self.teleport_duration / 2:
-                    self.teleport_alpha = int(255 * (1 - (time_in_teleport / (self.teleport_duration / 2))))
-                # Fade in at new position
-                elif time_in_teleport < self.teleport_duration:
-                    if not self.teleport_target_pos:
-                        # Find a random non-wall tile in the room
-                        if hasattr(player, 'level') and player.level:
-                            room = player.level.rooms[player.level.current_room_coords]
-                            valid_positions = []
-                            
-                            # Collect all valid positions
-                            for y in range(room.height):
-                                for x in range(room.width):
-                                    if room.tiles[y][x] == 0:  # 0 is floor tile
-                                        valid_positions.append((x * TILE_SIZE + TILE_SIZE//2, 
-                                                              y * TILE_SIZE + TILE_SIZE//2))
-                            
-                            if valid_positions:
-                                # Choose a random position
-                                self.teleport_target_pos = random.choice(valid_positions)
-                                # Update position
-                                self.rect.centerx = self.teleport_target_pos[0]
-                                self.rect.centery = self.teleport_target_pos[1]
-                                # Update damage hitbox
-                                self.damage_hitbox.centerx = self.rect.centerx
-                                self.damage_hitbox.centery = self.rect.centery
+                    self.teleport_alpha = 0
                     
-                    # Fade in
-                    self.teleport_alpha = int(255 * ((time_in_teleport - self.teleport_duration/2) / (self.teleport_duration/2)))
+                    # At the midpoint, set new position
+                    if not self.teleport_target_pos:
+                        # Find a new position to teleport to
+                        new_x = random.randint(TILE_SIZE, (ROOM_WIDTH - 2) * TILE_SIZE)
+                        new_y = random.randint(TILE_SIZE, (ROOM_HEIGHT - 2) * TILE_SIZE)
+                        self.rect.x = new_x
+                        self.rect.y = new_y
+                        self.teleport_target_pos = (new_x, new_y)
+                # Second half: fade in
                 else:
-                    # Teleportation complete
+                    self.teleport_alpha = int(255 * ((time_in_teleport - self.teleport_duration/2) / (self.teleport_duration/2)))
+                
+                # Check if teleportation is complete
+                if time_in_teleport >= self.teleport_duration:
                     self.is_teleporting = False
-                    self.last_teleport_time = current_time  # Reset timer after teleport is complete
+                    self.last_teleport_time = current_time
                     self.teleport_target_pos = None
                     self.teleport_alpha = 255
                     
-                    # Restore normal image if we changed it for teleporting
+                    # Restore normal image
                     if hasattr(self, 'normal_image') and self.normal_image:
                         self.image = self.normal_image
-                    
-                    # Shoot a projectile at the player when teleportation is complete
-                    # Calculate normalized direction vector to player
-                    dx = player.rect.centerx - self.rect.centerx
-                    dy = player.rect.centery - self.rect.centery
-                    length = math.sqrt(dx*dx + dy*dy)
-                    
-                    if length > 0:
-                        # Normalize
-                        dx = dx / length
-                        dy = dy / length
-                        
-                        # Create a homing teleport projectile with a unique purple color
-                        projectile = BossProjectile(
-                            self.rect.centerx, 
-                            self.rect.centery, 
-                            (dx, dy), 
-                            1.6,  # Slightly faster than Boss 2 projectiles
-                            self.damage * 1.2,  # 20% more damage than normal
-                            color=(160, 32, 240),  # Purple color for teleport projectile
-                            is_homing=True,  # Enable homing behavior
-                            boss_level=self.level  # Pass the boss level for animated projectiles
-                        )
-                        
-                        # Store reference to player for homing
-                        projectile.player_target = player
-                        
-                        # Enhance the trail effect
-                        projectile.trail_enabled = True
-                        projectile.max_trail_length = 12  # Longer trail for dramatic effect
-                        projectile.trail_update_rate = 1   # Update every frame for smoother trail
-                        
-                        # Make it hunt the player more aggressively
-                        projectile.homing_strength = 0.04  # More aggressive turning
-                        projectile.max_homing_time = 5000  # Home for longer (5 seconds)
-                        
-                        # Increase projectile lifetime
-                        projectile.max_distance = TILE_SIZE * 20  # Double the normal distance
-                        
-                        # Add to projectile group
-                        self.projectiles.add(projectile)
-                        
-                        # Play a sound effect if available
-                        self.sound_manager.play_sound("effects/projectile")
                     
                     print(f"Boss 6 teleportation complete at time {current_time}")
         
@@ -2403,22 +2370,26 @@ class Boss(Enemy):
             self.velocity_x = 0
             self.velocity_y = 0
             self.attack(player)
-        elif self.has_spotted_player and not (self.level == 4 and self.defensive_mode) and not ((self.level == 5 or self.level == 8) and self.casting_mode):
-            # Chase state - always chase once spotted (unless level 4 boss in defensive mode or level 5/8 boss in casting mode)
-            # Level 7 boss can chase even during defensive mode after cast is complete
+        elif self.has_spotted_player and not (self.level == 4 and self.defensive_mode) and not ((self.level == 5 or self.level == 8) and self.casting_mode) and not (self.level == 6 and (self.casting_mode or self.is_teleporting)):
+            # Chase state - always chase once spotted (unless in special state)
+            # Don't chase if:
+            # - Level 4 boss in defensive mode
+            # - Level 5/8 boss in casting mode
+            # - Level 6 boss in casting mode or teleporting
             self.state = 'chase'
             self.current_state = 'walk'
             self.move_towards_player(player)
         else:
-            # Idle state - stand still until player is spotted or if boss is in defensive/casting mode
+            # Idle state - stand still during special states
             self.state = 'idle'
             self.current_state = 'idle'
             self.velocity_x = 0
             self.velocity_y = 0
         
-        # If level 4 boss is in defensive mode or level 5/8 boss is in casting mode, ensure it doesn't move
-        # Level 7 boss only stops during the actual shield casting, not after dropping the shield
-        if (self.level == 4 and self.defensive_mode) or ((self.level == 5 or self.level == 8) and self.casting_mode) or (self.level == 7 and self.defensive_mode and not self.cursed_shield_dropped):
+        # If level 4 boss is in defensive mode or level 5/8 boss is in casting mode or level 6 boss is casting/teleporting, ensure it doesn't move
+        if ((self.level == 4 and self.defensive_mode) or 
+            ((self.level == 5 or self.level == 8) and self.casting_mode) or 
+            (self.level == 6 and (self.casting_mode or self.is_teleporting))):
             self.velocity_x = 0
             self.velocity_y = 0
             self.state = 'idle'
@@ -2490,19 +2461,19 @@ class Boss(Enemy):
         self.frame = int(self.animation_time) % len(self.animations[self.current_state][self.facing])
         
         # Only update image from animation frames if not in defensive mode (for level 4 boss)
-        # and not teleporting (for level 6 boss)
+        # and not in special states for level 6 boss
         if not ((self.level == 4 and self.defensive_mode) or 
                 (self.level == 7 and self.defensive_mode) or
-                (self.level == 6 and self.is_teleporting and hasattr(self, 'teleport_cast_image') and self.teleport_cast_image)):
+                (self.level == 6 and (self.casting_mode or self.is_teleporting) and hasattr(self, 'teleport_cast_image') and self.teleport_cast_image)):
             self.image = self.animations[self.current_state][self.facing][self.frame]
             
-            # Apply teleportation fade effect for Boss 6
-            if self.level == 6 and self.is_teleporting:
-                # Create a copy of the image with alpha
-                alpha_surface = pygame.Surface(self.image.get_size(), pygame.SRCALPHA)
-                alpha_surface.blit(self.image, (0, 0))
-                alpha_surface.set_alpha(self.teleport_alpha)
-                self.image = alpha_surface
+        # Apply fade effects for Boss 6
+        if self.level == 6 and (self.casting_mode or self.is_teleporting):
+            # Create a copy of the image with alpha
+            alpha_surface = pygame.Surface(self.image.get_size(), pygame.SRCALPHA)
+            alpha_surface.blit(self.image, (0, 0))
+            alpha_surface.set_alpha(self.teleport_alpha)
+            self.image = alpha_surface
         
         # Update projectiles for level 2, 5, 6, and 8 bosses
         if self.level in [2, 5, 6, 8]:
@@ -2628,12 +2599,13 @@ class Boss(Enemy):
             current_time = pygame.time.get_ticks()
             if not self.is_teleporting and self.state == 'chase' and (self.velocity_x != 0 or self.velocity_y != 0):
                 if current_time - self.last_trail_time >= self.trail_interval:
-                    # Create new trail at current position
+                    # Create new trail at current position with reference to the boss
                     new_trail = PoisonTrail(
                         self.rect.centerx, 
                         self.rect.centery, 
                         self.trail_size, 
-                        5  # Fixed damage value of 5 HP
+                        5,  # Fixed damage value of 5 HP
+                        creator=self  # Pass reference to the boss
                     )
                     self.poison_trails.add(new_trail)
                     self.last_trail_time = current_time
@@ -2808,6 +2780,11 @@ class Boss(Enemy):
                 
                 # Draw the ghost sprite at the historical position
                 surface.blit(ghost_img, (x - self.visual_offset_x, y - self.visual_offset_y))
+        
+        # Draw poison trails for Boss 6 BEFORE drawing the boss
+        if self.level == 6 and self.poison_trails:
+            for trail in self.poison_trails:
+                surface.blit(trail.image, trail.rect)
         
         # Calculate position with visual offset
         draw_x = self.rect.x - self.visual_offset_x
@@ -3034,11 +3011,6 @@ class Boss(Enemy):
                 for projectile in self.projectiles:
                     projectile.draw(surface)
             
-            # Draw poison trails for Boss 6
-            if self.level == 6 and self.poison_trails:
-                for trail in self.poison_trails:
-                    surface.blit(trail.image, trail.rect)
-            
             # Draw health bar
             health_bar_width = 50  # Reduced from 60
             health_bar_height = 4  # Reduced from 6
@@ -3053,11 +3025,6 @@ class Boss(Enemy):
             pygame.draw.rect(surface, GREEN, (health_bar_x, health_bar_y,
                                             health_bar_width * health_ratio, health_bar_height)) 
 
-        # Draw projectiles for level 6 enemies
-        if self.can_shoot and self.projectiles:
-            for projectile in self.projectiles:
-                projectile.draw(surface)
-        
     def cast_projectiles(self, player):
         """Create projectiles that become stationary after a delay for Boss 5 and 8"""
         if self.level != 5 and self.level != 8:
@@ -3353,9 +3320,10 @@ class Boss(Enemy):
                     self.facing = 'down' if dy > 0 else 'up'
 
 class PoisonTrail(pygame.sprite.Sprite):
-    def __init__(self, x, y, size, damage):
+    def __init__(self, x, y, size, damage, creator=None):
         super().__init__()
         self.asset_manager = get_asset_manager()
+        self.creator = creator  # Store reference to the boss that created this trail
         
         # Create a larger surface to accommodate the glow effect
         glow_size = int(size * 1.5)
@@ -3476,8 +3444,11 @@ class PoisonTrail(pygame.sprite.Sprite):
         if self.pulse_time > math.pi * 2:
             self.pulse_time -= math.pi * 2
 
-    def check_collision(self, player_rect):
-        return self.rect.colliderect(player_rect)
+    def check_collision(self, rect):
+        # Don't collide with the boss that created this trail
+        if hasattr(self, 'creator') and self.creator and self.creator.rect == rect:
+            return False
+        return self.rect.colliderect(rect)
         
     def can_damage(self):
         # Check if the cooldown has elapsed
