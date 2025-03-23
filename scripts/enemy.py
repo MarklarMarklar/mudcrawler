@@ -537,7 +537,14 @@ class Enemy(pygame.sprite.Sprite):
         self.asset_manager = get_asset_manager()
         self.sound_manager = get_sound_manager()
         self.enemy_type = enemy_type
-        self.enemy_data = ENEMY_TYPES[f'level{level}']
+        
+        # Handle case where enemy_type directly specifies the level (e.g., 'level9')
+        if enemy_type and enemy_type.startswith('level') and enemy_type in ENEMY_TYPES:
+            self.enemy_data = ENEMY_TYPES[enemy_type]
+            print(f"Using enemy type {enemy_type} directly")
+        else:
+            # Default to using the level parameter
+            self.enemy_data = ENEMY_TYPES[f'level{level}']
         
         # Store level information
         self.level = level
@@ -1108,18 +1115,17 @@ class Enemy(pygame.sprite.Sprite):
             self.current_state = 'walk'
     
     def update(self, player):
+        # Get current time at the beginning of the method
+        current_time = pygame.time.get_ticks()
+        
         # Check if in blood puddle state and ready to resurrect
         if self.is_dead:
-            current_time = pygame.time.get_ticks()
-            
             # If it's time to resurrect
             if current_time >= self.resurrection_time:
                 self.resurrect()
             
             # Skip the rest of the update if still in blood puddle state
             return
-        
-        current_time = pygame.time.get_ticks()
         
         # Handle jump attack animation
         if self.is_jumping:
@@ -1459,7 +1465,13 @@ class Enemy(pygame.sprite.Sprite):
 
 class Boss(Enemy):
     def __init__(self, x, y, level, level_instance=None):
+        """Initialize a boss enemy with strong attributes"""
         super().__init__(x, y, None, level, level_instance)
+        
+        # Ensure level_instance is set, critical for Boss 9's egg spawning
+        if not self.level_instance and level_instance:
+            self.level_instance = level_instance
+            print(f"Set level_instance for Boss {level}")
         
         # Ensure is_jumping is False for bosses
         self.is_jumping = False
@@ -1873,6 +1885,34 @@ class Boss(Enemy):
         # Damage tracking - ensure it's set for bosses too
         self.has_been_hit_this_swing = False
         
+        # Boss 9 egg-laying attributes
+        if level == 9:
+            self.eggs = pygame.sprite.Group()  # Store the eggs
+            self.last_egg_time = 0  # Last time an egg was laid
+            self.egg_cooldown = 1000  # Minimum time between eggs (1 second)
+            self.egg_image = None
+            
+            # Try to load the egg image
+            try:
+                egg_path = os.path.join(BOSS_SPRITES_PATH, "boss_9_egg.png")
+                if os.path.exists(egg_path):
+                    print(f"Loading boss 9 egg image from: {egg_path}")
+                    self.egg_image = self.asset_manager.load_image(egg_path, scale=(TILE_SIZE * 0.8, TILE_SIZE * 0.8))
+                else:
+                    print(f"Boss 9 egg image not found at: {egg_path}")
+            except Exception as e:
+                print(f"Failed to load egg image for boss 9: {e}")
+        
+        # Add missing initialization for Boss 9 at the end of the __init__ method
+        if self.level == 9:
+            # ... existing Boss 9 init code ...
+            
+            # Variables for consistent egg laying (3 eggs per stealth phase)
+            self.eggs_laid_this_phase = 0
+            self.egg_laying_times = []
+            
+        # ... existing code ...
+    
     def move_towards_player(self, player):
         """Move towards player using pathfinding"""
         # If in stealth mode (for boss 9), move randomly
@@ -2186,10 +2226,11 @@ class Boss(Enemy):
         return False
         
     def update(self, player):
+        # Get current time at the beginning of the method
+        current_time = pygame.time.get_ticks()
+        
         # Check if in blood puddle state and ready to resurrect
         if self.is_dead:
-            current_time = pygame.time.get_ticks()
-            
             # Check if resurrection time has arrived
             if current_time >= self.resurrection_time:
                 self.resurrect()
@@ -2212,8 +2253,6 @@ class Boss(Enemy):
             return
         
         # Update Boss 9 animation
-        current_time = pygame.time.get_ticks()
-        
         if self.level == 9:
             # Check if it's time to start a new animation cycle
             if not self.boss9_is_animating and current_time - self.boss9_animation_timer >= self.boss9_animation_interval:
@@ -2266,6 +2305,15 @@ class Boss(Enemy):
                         self._set_random_stealth_target(player)
                         print("Boss 9 entered stealth mode!")
                         
+                        # Reset egg laying counter for this stealth phase
+                        self.eggs_laid_this_phase = 0
+                        # Calculate timing for the 3 eggs (at 1/4, 1/2, and 3/4 of stealth duration)
+                        self.egg_laying_times = [
+                            current_time + (self.stealth_phase_duration * 0.25),
+                            current_time + (self.stealth_phase_duration * 0.5),
+                            current_time + (self.stealth_phase_duration * 0.75)
+                        ]
+                        
                         # Play a sound effect for stealth mode
                         if self.sound_manager:
                             self.sound_manager.play_sound('boss_special')
@@ -2283,8 +2331,36 @@ class Boss(Enemy):
                     if self.stealth_mode and current_time - self.stealth_change_direction_timer >= self.stealth_direction_change_interval:
                         self._set_random_stealth_target(player)
                         self.stealth_change_direction_timer = current_time
-        
-        current_time = pygame.time.get_ticks()
+                        
+                    # Consistently lay 3 eggs at pre-determined times during stealth phase
+                    if self.stealth_mode and self.eggs_laid_this_phase < 3 and len(self.egg_laying_times) > 0:
+                        if current_time >= self.egg_laying_times[0]:
+                            self._lay_egg()
+                            self.eggs_laid_this_phase += 1
+                            self.egg_laying_times.pop(0)  # Remove the used timing
+                
+            # Update existing eggs
+            eggs_to_remove = []
+            for egg in list(self.eggs):
+                try:
+                    # Update egg (handles hatching and spawning)
+                    egg.update(current_time)
+                except Exception as e:
+                    print(f"Error updating egg: {e}")
+                    eggs_to_remove.append(egg)
+                    
+                # Eggs are now managed by their own update method
+                # The collision with player is still handled here
+                if not egg.hatching and egg in self.eggs:  # Only check player collision if not hatching
+                    if egg.rect.colliderect(player.hitbox):
+                        egg.kill()
+                        print("Player destroyed an egg")
+                        eggs_to_remove.append(egg)
+            
+            # Remove any eggs that had errors
+            for egg in eggs_to_remove:
+                if egg in self.eggs:
+                    self.eggs.remove(egg)
         
         # Note: We skip the jump animation check here since bosses don't jump
         # This fixes the double texture loading issue
@@ -2409,8 +2485,6 @@ class Boss(Enemy):
         
         # Boss 6 teleportation logic
         if self.level == 6 and self.has_spotted_player:
-            current_time = pygame.time.get_ticks()
-            
             if not self.is_teleporting and not self.casting_mode:
                 # Check if it's time to start casting for teleport
                 time_since_last_teleport = current_time - self.last_teleport_time
@@ -3196,6 +3270,11 @@ class Boss(Enemy):
             if self.level == 7 and self.projectiles:
                 for projectile in self.projectiles:
                     projectile.draw(surface)
+        
+        # Draw eggs for Boss 9
+        if self.level == 9 and self.eggs:
+            for egg in self.eggs:
+                egg.draw(surface)
 
     def cast_projectiles(self, player):
         """Create projectiles that become stationary after a delay for Boss 5 and 8"""
@@ -3626,6 +3705,44 @@ class Boss(Enemy):
             else:
                 self.facing = 'down' if dy > 0 else 'up'
 
+    def _lay_egg(self):
+        """Lay an egg during Boss 9 stealth mode"""
+        if not self.egg_image:
+            print("Cannot lay egg: egg_image is not loaded")
+            return
+            
+        # Verify level_instance is available
+        if not self.level_instance:
+            print("Cannot lay egg: level_instance is None")
+            return
+            
+        # Create egg directly under the boss position
+        # Add a small random offset to prevent eggs from being in the exact same position
+        offset_x = random.randint(-10, 10)
+        offset_y = random.randint(-10, 10)
+        
+        # Position the egg at the boss's feet (bottom center of the boss)
+        egg_x = self.rect.centerx + offset_x
+        egg_y = self.rect.bottom + offset_y
+        
+        # Create a new egg object at the position
+        egg = BossEgg(
+            egg_x,
+            egg_y,
+            self.egg_image,
+            self.level_instance  # Pass level_instance to allow spawning
+        )
+        
+        # Add to egg sprite group
+        self.eggs.add(egg)
+        print(f"Boss 9 laid an egg at position ({egg_x}, {egg_y}) with level_instance: {self.level_instance}")
+        
+        # Debug: Print the current room from the level_instance
+        if hasattr(self.level_instance, 'current_room'):
+            print(f"Current room exists: {self.level_instance.current_room}")
+        else:
+            print("WARNING: level_instance has no current_room attribute")
+
 class PoisonTrail(pygame.sprite.Sprite):
     def __init__(self, x, y, size, damage, creator=None):
         super().__init__()
@@ -3875,3 +3992,215 @@ class CursedShield(pygame.sprite.Sprite):
         shield_x = self.rect.x
         shield_y = self.rect.y
         surface.blit(pulse_surface, (shield_x, shield_y))
+
+class BossEgg(pygame.sprite.Sprite):
+    """Eggs laid by Boss 9 during stealth mode"""
+    def __init__(self, x, y, image, level_instance=None):
+        super().__init__()
+        self.image = image
+        self.original_image = image
+        self.rect = self.image.get_rect()
+        self.rect.centerx = x
+        self.rect.centery = y
+        
+        # Add a slight random offset to make egg placement look more natural
+        self.rect.x += random.randint(-5, 5)
+        self.rect.y += random.randint(-5, 5)
+        
+        self.creation_time = pygame.time.get_ticks()
+        self.lifetime = 4000  # 4 seconds
+        self.hatching = False
+        self.hatching_time = 1000  # 1 second to hatch
+        self.hatch_start_time = 0
+        self.level_instance = level_instance
+        
+        # Hatching animation state
+        self.pulse_size = 1.0
+        self.pulse_direction = 0.1
+        self.alpha = 255
+        
+    def update(self, current_time=None):
+        """Update egg state, handle hatching animation and enemy spawning"""
+        if current_time is None:
+            current_time = pygame.time.get_ticks()
+            
+        # If egg is not yet hatching and lifetime is over, start hatching
+        if not self.hatching and current_time - self.creation_time >= self.lifetime:
+            self.hatching = True
+            self.hatch_start_time = current_time
+            print(f"Egg at position ({self.rect.centerx}, {self.rect.centery}) is hatching!")
+            
+        # If hatching, update the hatching animation
+        if self.hatching:
+            # Calculate how far we are in the hatching process (0.0 to 1.0)
+            hatch_progress = min(1.0, (current_time - self.hatch_start_time) / self.hatching_time)
+            
+            # Pulse the egg as it hatches
+            self.pulse_size += self.pulse_direction
+            if self.pulse_size > 1.3 or self.pulse_size < 0.9:
+                self.pulse_direction *= -1
+                
+            # Scale the image for pulsing effect
+            w = int(self.original_image.get_width() * self.pulse_size)
+            h = int(self.original_image.get_height() * self.pulse_size)
+            self.image = pygame.transform.scale(self.original_image, (w, h))
+            
+            # Update the rectangle to keep the egg centered
+            old_center = self.rect.center
+            self.rect = self.image.get_rect()
+            self.rect.center = old_center
+            
+            # Fade out as hatching completes
+            self.alpha = int(255 * (1 - hatch_progress))
+            
+            # If hatching is complete, spawn an enemy and remove the egg
+            if hatch_progress >= 1.0:
+                print(f"Egg hatching complete at position ({self.rect.centerx}, {self.rect.centery})")
+                try:
+                    # Attempt to spawn the enemy
+                    spawn_success = self.spawn_enemy()
+                    if spawn_success:
+                        print("Enemy successfully spawned from egg")
+                    else:
+                        print("ERROR: Failed to spawn enemy from egg")
+                except Exception as e:
+                    print(f"CRITICAL ERROR during spawn_enemy: {e}")
+                    import traceback
+                    traceback.print_exc()
+                finally:
+                    # Always remove the egg after hatching completes, regardless of spawn success
+                    self.kill()
+                    print("Egg removed after hatching")
+    
+    def spawn_enemy(self):
+        """Spawn a level 9 enemy at the egg's location"""
+        try:
+            print("=== ATTEMPTING TO SPAWN ENEMY FROM EGG ===")
+            
+            if self.level_instance is None:
+                print("ERROR: Cannot spawn enemy - level_instance is None")
+                return False
+                
+            print(f"Level instance exists: {self.level_instance}")
+            
+            # Get the current room from the level instance
+            # The Level class doesn't have a current_room attribute
+            # Instead it has a current_room_coords attribute and a rooms dictionary
+            if not hasattr(self.level_instance, 'current_room_coords'):
+                print("ERROR: level_instance has no current_room_coords attribute")
+                return False
+                
+            if not hasattr(self.level_instance, 'rooms'):
+                print("ERROR: level_instance has no rooms attribute")
+                return False
+                
+            # Get the current room using the correct attributes
+            current_room_coords = self.level_instance.current_room_coords
+            if current_room_coords not in self.level_instance.rooms:
+                print(f"ERROR: current_room_coords {current_room_coords} not in rooms dictionary")
+                return False
+                
+            room = self.level_instance.rooms[current_room_coords]
+            print(f"Current room found: {room}")
+            
+            # Create a new enemy at the egg's position
+            enemy_x = self.rect.centerx
+            enemy_y = self.rect.centery
+            
+            # Create a new level 9 enemy (Shadow) - explicitly use 'level9' as the type
+            print(f"Creating Shadow enemy at position ({enemy_x}, {enemy_y})")
+            
+            # Directly access the ENEMY_TYPES to check if level9 exists
+            from config import ENEMY_TYPES
+            if 'level9' in ENEMY_TYPES:
+                print(f"level9 enemy type exists in config: {ENEMY_TYPES['level9']}")
+            else:
+                print("ERROR: level9 enemy type not found in ENEMY_TYPES")
+            
+            # Create the enemy
+            enemy = Enemy(enemy_x, enemy_y, 'level9', 9, self.level_instance)
+            print(f"Enemy created successfully with level: {enemy.level}, type: {enemy.enemy_type}")
+            
+            # Force the enemy to be exactly at the egg position (prevents any automatic adjustments)
+            enemy.rect.centerx = enemy_x
+            enemy.rect.centery = enemy_y
+            
+            # Make sure hitbox is aligned with the rect
+            if hasattr(enemy, 'hitbox'):
+                enemy.hitbox.centerx = enemy_x
+                enemy.hitbox.centery = enemy_y
+                print("Enemy hitbox positioned")
+            else:
+                print("Warning: Enemy has no hitbox attribute")
+            
+            # Set default animation if needed
+            if not enemy.animations.get('idle', {}).get('down'):
+                print("Creating placeholder textures for enemy")
+                # Create a placeholder texture if no animation is loaded
+                placeholder = pygame.Surface((TILE_SIZE, TILE_SIZE))
+                placeholder.fill((20, 0, 30))  # Dark purple for Shadow
+                
+                # Add a simple shadow silhouette
+                shadow_rect = pygame.Rect(TILE_SIZE//4, TILE_SIZE//4, TILE_SIZE//2, TILE_SIZE//2)
+                pygame.draw.ellipse(placeholder, (50, 0, 80), shadow_rect)
+                
+                # Use this placeholder for all directions and states
+                for direction in ['down', 'up', 'left', 'right']:
+                    enemy.animations['idle'][direction] = [placeholder]
+                    enemy.animations['walk'][direction] = [placeholder]
+                    enemy.animations['attack'][direction] = [placeholder]
+                print("Placeholder textures created")
+            
+            # Set current animation
+            enemy.current_state = 'idle'
+            enemy.facing = 'down'
+            enemy.image = enemy.animations[enemy.current_state][enemy.facing][0]
+            print("Enemy animation set")
+            
+            # Add to room's enemy collection
+            print(f"Adding enemy to room.enemies (count before: {len(room.enemies)})")
+            room.enemies.add(enemy)
+            print(f"Enemy added to room.enemies (count after: {len(room.enemies)})")
+            
+            # Add to level's all_sprites list if it exists (for rendering)
+            if hasattr(self.level_instance, 'all_sprites'):
+                print("Adding enemy to level_instance.all_sprites")
+                self.level_instance.all_sprites.add(enemy)
+                print("Enemy added to all_sprites")
+            else:
+                print("Note: level_instance has no all_sprites attribute")
+            
+            print(f"Successfully spawned a Shadow enemy at position ({enemy_x}, {enemy_y})")
+            
+            # Create a visual effect for spawning
+            if hasattr(room, 'create_chest_sparkle_burst'):
+                room.create_chest_sparkle_burst(enemy_x, enemy_y)
+                print("Created sparkle burst effect")
+            else:
+                print("Note: room has no create_chest_sparkle_burst method")
+                
+            # Play spawn sound if available
+            if hasattr(enemy, 'sound_manager') and enemy.sound_manager:
+                try:
+                    enemy.sound_manager.play_sound('enemy_spawn')
+                    print("Played enemy spawn sound")
+                except Exception as sound_error:
+                    print(f"Note: Error playing spawn sound: {sound_error}")
+                    
+            return True  # Successfully spawned
+                
+        except Exception as e:
+            print(f"CRITICAL ERROR spawning enemy from egg: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False  # Failed to spawn
+    
+    def draw(self, surface):
+        """Draw the egg with proper alpha for hatching effect"""
+        if self.hatching and self.alpha < 255:
+            # Create a copy of the image with alpha
+            alpha_img = self.image.copy()
+            alpha_img.set_alpha(self.alpha)
+            surface.blit(alpha_img, self.rect)
+        else:
+            surface.blit(self.image, self.rect)
