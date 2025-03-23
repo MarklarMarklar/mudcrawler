@@ -52,7 +52,7 @@ ENEMY_TYPES = {
     'level6': {'name': 'Wizard', 'health': 65, 'damage': 15, 'speed': 1.5},
     'level7': {'name': 'Demon', 'health': 90, 'damage': 1, 'speed': 1},
     'level8': {'name': 'Dragon Spawn', 'health': 100, 'damage': 20, 'speed': 2},
-    'level9': {'name': 'Shadow', 'health': 85, 'damage': 35, 'speed': 3},
+    'level9': {'name': 'Shadow', 'health': 85, 'damage': 5, 'speed': 1.5},
     'level10': {'name': 'Dark Elf', 'health': 110, 'damage': 40, 'speed': 0.5}
 }
 
@@ -66,7 +66,7 @@ BOSS_TYPES = {
     'level6': {'name': 'Arch Wizard', 'health': 450, 'damage': 15, 'speed': 1.5},
     'level7': {'name': 'Demon Lord', 'health': 500, 'damage': 8, 'speed': 1.7},
     'level8': {'name': 'Dragon', 'health': 550, 'damage': 8, 'speed': 1.8},
-    'level9': {'name': 'Shadow King', 'health': 600, 'damage': 70, 'speed': 4},
+    'level9': {'name': 'Shadow King', 'health': 600, 'damage': 5, 'speed': 1.5},
     'level10': {'name': 'Dark Lord', 'health': 1, 'damage': 10, 'speed': 1}
 }
 

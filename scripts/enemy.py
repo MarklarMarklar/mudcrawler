@@ -1478,6 +1478,31 @@ class Boss(Enemy):
             'special': {}  # Special attack animation for bosses
         }
         
+        # Boss 9 animation frames
+        self.boss9_animation_frames = []
+        self.boss9_animation_index = 0
+        self.boss9_animation_direction = 1  # 1 for forward, -1 for backward
+        self.boss9_animation_timer = 0
+        self.boss9_animation_interval = 1750  # Animation plays every 1.75 seconds
+        self.boss9_frame_time = 100  # Time between animation frames in ms
+        self.boss9_last_frame_time = 0
+        self.boss9_is_animating = False
+        
+        # Boss 9 stealth mode attributes
+        self.stealth_mode = False
+        self.stealth_cycle_active = False
+        self.normal_phase_duration = 10000  # 10 seconds in normal state
+        self.stealth_phase_duration = 4000  # 4 seconds in stealth state
+        self.stealth_start_time = 0
+        self.last_phase_change_time = 0
+        self.normal_speed = 0
+        self.stealth_speed = 0
+        self.stealth_alpha = 128  # 50% transparency (0-255)
+        self.stealth_target_x = 0  # Random movement target during stealth
+        self.stealth_target_y = 0
+        self.stealth_change_direction_timer = 0
+        self.stealth_direction_change_interval = 800  # Change direction every 800ms in stealth mode
+        
         # Store the original rect which represents the full sprite size
         self.original_rect = self.rect.copy()
         
@@ -1703,12 +1728,17 @@ class Boss(Enemy):
         # Try to load the boss image
         try:
             if os.path.exists(boss_img_path):
-                # Load and scale the image
-                boss_img = self.asset_manager.load_image(
-                    boss_img_path, 
-                    scale=(TILE_SIZE*scale_factor, TILE_SIZE*scale_factor)
-                )
-                print(f"Using boss_{level}.png for level {level} boss animations")
+                # For level 9, use our custom texture loader to support animation
+                if level == 9:
+                    boss_img = self.load_texture(boss_img_path)
+                    print(f"Using boss_{level}.png with animation for level {level} boss")
+                else:
+                    # Load and scale the image
+                    boss_img = self.asset_manager.load_image(
+                        boss_img_path, 
+                        scale=(TILE_SIZE*scale_factor, TILE_SIZE*scale_factor)
+                    )
+                    print(f"Using boss_{level}.png for level {level} boss animations")
                 
                 # Use this image for all animation states and directions
                 for direction in ['down', 'up', 'left', 'right']:
@@ -1845,7 +1875,15 @@ class Boss(Enemy):
         
     def move_towards_player(self, player):
         """Move towards player using pathfinding"""
-        # Calculate distance to player
+        # If in stealth mode (for boss 9), move randomly
+        if self.level == 9 and self.stealth_mode:
+            self._move_in_stealth_mode()
+            return
+            
+        # Get player position
+        player_pos = (player.rect.centerx, player.rect.centery)
+        
+        # Check if player is within detection range
         dx = player.rect.centerx - self.rect.centerx
         dy = player.rect.centery - self.rect.centery
         distance = math.sqrt(dx * dx + dy * dy)
@@ -2152,12 +2190,99 @@ class Boss(Enemy):
         if self.is_dead:
             current_time = pygame.time.get_ticks()
             
-            # If it's time to resurrect
+            # Check if resurrection time has arrived
             if current_time >= self.resurrection_time:
                 self.resurrect()
             
-            # Skip the rest of the update if still in blood puddle state
+            # Render blood particles only during the first half of the resurrection timer
+            if current_time <= self.resurrection_time - 2000 and random.random() < 0.05:
+                offset_x = random.randint(-self.rect.width//2, self.rect.width//2)
+                offset_y = random.randint(-self.rect.height//2, self.rect.height//2)
+                self.particle_manager.add_particle(
+                    particle_type='blood_drop',
+                    pos=(self.rect.centerx + offset_x, self.rect.centery + offset_y),
+                    velocity=(0, 0.5),
+                    direction=random.uniform(0, 360),
+                    color=(139, 0, 0),
+                    size=random.randint(2, 4),
+                    lifetime=random.randint(30, 60)
+                )
+            
+            # Return early since boss is in blood puddle state
             return
+        
+        # Update Boss 9 animation
+        current_time = pygame.time.get_ticks()
+        
+        if self.level == 9:
+            # Check if it's time to start a new animation cycle
+            if not self.boss9_is_animating and current_time - self.boss9_animation_timer >= self.boss9_animation_interval:
+                self.boss9_is_animating = True
+                self.boss9_animation_index = 0
+                self.boss9_animation_direction = 1
+                self.boss9_last_frame_time = current_time
+                self.boss9_animation_timer = current_time
+            
+            # Update animation frame if currently animating
+            if self.boss9_is_animating:
+                if current_time - self.boss9_last_frame_time >= self.boss9_frame_time:
+                    # Update animation index according to direction
+                    self.boss9_animation_index += self.boss9_animation_direction
+                    
+                    # Change direction if at the edges
+                    if self.boss9_animation_index >= len(self.boss9_animation_frames) - 1:
+                        self.boss9_animation_direction = -1
+                    elif self.boss9_animation_index <= 0:
+                        # Animation complete, reset to base state
+                        if self.boss9_animation_direction == -1:
+                            self.boss9_is_animating = False
+                            self.boss9_animation_timer = current_time
+                    
+                    self.boss9_last_frame_time = current_time
+                    
+            # Handle boss 9 stealth cycle
+            if self.level == 9:
+                # Calculate distance to player to check engagement
+                dx = player.rect.centerx - self.rect.centerx
+                dy = player.rect.centery - self.rect.centery
+                distance = math.sqrt(dx * dx + dy * dy)
+                
+                # Activate cycle when player is within detection range
+                if not self.stealth_cycle_active and distance <= self.detection_range:
+                    self.stealth_cycle_active = True
+                    self.last_phase_change_time = current_time
+                    self.normal_speed = self.speed  # Store normal speed
+                    self.stealth_speed = self.speed * 2.0  # 200% of normal speed (increased from 150%)
+                    
+                # If cycle is active, manage phase transitions
+                if self.stealth_cycle_active:
+                    if not self.stealth_mode and current_time - self.last_phase_change_time >= self.normal_phase_duration:
+                        # Switch to stealth mode
+                        self.stealth_mode = True
+                        self.last_phase_change_time = current_time
+                        self.speed = self.stealth_speed
+                        self.stealth_change_direction_timer = current_time
+                        # Set an initial random target for the stealth movement
+                        self._set_random_stealth_target(player)
+                        print("Boss 9 entered stealth mode!")
+                        
+                        # Play a sound effect for stealth mode
+                        if self.sound_manager:
+                            self.sound_manager.play_sound('boss_special')
+                            
+                    elif self.stealth_mode and current_time - self.last_phase_change_time >= self.stealth_phase_duration:
+                        # Switch back to normal mode
+                        self.stealth_mode = False
+                        self.last_phase_change_time = current_time
+                        self.speed = self.normal_speed
+                        # Clear any path that might have been set during stealth mode
+                        self.path = []
+                        print("Boss 9 returned to normal mode")
+                    
+                    # During stealth mode, change direction periodically
+                    if self.stealth_mode and current_time - self.stealth_change_direction_timer >= self.stealth_direction_change_interval:
+                        self._set_random_stealth_target(player)
+                        self.stealth_change_direction_timer = current_time
         
         current_time = pygame.time.get_ticks()
         
@@ -2475,6 +2600,29 @@ class Boss(Enemy):
             alpha_surface.set_alpha(self.teleport_alpha)
             self.image = alpha_surface
         
+        # Apply transparency effect for Boss 9 in stealth mode
+        if self.level == 9 and self.stealth_mode:
+            # Create a copy of the image with alpha
+            alpha_surface = pygame.Surface(self.image.get_size(), pygame.SRCALPHA)
+            alpha_surface.blit(self.image, (0, 0))
+            alpha_surface.set_alpha(self.stealth_alpha)
+            self.image = alpha_surface
+            
+            # Add ghost-like particle effects for stealth visualization
+            if hasattr(self, 'particle_manager') and self.particle_manager and random.random() < 0.15:
+                for _ in range(2):
+                    offset_x = random.randint(-20, 20)
+                    offset_y = random.randint(-20, 20)
+                    self.particle_manager.add_particle(
+                        particle_type='fade',
+                        pos=(self.rect.centerx + offset_x, self.rect.centery + offset_y),
+                        velocity=(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.1)),
+                        direction=random.uniform(0, 360),
+                        color=(100, 100, 255, 150),  # Blue-purple ghost color
+                        size=random.randint(3, 8),
+                        lifetime=random.randint(10, 25)
+                    )
+        
         # Update projectiles for level 2, 5, 6, and 8 bosses
         if self.level in [2, 5, 6, 8]:
             # Update projectiles
@@ -2790,8 +2938,46 @@ class Boss(Enemy):
         draw_x = self.rect.x - self.visual_offset_x
         draw_y = self.rect.y - self.visual_offset_y
         
-        # Draw boss character (drawn AFTER the trail)
-        surface.blit(self.image, (draw_x, draw_y))
+        # For Boss 9, handle stealth mode and animation
+        if self.level == 9:
+            if self.boss9_is_animating and self.boss9_animation_frames:
+                # Use the current animation frame
+                img_to_draw = self.boss9_animation_frames[self.boss9_animation_index].copy()
+            else:
+                # Use the base image
+                img_to_draw = self.image.copy()
+                
+            # Apply transparency if in stealth mode
+            if self.stealth_mode:
+                img_to_draw.set_alpha(self.stealth_alpha)
+                
+                # Add some ghost-like particles for stealth effect
+                if random.random() < 0.2:  # 20% chance each frame to spawn particles
+                    for _ in range(3):
+                        offset_x = random.randint(-20, 20)
+                        offset_y = random.randint(-20, 20)
+                        size = random.randint(3, 8)
+                        
+                        # Use bluish-purple particles for stealth effect
+                        color = (100, 100, 255, 150)
+                        
+                        # Create particle at boss's position
+                        if hasattr(self, 'particle_manager') and self.particle_manager:
+                            self.particle_manager.add_particle(
+                                particle_type='fade',
+                                pos=(self.rect.centerx + offset_x, self.rect.centery + offset_y),
+                                velocity=(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.1)),
+                                direction=random.uniform(0, 360),
+                                color=color,
+                                size=size,
+                                lifetime=random.randint(15, 30)
+                            )
+            
+            # Draw the selected image
+            surface.blit(img_to_draw, (draw_x, draw_y))
+        elif self.level != 9:
+            # For non-Boss 9 enemies, draw normally
+            surface.blit(self.image, (draw_x, draw_y))
         
         # Draw resurrection effects if in blood puddle state
         if self.is_dead:
@@ -3010,16 +3196,6 @@ class Boss(Enemy):
             if self.level == 7 and self.projectiles:
                 for projectile in self.projectiles:
                     projectile.draw(surface)
-            
-            # Health bar is removed since it's shown in the HUD at the top of the screen
-            # The following code has been removed:
-            # health_bar_width = 50  # Reduced from 60
-            # health_bar_height = 4  # Reduced from 6
-            # health_ratio = self.health / self.enemy_data['health']
-            # health_bar_x = draw_x + (self.image.get_width() - health_bar_width) // 2
-            # health_bar_y = draw_y - 10  # Moved closer to boss (was -12)
-            # pygame.draw.rect(surface, RED, (health_bar_x, health_bar_y, health_bar_width, health_bar_height))
-            # pygame.draw.rect(surface, GREEN, (health_bar_x, health_bar_y, health_bar_width * health_ratio, health_bar_height))
 
     def cast_projectiles(self, player):
         """Create projectiles that become stationary after a delay for Boss 5 and 8"""
@@ -3213,7 +3389,15 @@ class Boss(Enemy):
         
     def move_towards_player(self, player):
         """Move towards player using pathfinding"""
-        # Calculate distance to player
+        # If in stealth mode (for boss 9), move randomly
+        if self.level == 9 and self.stealth_mode:
+            self._move_in_stealth_mode()
+            return
+            
+        # Get player position
+        player_pos = (player.rect.centerx, player.rect.centery)
+        
+        # Check if player is within detection range
         dx = player.rect.centerx - self.rect.centerx
         dy = player.rect.centery - self.rect.centery
         distance = math.sqrt(dx * dx + dy * dy)
@@ -3314,6 +3498,133 @@ class Boss(Enemy):
                     self.velocity_x = 0
                     self.velocity_y = (dy / abs(dy)) * self.speed
                     self.facing = 'down' if dy > 0 else 'up'
+
+    def load_texture(self, image_path):
+        """Load boss texture with proper scaling"""
+        max_boss_size = (int(TILE_SIZE * 2.2), int(TILE_SIZE * 2.2))
+        
+        try:
+            boss_image = self.asset_manager.load_image(image_path, max_boss_size)
+            
+            if boss_image:
+                # Load animation frames for boss 9
+                if self.level == 9:
+                    # Store the base image
+                    self.base_image = boss_image
+                    
+                    # Load animation frames
+                    base_path = os.path.dirname(image_path)
+                    frame1_path = os.path.join(base_path, "boss_9_1.png")
+                    frame2_path = os.path.join(base_path, "boss_9_2.png")
+                    frame3_path = os.path.join(base_path, "boss_9_3.png")
+                    
+                    # Check if animation frames exist and load them
+                    if all(os.path.exists(path) for path in [frame1_path, frame2_path, frame3_path]):
+                        # Load and scale frames to match the base image size
+                        frame1 = self.asset_manager.load_image(frame1_path, boss_image.get_size())
+                        frame2 = self.asset_manager.load_image(frame2_path, boss_image.get_size())
+                        frame3 = self.asset_manager.load_image(frame3_path, boss_image.get_size())
+                        
+                        # Store animation frames
+                        self.boss9_animation_frames = [frame1, frame2, frame3]
+                        print(f"Loaded {len(self.boss9_animation_frames)} animation frames for boss 9")
+                
+                return boss_image
+        except Exception as e:
+            print(f"Failed to load boss texture: {e}")
+        
+        # Create a fallback texture instead of using create_enemy_texture
+        size = (int(TILE_SIZE * 2.2), int(TILE_SIZE * 2.2))
+        fallback = pygame.Surface(size, pygame.SRCALPHA)
+        fallback.fill((200, 0, 0, 220))  # Red with some transparency
+        
+        # Add text with boss level
+        font = pygame.font.Font(None, 36)
+        text = font.render(f"BOSS {self.level}", True, (255, 255, 255))
+        text_rect = text.get_rect(center=(size[0]//2, size[1]//2))
+        fallback.blit(text, text_rect)
+        
+        return fallback
+
+    def _set_random_stealth_target(self, player):
+        """Set a random movement target for the boss during stealth mode"""
+        # Get the current room size from the level instance
+        room_width = TILE_SIZE * 16  # Default room width in tiles
+        room_height = TILE_SIZE * 9  # Default room height in tiles
+        
+        if hasattr(self, 'level_instance') and self.level_instance:
+            if hasattr(self.level_instance, 'current_room') and self.level_instance.current_room:
+                # Get actual room dimensions if available
+                room = self.level_instance.current_room
+                if hasattr(room, 'width') and hasattr(room, 'height'):
+                    room_width = room.width * TILE_SIZE
+                    room_height = room.height * TILE_SIZE
+                    
+        # Calculate room boundaries with padding
+        padding = TILE_SIZE * 2  # Keep 2 tiles away from the edges
+        min_x = padding
+        max_x = room_width - padding
+        min_y = padding
+        max_y = room_height - padding
+        
+        # Choose a random point in the room that's NOT too close to the player
+        while True:
+            # Generate random positions
+            target_x = random.randint(min_x, max_x)
+            target_y = random.randint(min_y, max_y)
+            
+            # Calculate distance to player
+            dx = player.rect.centerx - target_x
+            dy = player.rect.centery - target_y
+            distance = math.sqrt(dx * dx + dy * dy)
+            
+            # Ensure target is not too close to player (at least 4 tiles away)
+            if distance >= TILE_SIZE * 4:
+                self.stealth_target_x = target_x
+                self.stealth_target_y = target_y
+                # Clear any existing path
+                self.path = []
+                break
+
+    def _move_in_stealth_mode(self):
+        """Special movement function for boss 9 in stealth mode"""
+        # Calculate direction to the random target
+        dx = self.stealth_target_x - self.rect.centerx
+        dy = self.stealth_target_y - self.rect.centery
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        # If we've reached the target (or close enough), stop moving
+        if distance < self.speed:
+            self.velocity_x = 0
+            self.velocity_y = 0
+            return
+            
+        # Move towards the random target - using 8-directional movement for more erratic behavior
+        if distance > 0:
+            # Normalize direction
+            dx = dx / distance
+            dy = dy / distance
+            
+            # Set velocity with some randomness for erratic movement
+            rand_factor = 0.3
+            dx_rand = dx + random.uniform(-rand_factor, rand_factor)
+            dy_rand = dy + random.uniform(-rand_factor, rand_factor)
+            
+            # Normalize again after adding randomness
+            length = math.sqrt(dx_rand * dx_rand + dy_rand * dy_rand)
+            if length > 0:
+                dx_rand = dx_rand / length
+                dy_rand = dy_rand / length
+            
+            # Set velocity with the randomized direction
+            self.velocity_x = dx_rand * self.speed
+            self.velocity_y = dy_rand * self.speed
+            
+            # Update facing direction
+            if abs(dx) > abs(dy):
+                self.facing = 'right' if dx > 0 else 'left'
+            else:
+                self.facing = 'down' if dy > 0 else 'up'
 
 class PoisonTrail(pygame.sprite.Sprite):
     def __init__(self, x, y, size, damage, creator=None):
