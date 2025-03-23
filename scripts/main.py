@@ -3,6 +3,7 @@ import sys
 import os
 import math
 import random
+import argparse
 
 # Add the parent directory to the path so we can import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -17,7 +18,8 @@ from sound_manager import get_sound_manager  # Import our new sound manager
 from particle import ParticleSystem  # Import our new particle system
 
 class Game:
-    def __init__(self):
+    def __init__(self, start_fullscreen=False):
+        global WINDOW_WIDTH, WINDOW_HEIGHT
         pygame.init()
         pygame.display.set_caption("Mud Crawler")
         
@@ -68,15 +70,22 @@ class Game:
         print(f"Absolute player sprites path: {os.path.abspath(PLAYER_SPRITES_PATH)}")
         
         # Set up display
-        self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        self.fullscreen = start_fullscreen
+        
+        if self.fullscreen:
+            # Get display info for fullscreen mode
+            display_info = pygame.display.Info()
+            WINDOW_WIDTH = display_info.current_w
+            WINDOW_HEIGHT = display_info.current_h
+            self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), 
+                                               pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF)
+        else:
+            self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+            
         self.clock = pygame.time.Clock()
         
-        # Fullscreen flag
-        self.fullscreen = False
-        
         # Store original window size
-        self.windowed_width = WINDOW_WIDTH
-        self.windowed_height = WINDOW_HEIGHT
+        self.windowed_size = (WINDOW_WIDTH, WINDOW_HEIGHT)
         
         # Initialize camera with screen dimensions
         self.camera = Camera(WINDOW_WIDTH, WINDOW_HEIGHT)
@@ -1501,39 +1510,25 @@ class Game:
         self.fullscreen = not self.fullscreen
         
         try:
-            print(f"Attempting to switch to {'fullscreen-like' if self.fullscreen else 'windowed'} mode")
+            print(f"Attempting to switch to {'fullscreen' if self.fullscreen else 'windowed'} mode")
             
             if self.fullscreen:
                 # Save current window size for later
                 self.windowed_size = (WINDOW_WIDTH, WINDOW_HEIGHT)
                 print(f"Saved windowed size: {self.windowed_size}")
                 
-                # Try different methods to get a reasonable screen size
-                try:
-                    # Method 1: Get info from pygame display
-                    display_info = pygame.display.Info()
-                    new_width = display_info.current_w
-                    new_height = display_info.current_h
-                    
-                    # If the values are unreasonable, try alternative method
-                    if new_width <= 800 or new_height <= 600:
-                        raise ValueError("Display info returned current resolution")
-                        
-                except:
-                    # Method 2: Use a preset large resolution that should work well
-                    print("Using preset larger resolution instead of querying display")
-                    new_width = 1280
-                    new_height = 720
+                # Get display info
+                display_info = pygame.display.Info()
+                new_width = display_info.current_w
+                new_height = display_info.current_h
                 
-                print(f"Switching to larger window: {new_width}x{new_height}")
+                print(f"Switching to fullscreen: {new_width}x{new_height}")
                 
-                # Use a larger size window instead of actual fullscreen (more compatible)
-                # In WSL, true fullscreen often fails but larger windows work
+                # Use true fullscreen with hardware acceleration
                 WINDOW_WIDTH = new_width
                 WINDOW_HEIGHT = new_height
-                
-                # Just create a larger window without fullscreen flag
-                self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+                self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), 
+                                                     pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF)
                 pygame.display.flip()  # Ensure display is updated
                 
             else:
@@ -1572,7 +1567,7 @@ class Game:
                 if hasattr(button, 'text') and isinstance(button.text, str) and button.text.startswith("Fullscreen:"):
                     button.text = fullscreen_text
             
-            print(f"Mode switch complete. Current mode: {'Fullscreen-like' if self.fullscreen else 'Windowed'}")
+            print(f"Mode switch complete. Current mode: {'Fullscreen' if self.fullscreen else 'Windowed'}")
             return True
             
         except Exception as e:
@@ -2166,6 +2161,13 @@ class Game:
         self.special_attack_trail_positions = []
 
 if __name__ == "__main__":
+    import argparse
+    
+    # Set up command line arguments
+    parser = argparse.ArgumentParser(description='Mud Crawler Game')
+    parser.add_argument('--fullscreen', action='store_true', help='Start in fullscreen mode')
+    args = parser.parse_args()
+    
     print("Initializing Mud Crawler game...")
-    game = Game()
+    game = Game(start_fullscreen=args.fullscreen)
     game.run() 

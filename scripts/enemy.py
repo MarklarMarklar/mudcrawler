@@ -632,6 +632,8 @@ class Enemy(pygame.sprite.Sprite):
                         selected_texture = self.level_instance.selected_knight_texture
                     elif enemy_name == 'wizard' and self.level == 6:
                         selected_texture = self.level_instance.selected_wizard_texture
+                    elif enemy_name == 'shadow' and self.level == 9:
+                        selected_texture = self.level_instance.selected_shadow_texture
                         
                     if selected_texture:
                         custom_texture_path = selected_texture

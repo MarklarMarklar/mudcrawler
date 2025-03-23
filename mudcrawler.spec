@@ -7,7 +7,6 @@ added_files = [
     ('assets/', 'assets/'),
     ('config.py', '.'),
     ('scripts/*.py', 'scripts'),
-    ('data/', 'data/'),
 ]
 
 a = Analysis(

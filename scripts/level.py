@@ -1575,6 +1575,12 @@ class Level:
         self.selected_wizard_texture = None
         if level_number == 6:
             self.selected_wizard_texture = self.get_random_enemy_texture('wizard')
+            
+        # Add shadow texture selection for level 9
+        self.selected_shadow_texture = None
+        if level_number == 9:
+            self.selected_shadow_texture = self.get_random_enemy_texture('shadows')
+            print(f"Selected shadow texture for level 9: {self.selected_shadow_texture}")
         
         # Load tile textures
         self.tiles = self.load_tile_textures()
