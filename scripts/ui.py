@@ -267,12 +267,14 @@ class Menu:
             self.font = pygame.font.Font(font_path, 48)
             self.subtitle_font = pygame.font.Font(font_path, 32)
             self.instruction_font = pygame.font.Font(font_path, 24)
+            self.credits_font = pygame.font.Font(font_path, 28)
             print(f"Successfully loaded pixelated font for menu")
         else:
             # Fallback to default font if the pixelated font is not available
             self.font = pygame.font.Font(None, 48)
             self.subtitle_font = pygame.font.Font(None, 32)
             self.instruction_font = pygame.font.Font(None, 24)
+            self.credits_font = pygame.font.Font(None, 28)
             print(f"Pixelated font not found, using default font: {font_path}")
             
         self.asset_manager = get_asset_manager()
@@ -458,6 +460,38 @@ class Menu:
         
         print("Menu initialized with buttons")
         
+        # Credits scroll variables
+        self.credits_text = [
+            "MUD CRAWLER",
+            "",
+            "CREDITS",
+            "",
+            "Programming",
+            "Cursor",
+            "Claude 3.7 Sonnet",
+            "",
+            "Art & Design",
+            "Hugging Face",
+            "black-forest-labs/FLUX.1-schnell",
+            "",
+            "Music & Sound",
+            "SUNO",
+            "",
+            "Special Thanks",
+            "Kacsa, Pocok, Pupi",
+            "Peti, Levi, Sebi,",
+            "Zsizsik, Dübi"
+            "",
+            "Made with Python and Pygame",
+            "",
+            "Thanks for playing!"
+        ]
+        self.credits_y = WINDOW_HEIGHT  # Start below the screen
+        self.credits_speed = 1.5  # Pixels per frame
+        self.credits_line_height = 40
+        self.show_credits = False
+        self.credits_started_time = 0
+        
     def _update_button_positions(self, menu_type):
         """Update button positions based on the menu type being displayed"""
         if menu_type == 'main_menu':
@@ -637,8 +671,17 @@ class Menu:
         else:
             self.screen.blit(self.victory_bg, (0, 0))
         
-        # Draw title with pixelated font if not using custom image
-        if not self.use_victory_custom_img or self.victory_custom_img is None:
+        # Start credits if not started yet
+        if not self.show_credits:
+            self.show_credits = True
+            self.credits_y = WINDOW_HEIGHT
+            self.credits_started_time = pygame.time.get_ticks()
+        
+        # Draw scrolling credits
+        self._draw_scrolling_credits()
+            
+        # Draw title with pixelated font if not using custom image and if credits just started
+        if (not self.use_victory_custom_img or self.victory_custom_img is None) and pygame.time.get_ticks() - self.credits_started_time < 5000:
             title = self.font.render("VICTORY!", True, GREEN)
             title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3))
             self.screen.blit(title, title_rect)
@@ -648,10 +691,54 @@ class Menu:
             msg_rect = msg.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
             self.screen.blit(msg, msg_rect)
         
-        # Draw buttons
-        self.buttons['restart'].draw(self.screen)
-        self.buttons['quit'].draw(self.screen)
+        # Do not draw buttons on victory screen since we're showing credits
         
+    def _draw_scrolling_credits(self):
+        """Draw scrolling credits text"""
+        if not self.show_credits:
+            return
+            
+        # Update credits position
+        self.credits_y -= self.credits_speed
+        
+        # Draw each line of credits
+        total_height = len(self.credits_text) * self.credits_line_height
+        
+        # Calculate if all credits have scrolled past the top
+        all_credits_passed = self.credits_y + total_height < 0
+        
+        # Reset credits position if all credits have passed
+        if all_credits_passed:
+            self.credits_y = WINDOW_HEIGHT
+        
+        # Draw each line with semi-transparent background for better readability
+        credits_width = 0
+        for line in self.credits_text:
+            text_surface = self.credits_font.render(line, True, WHITE)
+            credits_width = max(credits_width, text_surface.get_width())
+            
+        # Create background for credits
+        bg_width = credits_width + 40  # Add padding
+        bg_height = total_height
+        bg_surface = pygame.Surface((bg_width, bg_height), pygame.SRCALPHA)
+        bg_surface.fill((0, 0, 0, 150))  # Semi-transparent black
+        
+        # Draw background
+        bg_x = (WINDOW_WIDTH - bg_width) // 2
+        self.screen.blit(bg_surface, (bg_x, self.credits_y))
+        
+        # Draw text
+        for i, line in enumerate(self.credits_text):
+            text_surface = self.credits_font.render(line, True, WHITE)
+            text_rect = text_surface.get_rect(center=(WINDOW_WIDTH // 2, self.credits_y + i * self.credits_line_height + self.credits_line_height // 2))
+            self.screen.blit(text_surface, text_rect)
+            
+            # Add special styling for headings (lines followed by empty line)
+            if i < len(self.credits_text) - 1 and self.credits_text[i+1] == "" and line != "":
+                # Draw line with golden color
+                heading_surface = self.credits_font.render(line, True, (255, 215, 0))  # Gold color
+                self.screen.blit(heading_surface, text_rect)
+
     def draw_options_menu(self):
         """Draw the options menu with settings"""
         # Update button positions first
@@ -706,8 +793,11 @@ class Menu:
             # Game over buttons
             active_buttons = ['restart', 'quit']
         elif hasattr(self, 'in_victory') and self.in_victory:
-            # Victory buttons
-            active_buttons = ['restart', 'quit']
+            # On victory screen, handle click or key press to exit credits and show buttons
+            if event.type == pygame.MOUSEBUTTONDOWN or (event.type == pygame.KEYDOWN and event.key in [pygame.K_RETURN, pygame.K_ESCAPE, pygame.K_SPACE]):
+                self.show_credits = False
+                return 'restart'  # Return to main menu or restart
+            return None  # No buttons active during credits
         else:
             # Default to main menu buttons
             active_buttons = ['start', 'options', 'quit']
