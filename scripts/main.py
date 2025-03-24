@@ -23,16 +23,32 @@ class Game:
         pygame.init()
         pygame.display.set_caption("Mud Crawler")
         
+        # Game configuration
+        self.god_mode = False
+        self.infinite_arrows = False
+        self.infinite_special = False
+        self.infinite_stamina = False
+        
+        # Debug flags
+        self.debug_frame_times = False
+        self.debug_particles = False
+        
+        # Shake effect
+        self.shake_amount = 0
+        self.shake_duration = 0
+        self.shake_offset = [0, 0]
+        
+        # Initialize game variables
+        self.last_frame_time = pygame.time.get_ticks()
+        self.frame_times = []  # Store last N frame times
+        self.frame_time_sum = 0
+        self.frame_time_count = 0
+        
         # Torch lighting settings
         self.torch_enabled = True
         self.torch_radius = 300
         self.torch_inner_radius = 150
         self.darkness_level = 220  # Increased from 180 to 220 to make the field darker
-        
-        # Screen shake effect
-        self.shake_amount = 0
-        self.shake_duration = 0
-        self.shake_offset = [0, 0]
         
         # Death sequence flag
         self.death_sequence_active = False
@@ -96,6 +112,9 @@ class Game:
         # Initialize asset manager first
         self.asset_manager = get_asset_manager()
         print("Asset manager initialized")
+        
+        # Set custom mouse cursor
+        self.set_custom_cursor()
         
         # Check if assets directory exists, if not create it with necessary subdirectories
         self.ensure_asset_directories()
@@ -2159,6 +2178,38 @@ class Game:
         
         # Clear trail positions
         self.special_attack_trail_positions = []
+
+    def set_custom_cursor(self):
+        """Load and set a custom mouse cursor"""
+        try:
+            cursor_path = os.path.join(ASSET_PATH, 'icons', 'mouse_cursor.png')
+            cursor_image = pygame.image.load(cursor_path).convert_alpha()
+            
+            # Size check - resize if too large
+            width, height = cursor_image.get_size()
+            if width > 64 or height > 64:
+                # Pygame has a size limit for cursors
+                scale_factor = min(64 / width, 64 / height)
+                new_width = int(width * scale_factor)
+                new_height = int(height * scale_factor)
+                cursor_image = pygame.transform.smoothscale(cursor_image, (new_width, new_height))
+                print(f"Resized cursor from {width}x{height} to {new_width}x{new_height}")
+            
+            # Set the hotspot to the top-left corner of the image
+            # For a typical cursor, you might want to set it to the tip of the cursor
+            # For example, for an arrow pointing to the top-left, use (0, 0)
+            # For an arrow pointing to the top-right, use (width, 0)
+            hotspot = (0, 0)
+            
+            # Create a cursor from the image
+            cursor = pygame.cursors.Cursor(hotspot, cursor_image)
+            
+            # Set the cursor
+            pygame.mouse.set_cursor(cursor)
+            print(f"Custom cursor set from {cursor_path}")
+        except Exception as e:
+            print(f"Error setting custom cursor: {e}")
+            print(f"Using default cursor instead")
 
 if __name__ == "__main__":
     import argparse

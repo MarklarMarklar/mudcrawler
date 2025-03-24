@@ -85,11 +85,18 @@ class HealthPickup(BasePickup):
         
         # Try to load health pickup texture
         try:
-            health_path = os.path.join(WEAPON_SPRITES_PATH, "health_pickup.png")
+            # Look for the image in the icons directory first
+            health_path = os.path.join(ASSET_PATH, "icons", "health_pickup.png")
+            if not os.path.exists(health_path):
+                # Fall back to the weapons directory if not found
+                health_path = os.path.join(WEAPON_SPRITES_PATH, "health_pickup.png")
+            
             if os.path.exists(health_path):
                 self.health_texture = self.asset_manager.load_image(health_path, scale=(self.size, self.size))
+                print(f"Loaded health pickup texture from {health_path}")
             else:
                 self.health_texture = None
+                print(f"Could not find health pickup texture at {health_path}")
         except Exception as e:
             print(f"Failed to load health pickup texture: {e}")
             self.health_texture = None
@@ -103,36 +110,55 @@ class HealthPickup(BasePickup):
             pulse = math.sin(self.pulse_timer) * 0.2 + 0.8
             size = int(self.size * pulse)
             
-            # Create a surface for the heart shape
-            heart_surf = pygame.Surface((size, size), pygame.SRCALPHA)
-            
-            # Draw a red heart shape
-            heart_color = (255, 0, 0, 200)  # Semi-transparent red
-            
-            # Draw heart using 2 circles and a triangle
-            radius = size // 4
-            x_offset = size // 4
-            pygame.draw.circle(heart_surf, heart_color, (x_offset, radius), radius)  # Left circle
-            pygame.draw.circle(heart_surf, heart_color, (size - x_offset, radius), radius)  # Right circle
-            
-            # Triangle for bottom of heart
-            pygame.draw.polygon(heart_surf, heart_color, [
-                (0, radius),
-                (size // 2, size),
-                (size, radius)
-            ])
-            
-            # Add a glow effect
-            glow_surf = pygame.Surface((size * 3, size * 3), pygame.SRCALPHA)
-            glow_color = (255, 100, 100, 100)
-            pygame.draw.circle(glow_surf, glow_color, (size * 1.5, size * 1.5), size * pulse)
-            
-            # Blit heart and glow to main surface
-            heart_rect = heart_surf.get_rect(center=(self.x, self.y))
-            glow_rect = glow_surf.get_rect(center=(self.x, self.y))
-            
-            surface.blit(glow_surf, glow_rect)
-            surface.blit(heart_surf, heart_rect)
+            # If we have a texture, use it
+            if self.health_texture:
+                # Scale the texture with the pulse effect
+                scaled_texture = pygame.transform.scale(self.health_texture, (size, size))
+                
+                # Add a red glow effect behind the texture
+                glow_surf = pygame.Surface((size * 3, size * 3), pygame.SRCALPHA)
+                glow_color = (255, 100, 100, 100)  # Semi-transparent red
+                pygame.draw.circle(glow_surf, glow_color, (size * 1.5, size * 1.5), size * pulse)
+                
+                # Position the textures
+                texture_rect = scaled_texture.get_rect(center=(self.x, self.y))
+                glow_rect = glow_surf.get_rect(center=(self.x, self.y))
+                
+                # Blit the glow and texture to the surface
+                surface.blit(glow_surf, glow_rect)
+                surface.blit(scaled_texture, texture_rect)
+            else:
+                # Fallback to drawing a heart shape if texture is not available
+                # Create a surface for the heart shape
+                heart_surf = pygame.Surface((size, size), pygame.SRCALPHA)
+                
+                # Draw a red heart shape
+                heart_color = (255, 0, 0, 200)  # Semi-transparent red
+                
+                # Draw heart using 2 circles and a triangle
+                radius = size // 4
+                x_offset = size // 4
+                pygame.draw.circle(heart_surf, heart_color, (x_offset, radius), radius)  # Left circle
+                pygame.draw.circle(heart_surf, heart_color, (size - x_offset, radius), radius)  # Right circle
+                
+                # Triangle for bottom of heart
+                pygame.draw.polygon(heart_surf, heart_color, [
+                    (0, radius),
+                    (size // 2, size),
+                    (size, radius)
+                ])
+                
+                # Add a glow effect
+                glow_surf = pygame.Surface((size * 3, size * 3), pygame.SRCALPHA)
+                glow_color = (255, 100, 100, 100)
+                pygame.draw.circle(glow_surf, glow_color, (size * 1.5, size * 1.5), size * pulse)
+                
+                # Blit heart and glow to main surface
+                heart_rect = heart_surf.get_rect(center=(self.x, self.y))
+                glow_rect = glow_surf.get_rect(center=(self.x, self.y))
+                
+                surface.blit(glow_surf, glow_rect)
+                surface.blit(heart_surf, heart_rect)
         except Exception as e:
             print(f"Error rendering health pickup: {e}")
 
