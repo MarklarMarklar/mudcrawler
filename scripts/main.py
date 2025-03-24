@@ -856,11 +856,18 @@ class Game:
                     # Debug the exact position
                     print(f"Arrow check at: screen ({arrow.x}, {arrow.y}), tile ({arrow_tile_x}, {arrow_tile_y})")
                     
-                    # Try to destroy the wall
-                    if self.level.try_destroy_wall(arrow_tile_x, arrow_tile_y):
-                        print(f"Destroyed wall at {arrow_tile_x}, {arrow_tile_y} with arrow")
+                    # Check if the arrow hit ANY wall, not just destroyable walls
+                    if (0 <= arrow_tile_y < current_room.height and 
+                        0 <= arrow_tile_x < current_room.width and 
+                        current_room.tiles[arrow_tile_y][arrow_tile_x] == 1):  # Any wall tile
+                        
+                        print(f"Arrow hit wall at {arrow_tile_x}, {arrow_tile_y}")
                         # Mark the arrow for removal
                         arrows_to_remove.append(arrow)
+                        
+                        # Try to destroy the wall (if it's destroyable)
+                        if self.level.try_destroy_wall(arrow_tile_x, arrow_tile_y):
+                            print(f"Destroyed wall at {arrow_tile_x}, {arrow_tile_y} with arrow")
                 except Exception as e:
                     print(f"Error processing arrow-wall collision: {e}")
                     arrows_to_remove.append(arrow)
@@ -918,164 +925,211 @@ class Game:
                         amount=10  # Reduced amount
                     )
 
+            # Process sword collisions with enemies first
             for enemy in current_room.enemies:
                 # Check sword collisions using the directional attack hitbox
                 if (self.weapon_manager.sword.active and 
                     sword_hitbox and sword_hitbox.colliderect(enemy.rect) and
                     not enemy.has_been_hit_this_swing):  # Add check for hit tracking
-                    # Apply sword damage based on sword type
-                    damage = SWORD_DAMAGE
-                    if self.weapon_manager.has_fire_sword:
-                        damage = int(SWORD_DAMAGE * 1.5)  # 50% damage bonus
-                        # Create fire particles on hit
-                        self.particle_system.create_fire_effect(
-                            enemy.rect.centerx, 
-                            enemy.rect.centery,
-                            amount=5
-                        )
-                    elif self.weapon_manager.has_lightning_sword:
-                        damage = int(SWORD_DAMAGE * 1.8)  # 80% damage bonus
-                        # Create additional lightning particles at enemy position on hit
-                        self.particle_system.create_lightning_effect(
-                            enemy.rect.centerx, 
-                            enemy.rect.centery,
-                            amount=8
-                        )
                     
-                    # Apply damage and check if enemy was killed
-                    if enemy.take_damage(damage):
-                        # Enemy was killed, increment kill counter
-                        self.kill_counter += 1
-                        print(f"Enemy killed! Kill counter: {self.kill_counter}/{self.kill_counter_max}")
+                    # Check line of sight between player and enemy before applying damage
+                    # Use the enemy's existing line of sight check function
+                    has_line_of_sight = enemy.check_line_of_sight(
+                        self.player.rect.centerx, self.player.rect.centery,
+                        enemy.rect.centerx, enemy.rect.centery,
+                        self.level
+                    )
+                    
+                    if has_line_of_sight:
+                        # Apply sword damage based on sword type
+                        damage = SWORD_DAMAGE
+                        if self.weapon_manager.has_fire_sword:
+                            damage = int(SWORD_DAMAGE * 1.5)  # 50% damage bonus
+                            # Create fire particles on hit
+                            self.particle_system.create_fire_effect(
+                                enemy.rect.centerx, 
+                                enemy.rect.centery,
+                                amount=5
+                            )
+                        elif self.weapon_manager.has_lightning_sword:
+                            damage = int(SWORD_DAMAGE * 1.8)  # 80% damage bonus
+                            # Create additional lightning particles at enemy position on hit
+                            self.particle_system.create_lightning_effect(
+                                enemy.rect.centerx, 
+                                enemy.rect.centery,
+                                amount=8
+                            )
                         
-                    enemy.has_been_hit_this_swing = True  # Mark as hit for this swing
-                    
-                # Check arrow collisions with enemies
-                arrows_to_remove = []
-                for arrow in self.weapon_manager.bow.arrows:
+                        # Apply damage and check if enemy was killed
+                        if enemy.take_damage(damage):
+                            # Enemy was killed, increment kill counter
+                            self.kill_counter += 1
+                            print(f"Enemy killed! Kill counter: {self.kill_counter}/{self.kill_counter_max}")
+                            
+                        enemy.has_been_hit_this_swing = True  # Mark as hit for this swing
+                    else:
+                        # Wall is in the way, show a small particle effect to indicate blocked attack
+                        self.particle_system.create_particle(
+                            enemy.rect.centerx, 
+                            enemy.rect.centery,
+                            color=(150, 150, 150),  # Gray particles for blocked attack
+                            size=3,
+                            velocity=(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5)),
+                            lifetime=10
+                        )
+
+            # Now process arrow collisions with enemies (separate from sword logic)
+            arrows_to_remove = []
+            for arrow in self.weapon_manager.bow.arrows:
+                for enemy in current_room.enemies:
                     try:
                         if arrow.rect.colliderect(enemy.rect):
                             # Apply damage and check if enemy was killed
                             if enemy.take_damage(BOW_DAMAGE):
                                 # Enemy was killed, increment kill counter
                                 self.kill_counter += 1
-                                print(f"Enemy killed! Kill counter: {self.kill_counter}/{self.kill_counter_max}")
+                                print(f"Enemy killed with arrow! Kill counter: {self.kill_counter}/{self.kill_counter_max}")
                                 
                             arrows_to_remove.append(arrow)
-                            break
+                            break  # Break inner loop once arrow hits an enemy
                     except Exception as e:
                         print(f"Error checking arrow-enemy collision: {e}")
                         arrows_to_remove.append(arrow)
-                
-                # Remove arrows that hit enemies
-                for arrow in arrows_to_remove:
-                    try:
-                        self.weapon_manager.bow.remove_arrow(arrow)
-                    except Exception as e:
-                        print(f"Error removing arrow after enemy collision: {e}")
+                        break  # Break inner loop if error
+            
+            # Remove arrows that hit enemies
+            for arrow in arrows_to_remove:
+                try:
+                    self.weapon_manager.bow.remove_arrow(arrow)
+                except Exception as e:
+                    print(f"Error removing arrow after enemy collision: {e}")
+                    
         except Exception as e:
             print(f"Error checking enemy collisions: {e}")
                 
         # Check boss collisions with weapons
         try:
+            # Check for sword collisions with boss
             if current_room.boss and current_room.boss.health > 0:
                 if (self.weapon_manager.sword.active and 
                     sword_hitbox and sword_hitbox.colliderect(current_room.boss.damage_hitbox) and
-                    not current_room.boss.has_been_hit_this_swing):  # Add check for hit tracking
-                    # Apply sword damage based on sword type
-                    damage = SWORD_DAMAGE
-                    if self.weapon_manager.has_fire_sword:
-                        damage = int(SWORD_DAMAGE * 1.5)  # 50% damage bonus
-                        # Create fire particles on hit
-                        self.particle_system.create_fire_effect(
-                            current_room.boss.rect.centerx, 
-                            current_room.boss.rect.centery,
-                            amount=10
-                        )
-                    elif self.weapon_manager.has_lightning_sword:
-                        damage = int(SWORD_DAMAGE * 1.8)  # 80% damage bonus
-                        # Create lightning particles on hit
-                        self.particle_system.create_lightning_effect(
-                            current_room.boss.rect.centerx, 
-                            current_room.boss.rect.centery,
-                            amount=12
-                        )
-                    current_room.boss.take_damage(damage)
-                    current_room.boss.has_been_hit_this_swing = True  # Mark as hit for this swing
+                    not current_room.boss.has_been_hit_this_swing):
                     
-                    # Check if damage was reflected by level 4 boss in defensive mode
-                    if hasattr(current_room.boss, 'reflected_damage') and current_room.boss.reflected_damage > 0:
-                        reflected = current_room.boss.reflected_damage
-                        # Add debug logging
-                        print(f"Processing reflected damage: {reflected}, boss defensive mode: {getattr(current_room.boss, 'defensive_mode', False)}")
+                    # Check line of sight between player and boss before applying damage
+                    has_line_of_sight = current_room.boss.check_line_of_sight(
+                        self.player.rect.centerx, self.player.rect.centery,
+                        current_room.boss.rect.centerx, current_room.boss.rect.centery,
+                        self.level
+                    )
+                    
+                    if has_line_of_sight:
+                        # Apply sword damage based on sword type
+                        damage = SWORD_DAMAGE
+                        if self.weapon_manager.has_fire_sword:
+                            damage = int(SWORD_DAMAGE * 1.5)  # 50% damage bonus
+                            # Create fire particles on hit
+                            self.particle_system.create_fire_effect(
+                                current_room.boss.rect.centerx, 
+                                current_room.boss.rect.centery,
+                                amount=10
+                            )
+                        elif self.weapon_manager.has_lightning_sword:
+                            damage = int(SWORD_DAMAGE * 1.8)  # 80% damage bonus
+                            # Create lightning particles on hit
+                            self.particle_system.create_lightning_effect(
+                                current_room.boss.rect.centerx, 
+                                current_room.boss.rect.centery,
+                                amount=12
+                            )
+                        current_room.boss.take_damage(damage)
+                        current_room.boss.has_been_hit_this_swing = True  # Mark as hit for this swing
                         
-                        # Apply reflected damage to player
-                        self.player.take_damage(reflected)
-                        
-                        # Different reflection effects based on boss level
-                        if hasattr(current_room.boss, 'level') and current_room.boss.level == 7:
-                            # Purple reflection particles for level 7 boss
-                            particle_color = (150, 50, 255)
-                            self.display_message(f"Shield reflected {int(reflected)} damage!", particle_color)
-                        else:
-                            # Blue reflection particles for level 4 boss
-                            particle_color = (0, 100, 255)
-                            self.display_message(f"Boss reflected {int(reflected)} damage!", particle_color)
+                        # Check if damage was reflected by level 4 boss in defensive mode
+                        if hasattr(current_room.boss, 'reflected_damage') and current_room.boss.reflected_damage > 0:
+                            reflected = current_room.boss.reflected_damage
+                            # Add debug logging
+                            print(f"Processing reflected damage: {reflected}, boss defensive mode: {getattr(current_room.boss, 'defensive_mode', False)}")
                             
-                        # Create visual effect to show damage reflection
+                            # Apply reflected damage to player
+                            self.player.take_damage(reflected)
+                            
+                            # Different reflection effects based on boss level
+                            if hasattr(current_room.boss, 'level') and current_room.boss.level == 7:
+                                # Purple reflection particles for level 7 boss
+                                particle_color = (150, 50, 255)
+                                self.display_message(f"Shield reflected {int(reflected)} damage!", particle_color)
+                            else:
+                                # Blue reflection particles for level 4 boss
+                                particle_color = (0, 100, 255)
+                                self.display_message(f"Boss reflected {int(reflected)} damage!", particle_color)
+                                
+                            # Create visual effect to show damage reflection
+                            self.particle_system.create_particle(
+                                current_room.boss.rect.centerx, 
+                                current_room.boss.rect.centery,
+                                color=particle_color,
+                                size=random.randint(4, 8),
+                                velocity=(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5)),
+                                lifetime=random.randint(20, 30)
+                            )
+                            
+                            # Reset reflected damage
+                            current_room.boss.reflected_damage = 0
+                    else:
+                        # Wall is in the way, show a small particle effect to indicate blocked attack
                         self.particle_system.create_particle(
                             current_room.boss.rect.centerx, 
                             current_room.boss.rect.centery,
-                            color=particle_color,
-                            size=random.randint(4, 8),
-                            speed=random.uniform(1.0, 2.0),
-                            lifetime=random.randint(20, 30)
+                            color=(150, 150, 150),  # Gray particles for blocked attack
+                            size=3,
+                            velocity=(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5)),
+                            lifetime=10
                         )
-                        
-                        # Reset reflected damage
-                        current_room.boss.reflected_damage = 0
-                    
-                # Check arrow collisions with boss
+            
+            # Check for arrow collisions with boss (completely separate logic)
+            if current_room.boss and current_room.boss.health > 0:
                 arrows_to_remove = []
                 for arrow in self.weapon_manager.bow.arrows:
                     try:
+                        # Debug output to help trace collisions
+                        print(f"Checking arrow collision with boss: arrow at ({arrow.rect.x}, {arrow.rect.y}), boss at ({current_room.boss.rect.x}, {current_room.boss.rect.y})")
+                        print(f"Arrow rect: {arrow.rect}, Boss damage hitbox: {current_room.boss.damage_hitbox}")
+                        
                         if arrow.rect.colliderect(current_room.boss.damage_hitbox):
+                            print(f"ARROW HIT BOSS! Applying {BOW_DAMAGE} damage")
                             current_room.boss.take_damage(BOW_DAMAGE)
                             
-                            # Check if damage was reflected by level 4 boss in defensive mode
+                            # Check if damage was reflected
                             if hasattr(current_room.boss, 'reflected_damage') and current_room.boss.reflected_damage > 0:
                                 reflected = current_room.boss.reflected_damage
-                                # Add debug logging
-                                print(f"Processing reflected damage: {reflected}, boss defensive mode: {getattr(current_room.boss, 'defensive_mode', False)}")
+                                print(f"Boss reflected arrow damage: {reflected}")
                                 
                                 # Apply reflected damage to player
                                 self.player.take_damage(reflected)
                                 
                                 # Different reflection effects based on boss level
                                 if hasattr(current_room.boss, 'level') and current_room.boss.level == 7:
-                                    # Purple reflection particles for level 7 boss
-                                    particle_color = (150, 50, 255)
+                                    particle_color = (150, 50, 255)  # Purple for level 7
                                     self.display_message(f"Shield reflected {int(reflected)} damage!", particle_color)
                                 else:
-                                    # Blue reflection particles for level 4 boss
-                                    particle_color = (0, 100, 255)
+                                    particle_color = (0, 100, 255)  # Blue for level 4
                                     self.display_message(f"Boss reflected {int(reflected)} damage!", particle_color)
                                 
-                                # Create visual effect to show damage reflection
+                                # Create visual effect
                                 self.particle_system.create_particle(
                                     current_room.boss.rect.centerx, 
                                     current_room.boss.rect.centery,
                                     color=particle_color,
                                     size=random.randint(4, 8),
-                                    speed=random.uniform(1.0, 2.0),
+                                    velocity=(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5)),
                                     lifetime=random.randint(20, 30)
                                 )
                                 
                                 # Reset reflected damage
                                 current_room.boss.reflected_damage = 0
                             
+                            # Mark arrow for removal
                             arrows_to_remove.append(arrow)
-                            break
                     except Exception as e:
                         print(f"Error checking arrow-boss collision: {e}")
                         arrows_to_remove.append(arrow)
