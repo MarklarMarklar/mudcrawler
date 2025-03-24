@@ -520,6 +520,11 @@ class Room:
                     if 0 <= y < self.height and 0 <= x < self.width:
                         self.tiles[y][x] = 0  # Floor tile
             
+        # Check and fix room connectivity to ensure no isolated areas
+        is_connected, unreachable_tiles = self._check_room_connectivity()
+        if not is_connected:
+            self._fix_connectivity(unreachable_tiles)
+            
         # ADD DESTROYABLE WALLS (TREASURE CHESTS) SEPARATELY
         self._place_destroyable_walls()
         
@@ -716,6 +721,163 @@ class Room:
                     self.tiles[check_y][check_x] == 2):  # Door tile
                     return True
         return False
+        
+    def _check_room_connectivity(self):
+        """
+        Check if all floor tiles in the room are connected (accessible).
+        Uses a flood fill algorithm starting from a door.
+        Returns: (bool, list) - (is_connected, unreachable_floor_tiles)
+        """
+        # Create a copy of the map for flood filling
+        visited = [[False for _ in range(self.width)] for _ in range(self.height)]
+        
+        # Find a starting point (preferably near a door)
+        start_x, start_y = None, None
+        
+        # Try to find a door first
+        for direction, has_door in self.doors.items():
+            if has_door:
+                if direction == 'north':
+                    start_x, start_y = self.width // 2, 1
+                elif direction == 'south':
+                    start_x, start_y = self.width // 2, self.height - 2
+                elif direction == 'east':
+                    start_x, start_y = self.width - 2, self.height // 2
+                elif direction == 'west':
+                    start_x, start_y = 1, self.height // 2
+                break
+        
+        # If no doors, start from the center
+        if start_x is None or start_y is None:
+            start_x, start_y = self.width // 2, self.height // 2
+            
+        # Make sure the starting point is a floor
+        if self.tiles[start_y][start_x] != 0:
+            # Find any floor tile if the starting point isn't a floor
+            for y in range(1, self.height - 1):
+                for x in range(1, self.width - 1):
+                    if self.tiles[y][x] == 0:
+                        start_x, start_y = x, y
+                        break
+                if start_x is not None:
+                    break
+        
+        # Perform flood fill to mark all connected floor tiles
+        queue = [(start_x, start_y)]
+        visited[start_y][start_x] = True
+        
+        while queue:
+            x, y = queue.pop(0)
+            
+            # Check adjacent tiles (4-way connectivity)
+            for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                nx, ny = x + dx, y + dy
+                
+                # Make sure we're in bounds
+                if 0 <= ny < self.height and 0 <= nx < self.width:
+                    # If it's a floor tile and we haven't visited it yet
+                    if self.tiles[ny][nx] == 0 and not visited[ny][nx]:
+                        visited[ny][nx] = True
+                        queue.append((nx, ny))
+        
+        # Find any unreachable floor tiles
+        unreachable = []
+        for y in range(self.height):
+            for x in range(self.width):
+                if self.tiles[y][x] == 0 and not visited[y][x]:
+                    unreachable.append((x, y))
+        
+        # Return whether all floor tiles are connected and any unreachable tiles
+        return len(unreachable) == 0, unreachable
+    
+    def _fix_connectivity(self, unreachable_tiles):
+        """
+        Fix connectivity issues by creating paths to unreachable areas.
+        """
+        if not unreachable_tiles:
+            return
+            
+        # Group unreachable tiles into connected regions
+        regions = []
+        visited = [[False for _ in range(self.width)] for _ in range(self.height)]
+        
+        for x, y in unreachable_tiles:
+            if visited[y][x]:
+                continue
+                
+            # Found a new region - flood fill to find all connected tiles in this region
+            region = []
+            queue = [(x, y)]
+            visited[y][x] = True
+            
+            while queue:
+                cur_x, cur_y = queue.pop(0)
+                region.append((cur_x, cur_y))
+                
+                # Check adjacent tiles
+                for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                    nx, ny = cur_x + dx, cur_y + dy
+                    
+                    # Make sure we're in bounds
+                    if 0 <= ny < self.height and 0 <= nx < self.width:
+                        # If it's a floor tile and we haven't visited it yet
+                        if self.tiles[ny][nx] == 0 and not visited[ny][nx]:
+                            visited[ny][nx] = True
+                            queue.append((nx, ny))
+            
+            regions.append(region)
+        
+        # For each isolated region, create a path to the accessible part of the room
+        for region in regions:
+            # Find the closest point in this region to any accessible floor tile
+            accessible_tiles = [(x, y) for y in range(self.height) for x in range(self.width) 
+                              if self.tiles[y][x] == 0 and (x, y) not in unreachable_tiles]
+            
+            if not accessible_tiles:
+                continue  # No accessible tiles to connect to
+                
+            # Find the pair of tiles (one from the region, one accessible) with the shortest Manhattan distance
+            min_distance = float('inf')
+            region_tile = None
+            accessible_tile = None
+            
+            for rx, ry in region:
+                for ax, ay in accessible_tiles:
+                    distance = abs(rx - ax) + abs(ry - ay)
+                    if distance < min_distance:
+                        min_distance = distance
+                        region_tile = (rx, ry)
+                        accessible_tile = (ax, ay)
+            
+            if region_tile and accessible_tile:
+                # Create a path from the region to the accessible area
+                rx, ry = region_tile
+                ax, ay = accessible_tile
+                
+                # Determine if we should move horizontally or vertically first
+                # (50/50 chance for variety)
+                if random.random() < 0.5:
+                    # Horizontal first, then vertical
+                    # Create horizontal path
+                    x_start, x_end = min(rx, ax), max(rx, ax)
+                    for x in range(x_start, x_end + 1):
+                        self.tiles[ry][x] = 0  # Set to floor
+                    
+                    # Create vertical path
+                    y_start, y_end = min(ry, ay), max(ry, ay)
+                    for y in range(y_start, y_end + 1):
+                        self.tiles[y][ax] = 0  # Set to floor
+                else:
+                    # Vertical first, then horizontal
+                    # Create vertical path
+                    y_start, y_end = min(ry, ay), max(ry, ay)
+                    for y in range(y_start, y_end + 1):
+                        self.tiles[y][rx] = 0  # Set to floor
+                    
+                    # Create horizontal path
+                    x_start, x_end = min(rx, ax), max(rx, ax)
+                    for x in range(x_start, x_end + 1):
+                        self.tiles[ay][x] = 0  # Set to floor
         
     def try_destroy_wall(self, x, y):
         """Try to destroy a wall at the given tile position"""
