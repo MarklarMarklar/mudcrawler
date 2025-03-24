@@ -2599,6 +2599,50 @@ class Boss(Enemy):
                     if hasattr(self, 'normal_image') and self.normal_image:
                         self.image = self.normal_image
                     
+                                        # Shoot a projectile at the player when teleportation is complete
+                    # Calculate normalized direction vector to player
+                    dx = player.rect.centerx - self.rect.centerx
+                    dy = player.rect.centery - self.rect.centery
+                    length = math.sqrt(dx*dx + dy*dy)
+                    
+                    if length > 0:
+                        # Normalize
+                        dx = dx / length
+                        dy = dy / length
+                        
+                        # Create a homing teleport projectile with a unique purple color
+                        projectile = BossProjectile(
+                            self.rect.centerx, 
+                            self.rect.centery, 
+                            (dx, dy), 
+                            1.6,  # Slightly faster than Boss 2 projectiles
+                            self.damage * 1.2,  # 20% more damage than normal
+                            color=(160, 32, 240),  # Purple color for teleport projectile
+                            is_homing=True,  # Enable homing behavior
+                            boss_level=self.level  # Pass the boss level for animated projectiles
+                        )
+                        
+                        # Store reference to player for homing
+                        projectile.player_target = player
+                        
+                        # Enhance the trail effect
+                        projectile.trail_enabled = True
+                        projectile.max_trail_length = 12  # Longer trail for dramatic effect
+                        projectile.trail_update_rate = 1   # Update every frame for smoother trail
+                        
+                        # Make it hunt the player more aggressively
+                        projectile.homing_strength = 0.04  # More aggressive turning
+                        projectile.max_homing_time = 5000  # Home for longer (5 seconds)
+                        
+                        # Increase projectile lifetime
+                        projectile.max_distance = TILE_SIZE * 20  # Double the normal distance
+                        
+                        # Add to projectile group
+                        self.projectiles.add(projectile)
+                        
+                        # Play a sound effect if available
+                        self.sound_manager.play_sound("effects/projectile")
+
                     print(f"Boss 6 teleportation complete at time {current_time}")
         
         # Level 2 boss: use special attack when player is in range but not in melee range
@@ -2889,6 +2933,130 @@ class Boss(Enemy):
                     # Delete the end time so this only happens once per debuff
                     delattr(player, '_speed_debuff_end_time')
                     print("Player speed restored")
+        
+        # Level 7 boss shield mode logic (based on level 4)
+        if self.level == 7 and self.has_spotted_player:
+            # Use simpler logic than level 4 - just cycle between normal and shield mode
+            if not self.defensive_mode_engaged:
+                # Check if it's time to activate shield mode
+                time_since_last_defensive = current_time - self.last_defensive_mode_time
+                if time_since_last_defensive >= self.defensive_mode_cooldown:
+                    # Activate shield mode
+                    self.defensive_mode_engaged = True
+                    self.defensive_mode = True
+                    self.last_defensive_mode_time = current_time
+                    self.shield_growth = 0  # Start with original shield size
+                    self.cursed_shield_dropped = False  # Reset the flag when entering shield mode
+                    
+                    # Store the current image to restore later
+                    self.normal_image = self.image
+                    
+                    # Switch to defensive image if available
+                    if self.defensive_image:
+                        self.image = self.defensive_image
+                        # Force it to be used immediately
+                        print(f"Switching to defensive image for level 7 boss: {id(self.defensive_image)}")
+                    
+                    # Play defensive sound
+                    self.sound_manager.play_sound("effects/boss_4_def")  # Reuse level 4 sound
+                    print(f"Level 7 boss entering shield mode at time {current_time}!")
+                    
+                    # Summon homing projectiles at the start of shield mode
+                    self.summon_homing_projectiles(player)
+                else:
+                    # Debug output to track the shield mode cooldown
+                    if current_time % 1000 < 20:  # Only print once per second approximately
+                        print(f"Time until level 7 shield mode: {self.defensive_mode_cooldown - time_since_last_defensive} ms")
+            else:
+                # Already in shield mode, check if it's time to deactivate
+                time_in_defensive_mode = current_time - self.last_defensive_mode_time
+                if time_in_defensive_mode >= self.defensive_mode_duration:
+                    # Drop the shield as a stationary cursed area
+                    if hasattr(self, 'shield_radius') and self.shield_radius > 0:
+                        # Create a cursed shield at the boss's current position
+                        cursed_shield = CursedShield(
+                            self.rect.centerx,
+                            self.rect.centery,
+                            self.shield_radius * 2,  # Diameter
+                            self.shield_damage  # Same damage as the shield
+                        )
+                        
+                        # Add to player's level if possible
+                        if hasattr(player, 'level') and hasattr(player.level, 'cursed_shields'):
+                            player.level.cursed_shields.add(cursed_shield)
+                        else:
+                            # Initialize the cursed_shields group if it doesn't exist
+                            if hasattr(player, 'level'):
+                                if not hasattr(player.level, 'cursed_shields'):
+                                    player.level.cursed_shields = pygame.sprite.Group()
+                                player.level.cursed_shields.add(cursed_shield)
+                        
+                        print(f"Level 7 boss dropped a cursed shield at ({self.rect.centerx}, {self.rect.centery})")
+                        self.cursed_shield_dropped = True  # Mark that shield has been dropped
+                    
+                    # Deactivate shield mode and resume chasing immediately
+                    self.defensive_mode_engaged = False
+                    self.defensive_mode = False
+                    
+                    # Restore normal image
+                    if hasattr(self, 'normal_image') and self.normal_image:
+                        self.image = self.normal_image
+                    
+                    # Ensure reflected damage is reset when leaving shield mode
+                    self.reflected_damage = 0
+                    
+                    # Play the boss voice when leaving shield mode
+                    voice_file = f"effects/boss_4_voice"  # Fallback to level 4 voice
+                    if os.path.exists(os.path.join(SOUND_PATH, f"effects/boss_7_voice.mp3")):
+                        voice_file = f"effects/boss_7_voice"
+                    self.sound_manager.play_sound(voice_file)
+                    self.last_voice_time = current_time
+                        
+                    print(f"Level 7 boss leaving shield mode at time {current_time}!")
+                else:
+                    # Update shield growth during the shield mode (0 to 1 over the duration)
+                    self.shield_growth = min(1.0, time_in_defensive_mode / self.defensive_mode_duration)
+            
+            # If in shield mode, check for collisions with the player
+            if self.defensive_mode:
+                current_time = pygame.time.get_ticks()
+                
+                # Check if player is colliding with the shield
+                if hasattr(self, 'shield_radius') and self.shield_radius > 0:
+                    # Calculate distance between boss center and player center
+                    dx = player.rect.centerx - self.rect.centerx
+                    dy = player.rect.centery - self.rect.centery
+                    distance = math.sqrt(dx * dx + dy * dy)
+                    
+                    # If player is inside shield radius, damage them (with cooldown)
+                    if distance < self.shield_radius:
+                        # Check cooldown to avoid constant damage
+                        if current_time - self.last_shield_damage_time >= self.shield_damage_cooldown:
+                            # Damage player
+                            player.take_damage(self.shield_damage)
+                            self.last_shield_damage_time = current_time
+                            
+                            # Create visual effect showing shield damage
+                            if hasattr(player.level, 'particle_system'):
+                                for _ in range(8):  # Create several particles
+                                    angle = random.uniform(0, math.pi * 2)
+                                    speed = random.uniform(1.0, 2.0)
+                                    dx = math.cos(angle) * speed
+                                    dy = math.sin(angle) * speed
+                                    
+                                    player.level.particle_system.create_particle(
+                                        player.rect.centerx,
+                                        player.rect.centery,
+                                        color=(150, 50, 255),  # Purple to match shield
+                                        velocity=(dx, dy),
+                                        size=random.randint(4, 8),
+                                        lifetime=random.randint(20, 30)
+                                    )
+                            
+                            # Display feedback to player
+                            if hasattr(player.level, 'game') and hasattr(player.level.game, 'display_message'):
+                                player.level.game.display_message("Shield damage!", (150, 50, 255))
+        
         # Rest of boss update code
         # ... existing code ...
     
@@ -3316,7 +3484,7 @@ class Boss(Enemy):
         if self.level != 6:
             return
 
-        print("Boss 7 is summoning homing projectiles!")
+        print("Boss 6 is summoning homing projectiles!")
         
         # Calculate room dimensions
         room_width = ROOM_WIDTH * TILE_SIZE
