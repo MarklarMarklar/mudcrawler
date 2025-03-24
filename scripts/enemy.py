@@ -1699,6 +1699,10 @@ class Boss(Enemy):
             self.trail_size = int(TILE_SIZE * 1.0)  # Increased size of trail segments
             self.trail_damage = self.damage * 0.05  # Trail does 5% of boss damage
         
+        # Poison trail attribute for level 9 boss (for the slowing puddle when exiting stealth)
+        if self.level == 9:
+            self.poison_trails = pygame.sprite.Group()
+        
         # Phase system for special attacks
         self.phase = 0  # 0 = normal, 1 = <60% health, 2 = <30% health
         self.last_special_attack_time = 0
@@ -2328,6 +2332,44 @@ class Boss(Enemy):
                         # Clear any path that might have been set during stealth mode
                         self.path = []
                         print("Boss 9 returned to normal mode")
+                        
+                        # Shoot a fast projectile at the player when exiting stealth mode
+                        if player:
+                            # Calculate direction to player
+                            dx = player.rect.centerx - self.rect.centerx
+                            dy = player.rect.centery - self.rect.centery
+                            direction = math.atan2(dy, dx)
+                            
+                            # Create a fast projectile with toxic green color
+                            projectile = BossProjectile(
+                                self.rect.centerx, 
+                                self.rect.centery, 
+                                direction, 
+                                speed=5.0,  # Very fast projectile
+                                damage=20,
+                                color=(80, 220, 80),  # Toxic green
+                                boss_level=self.level
+                            )
+                            self.projectiles.add(projectile)
+                            
+                            # Place a slowing puddle under the player
+                            poison_trail = PoisonTrail(
+                                player.rect.centerx,
+                                player.rect.centery,
+                                TILE_SIZE,  # Size of the puddle
+                                15,  # Damage
+                                creator=self  # Reference to the boss
+                            )
+                            
+                            # Make sure poison_trails attribute exists
+                            if not hasattr(self, 'poison_trails'):
+                                self.poison_trails = pygame.sprite.Group()
+                                
+                            self.poison_trails.add(poison_trail)
+                            
+                            # Play sound effect
+                            if self.sound_manager:
+                                self.sound_manager.play_sound('boss_special')
                     
                     # During stealth mode, change direction periodically
                     if self.stealth_mode and current_time - self.stealth_change_direction_timer >= self.stealth_direction_change_interval:
@@ -2766,54 +2808,6 @@ class Boss(Enemy):
                 if len(self.position_history) > self.max_trail_length:
                     self.position_history.pop(0)
 
-        # Check health-based special attack for non-level-2 bosses
-        if self.level != 2:
-            health_percent = self.health / self.enemy_data['health']
-            original_attack_range = self.attack_range  # Store original attack range
-            
-            if health_percent < 0.3:
-                self.attack_cooldown = 500
-                self.speed = self.enemy_data['speed'] * 1.5
-                self.damage = int(self.enemy_data['damage'] * 1.5)
-                # Note: we deliberately do NOT increase attack_range here
-                self.phase = 2  # High phase for damage calculation
-                
-                # Different special attack probabilities for different bosses
-                if self.level == 6:
-                    # Boss 6 has higher special attack chance in phase 2 (below 30% health)
-                    if random.random() < 0.08 and distance <= self.attack_range * 4:  # Requires being somewhat close
-                        self.special_attack(player)
-                else:
-                    if random.random() < 0.05:
-                        self.special_attack(player)
-                        
-            elif health_percent < 0.6:
-                self.attack_cooldown = 750
-                self.speed = self.enemy_data['speed'] * 1.2
-                self.damage = int(self.enemy_data['damage'] * 1.2)
-                # Note: we deliberately do NOT increase attack_range here
-                self.phase = 1  # Medium phase for damage calculation
-                
-                # Different special attack probabilities for different bosses
-                if self.level == 6:
-                    # Boss 6 has moderate special attack chance in phase 1 (30-60% health)
-                    if random.random() < 0.04 and distance <= self.attack_range * 3:  # Requires being close
-                        self.special_attack(player)
-                else:
-                    if random.random() < 0.03:
-                        self.special_attack(player)
-            else:
-                self.phase = 0  # Base phase
-                
-                # Level 6 boss has the lowest special attack chance when at full health (phase 0)
-                if self.level == 6:
-                    if random.random() < 0.01 and distance <= self.attack_range * 2:  # Requires being very close
-                        self.special_attack(player)
-                
-            # Safety check to ensure attack range doesn't change
-            if self.attack_range != original_attack_range:
-                self.attack_range = original_attack_range
-        
         # Update Boss 6 poison trails
         if self.level == 6 and self.has_spotted_player:
             # Update existing trails
@@ -2861,130 +2855,43 @@ class Boss(Enemy):
                     # Delete the end time so this only happens once per debuff
                     delattr(player, '_speed_debuff_end_time')
                     print("Player speed restored")
-        
-        # Level 7 boss shield mode logic (based on level 4)
-        if self.level == 7 and self.has_spotted_player:
-            # Use simpler logic than level 4 - just cycle between normal and shield mode
-            if not self.defensive_mode_engaged:
-                # Check if it's time to activate shield mode
-                time_since_last_defensive = current_time - self.last_defensive_mode_time
-                if time_since_last_defensive >= self.defensive_mode_cooldown:
-                    # Activate shield mode
-                    self.defensive_mode_engaged = True
-                    self.defensive_mode = True
-                    self.last_defensive_mode_time = current_time
-                    self.shield_growth = 0  # Start with original shield size
-                    self.cursed_shield_dropped = False  # Reset the flag when entering shield mode
                     
-                    # Store the current image to restore later
-                    self.normal_image = self.image
-                    
-                    # Switch to defensive image if available
-                    if self.defensive_image:
-                        self.image = self.defensive_image
-                        # Force it to be used immediately
-                        print(f"Switching to defensive image for level 7 boss: {id(self.defensive_image)}")
-                    
-                    # Play defensive sound
-                    self.sound_manager.play_sound("effects/boss_4_def")  # Reuse level 4 sound
-                    print(f"Level 7 boss entering shield mode at time {current_time}!")
-                    
-                    # Summon homing projectiles at the start of shield mode
-                    self.summon_homing_projectiles(player)
-                else:
-                    # Debug output to track the shield mode cooldown
-                    if current_time % 1000 < 20:  # Only print once per second approximately
-                        print(f"Time until level 7 shield mode: {self.defensive_mode_cooldown - time_since_last_defensive} ms")
-            else:
-                # Already in shield mode, check if it's time to deactivate
-                time_in_defensive_mode = current_time - self.last_defensive_mode_time
-                if time_in_defensive_mode >= self.defensive_mode_duration:
-                    # Drop the shield as a stationary cursed area
-                    if hasattr(self, 'shield_radius') and self.shield_radius > 0:
-                        # Create a cursed shield at the boss's current position
-                        cursed_shield = CursedShield(
-                            self.rect.centerx,
-                            self.rect.centery,
-                            self.shield_radius * 2,  # Diameter
-                            self.shield_damage  # Same damage as the shield
-                        )
-                        
-                        # Add to player's level if possible
-                        if hasattr(player, 'level') and hasattr(player.level, 'cursed_shields'):
-                            player.level.cursed_shields.add(cursed_shield)
-                        else:
-                            # Initialize the cursed_shields group if it doesn't exist
-                            if hasattr(player, 'level'):
-                                if not hasattr(player.level, 'cursed_shields'):
-                                    player.level.cursed_shields = pygame.sprite.Group()
-                                player.level.cursed_shields.add(cursed_shield)
-                        
-                        print(f"Level 7 boss dropped a cursed shield at ({self.rect.centerx}, {self.rect.centery})")
-                        self.cursed_shield_dropped = True  # Mark that shield has been dropped
-                    
-                    # Deactivate shield mode and resume chasing immediately
-                    self.defensive_mode_engaged = False
-                    self.defensive_mode = False
-                    
-                    # Restore normal image
-                    if hasattr(self, 'normal_image') and self.normal_image:
-                        self.image = self.normal_image
-                    
-                    # Ensure reflected damage is reset when leaving shield mode
-                    self.reflected_damage = 0
-                    
-                    # Play the boss voice when leaving shield mode
-                    voice_file = f"effects/boss_4_voice"  # Fallback to level 4 voice
-                    if os.path.exists(os.path.join(SOUNDS_PATH, f"effects/boss_7_voice.mp3")):
-                        voice_file = f"effects/boss_7_voice"
-                    self.sound_manager.play_sound(voice_file)
-                    self.last_voice_time = current_time
-                        
-                    print(f"Level 7 boss leaving shield mode at time {current_time}!")
-                else:
-                    # Update shield growth during the shield mode (0 to 1 over the duration)
-                    self.shield_growth = min(1.0, time_in_defensive_mode / self.defensive_mode_duration)
+        # Update Boss 9 poison trails
+        if self.level == 9 and hasattr(self, 'poison_trails'):
+            # Update existing trails
+            self.poison_trails.update()
             
-            # If in shield mode, check for collisions with the player
-            if self.defensive_mode:
-                current_time = pygame.time.get_ticks()
-                
-                # Check if player is colliding with the shield
-                if hasattr(self, 'shield_radius') and self.shield_radius > 0:
-                    # Calculate distance between boss center and player center
-                    dx = player.rect.centerx - self.rect.centerx
-                    dy = player.rect.centery - self.rect.centery
-                    distance = math.sqrt(dx * dx + dy * dy)
+            # Check collision with player
+            for trail in self.poison_trails:
+                if trail.check_collision(player.hitbox):
+                    # Apply damage only if cooldown allows
+                    if hasattr(trail, 'can_damage') and trail.can_damage():
+                        player.take_damage(trail.damage)
                     
-                    # If player is inside shield radius, damage them (with cooldown)
-                    if distance < self.shield_radius:
-                        # Check cooldown to avoid constant damage
-                        if current_time - self.last_shield_damage_time >= self.shield_damage_cooldown:
-                            # Damage player
-                            player.take_damage(self.shield_damage)
-                            self.last_shield_damage_time = current_time
-                            
-                            # Create visual effect showing shield damage
-                            if hasattr(player.level, 'particle_system'):
-                                for _ in range(8):  # Create several particles
-                                    angle = random.uniform(0, math.pi * 2)
-                                    speed = random.uniform(1.0, 2.0)
-                                    dx = math.cos(angle) * speed
-                                    dy = math.sin(angle) * speed
-                                    
-                                    player.level.particle_system.create_particle(
-                                        player.rect.centerx,
-                                        player.rect.centery,
-                                        color=(150, 50, 255),  # Purple to match shield
-                                        velocity=(dx, dy),
-                                        size=random.randint(4, 8),
-                                        lifetime=random.randint(20, 30)
-                                    )
-                            
-                            # Display feedback to player
-                            if hasattr(player.level, 'game') and hasattr(player.level.game, 'display_message'):
-                                player.level.game.display_message("Shield damage!", (150, 50, 255))
+                    # Apply slow effect - same mechanism as boss 6
+                    # Store original speed if first time
+                    if not hasattr(player, '_original_speed'):
+                        player._original_speed = player.speed
+                    
+                    # Apply the slow effect
+                    player.speed = player._original_speed * 0.5
+                    
+                    # Set the debuff end time
+                    player._speed_debuff_end_time = current_time + 2000  # 2 seconds
+                    print(f"Player speed reduced to 50% for 2 seconds")
         
+        
+            # Check if debuff should be removed - do this every frame
+            if hasattr(player, '_original_speed') and hasattr(player, '_speed_debuff_end_time'):
+                if current_time >= player._speed_debuff_end_time:
+                    # Restore original speed
+                    player.speed = player._original_speed
+                    # Delete the end time so this only happens once per debuff
+                    delattr(player, '_speed_debuff_end_time')
+                    print("Player speed restored")
+        # Rest of boss update code
+        # ... existing code ...
+    
     def draw(self, surface):
         # Skip the motion blur/trail effect when jumping (bosses don't jump)
         # This prevents duplicate texture blitting
@@ -3010,6 +2917,11 @@ class Boss(Enemy):
             for trail in self.poison_trails:
                 surface.blit(trail.image, trail.rect)
         
+        # Draw poison trails for Boss 9 BEFORE drawing the boss
+        if self.level == 9 and hasattr(self, 'poison_trails') and self.poison_trails:
+            for trail in self.poison_trails:
+                surface.blit(trail.image, trail.rect)
+                
         # Calculate position with visual offset
         draw_x = self.rect.x - self.visual_offset_x
         draw_y = self.rect.y - self.visual_offset_y
