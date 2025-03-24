@@ -41,6 +41,48 @@ class BloodPuddle:
             # Fallback rendering if texture isn't available
             pygame.draw.circle(surface, (120, 0, 0), (self.x, self.y), self.size // 2)
 
+class BossCorpse:
+    """Represents a dead boss using a specific texture"""
+    def __init__(self, boss, level_number):
+        self.x = boss.rect.centerx
+        self.y = boss.rect.centery
+        self.level_number = level_number
+        self.asset_manager = get_asset_manager()
+        self.texture = None
+        self.rect = None
+        
+        # Load the appropriate texture based on boss level
+        self._load_boss_corpse()
+        
+    def _load_boss_corpse(self):
+        """Load the boss corpse texture for the current level"""
+        try:
+            # Path to dead boss texture
+            dead_boss_path = os.path.join(ASSET_PATH, "characters", "bosses", f"boss_{self.level_number}_dead.png")
+            print(f"Loading boss {self.level_number} corpse from: {dead_boss_path}")
+            print(f"File exists: {os.path.exists(dead_boss_path)}")
+            
+            # Load the texture with proper scaling
+            # Scale to match typical boss size (around 2.2x tile size)
+            boss_size = (int(TILE_SIZE * 2.2), int(TILE_SIZE * 2.2))
+            self.texture = self.asset_manager.load_image(dead_boss_path, scale=boss_size)
+            
+            # Create rect for positioning
+            self.rect = self.texture.get_rect(center=(self.x, self.y))
+            print(f"Successfully loaded boss {self.level_number} corpse texture: {self.texture.get_size()}")
+        except Exception as e:
+            print(f"Failed to load boss {self.level_number} corpse texture: {e}")
+            self.texture = None
+            
+    def draw(self, surface):
+        """Draw the boss corpse to the surface"""
+        if self.texture and self.rect:
+            surface.blit(self.texture, self.rect)
+        else:
+            # Fallback to a colored rectangle if texture isn't available
+            fallback_rect = pygame.Rect(self.x - TILE_SIZE, self.y - TILE_SIZE, TILE_SIZE*2, TILE_SIZE*2)
+            pygame.draw.rect(surface, (150, 0, 0), fallback_rect)
+
 class Room:
     """Represents a single room in a dungeon level"""
     def __init__(self, x, y, level_number, room_type='normal'):
@@ -912,13 +954,10 @@ class Room:
         if self.boss and self.boss.health > 0:
             self.boss.update(player)
         elif self.boss and self.boss.health <= 0:
-            # Create blood puddle at boss location
+            # Handle boss death
             if not hasattr(self, 'boss_blood_created') or not self.boss_blood_created:
-                # Create a larger blood puddle for the boss (by adding multiple puddles)
-                for _ in range(3):
-                    offset_x = random.randint(-TILE_SIZE//2, TILE_SIZE//2)
-                    offset_y = random.randint(-TILE_SIZE//2, TILE_SIZE//2)
-                    self.blood_puddles.append(BloodPuddle(self.boss.rect.centerx + offset_x, self.boss.rect.centery + offset_y))
+                # Create boss corpse with the appropriate dead texture for any boss level
+                self.boss_corpse = BossCorpse(self.boss, self.level_number)
                 self.boss_blood_created = True
                 
             # Boss is defeated, drop the key
@@ -1253,6 +1292,9 @@ class Room:
         # Draw boss if present
         if self.boss and self.boss.health > 0:
             self.boss.draw(surface)
+        # Draw dead boss sprite if it exists for any boss level
+        elif hasattr(self, 'boss_corpse'):
+            self.boss_corpse.draw(surface)
         
         # Finally, draw exit door glows on top of everything else
         for x, y in exit_door_positions:
