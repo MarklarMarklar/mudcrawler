@@ -698,6 +698,16 @@ class Enemy(pygame.sprite.Sprite):
         self.rect.x = x
         self.rect.y = y
         
+        # Reduce collision box size to allow navigating through narrow corridors
+        # Make the collision box 60% of the sprite size, centered within the sprite
+        self.collision_box_scale = 0.6
+        self.collision_rect = pygame.Rect(0, 0, 
+                                         int(self.rect.width * self.collision_box_scale),
+                                         int(self.rect.height * self.collision_box_scale))
+        # Center the collision rect within the image rect
+        self.collision_rect.centerx = self.rect.centerx
+        self.collision_rect.centery = self.rect.centery
+        
         # Enemy stats
         self.health = self.enemy_data['health']
         self.damage = self.enemy_data['damage']
@@ -922,6 +932,43 @@ class Enemy(pygame.sprite.Sprite):
         """Calculate Manhattan distance between two points"""
         return abs(x1 - x2) + abs(y1 - y2)
     
+    def check_line_of_sight(self, start_x, start_y, target_x, target_y, level):
+        """Check if there's a clear line of sight between two points"""
+        # Convert to tile coordinates
+        start_tile_x, start_tile_y = int(start_x // TILE_SIZE), int(start_y // TILE_SIZE)
+        target_tile_x, target_tile_y = int(target_x // TILE_SIZE), int(target_y // TILE_SIZE)
+        
+        # Get current room
+        if not hasattr(level, 'rooms') or level.current_room_coords not in level.rooms:
+            return False
+            
+        room = level.rooms[level.current_room_coords]
+        
+        # Use Bresenham's line algorithm to check for walls along the line
+        # This is a simplified version for tile-based checking
+        dx = abs(target_tile_x - start_tile_x)
+        dy = abs(target_tile_y - start_tile_y)
+        sx = 1 if start_tile_x < target_tile_x else -1
+        sy = 1 if start_tile_y < target_tile_y else -1
+        err = dx - dy
+        
+        x, y = start_tile_x, start_tile_y
+        
+        while x != target_tile_x or y != target_tile_y:
+            # Check if current tile is a wall
+            if (0 <= x < room.width and 0 <= y < room.height and room.tiles[y][x] == 1):
+                return False  # Wall detected, no line of sight
+            
+            e2 = 2 * err
+            if e2 > -dy:
+                err -= dy
+                x += sx
+            if e2 < dx:
+                err += dx
+                y += sy
+                
+        return True  # No walls detected, clear line of sight
+    
     def move_towards_player(self, player):
         """Move towards player using pathfinding"""
         # Calculate distance to player
@@ -935,9 +982,16 @@ class Enemy(pygame.sprite.Sprite):
             self.velocity_y = 0
             return
         
-        # Use direct movement for close distances (2 tiles)
-        if distance < TILE_SIZE * 2:
-            if distance > 0:
+        # Use direct movement for close distances (2 tiles) ONLY if there's a clear line of sight
+        if distance < TILE_SIZE * 2 and hasattr(player, 'level'):
+            # Check if there's a clear line of sight to the player before using direct movement
+            has_line_of_sight = self.check_line_of_sight(
+                self.rect.centerx, self.rect.centery,
+                player.rect.centerx, player.rect.centery,
+                player.level
+            )
+            
+            if has_line_of_sight and distance > 0:
                 # Normalize direction
                 dx = dx / distance
                 dy = dy / distance
@@ -951,7 +1005,7 @@ class Enemy(pygame.sprite.Sprite):
                     self.facing = 'right' if dx > 0 else 'left'
                 else:
                     self.facing = 'down' if dy > 0 else 'up'
-            return
+                return
         
         # Get current target position
         target_pos = (player.rect.centerx, player.rect.centery)
@@ -985,9 +1039,89 @@ class Enemy(pygame.sprite.Sprite):
             else:
                 # If no path found, increment failure counter
                 self.movement_failed_counter += 1
-                # Stop moving if we can't find a path
-                self.velocity_x = 0
-                self.velocity_y = 0
+                
+                # Initialize wall-following behavior when no path is found
+                # This helps enemies navigate around obstacles to reach the player
+                
+                # Normalize direction to player
+                if distance > 0:
+                    norm_dx = dx / distance
+                    norm_dy = dy / distance
+                    
+                    # Wall-following algorithm:
+                    # 1. Start by trying to move in the direction of the player
+                    # 2. If blocked, try moving along the wall by testing perpendicular directions
+                    # 3. If all directions are blocked, try moving away temporarily to find new paths
+                    
+                    # Store directions in order of preference
+                    directions_to_try = []
+                    
+                    # First, try cardinal directions closest to player direction
+                    if abs(norm_dx) > abs(norm_dy):
+                        # Primarily horizontal
+                        primary_dir = ('x', (norm_dx / abs(norm_dx)) * self.speed if norm_dx != 0 else 0)
+                        secondary_dir = ('y', (norm_dy / abs(norm_dy)) * self.speed if norm_dy != 0 else 0)
+                    else:
+                        # Primarily vertical
+                        primary_dir = ('y', (norm_dy / abs(norm_dy)) * self.speed if norm_dy != 0 else 0)
+                        secondary_dir = ('x', (norm_dx / abs(norm_dx)) * self.speed if norm_dx != 0 else 0)
+                    
+                    # Add primary direction first (toward player)
+                    directions_to_try.append(primary_dir)
+                    
+                    # Then try perpendicular directions (wall-following)
+                    directions_to_try.append(secondary_dir)
+                    directions_to_try.append(('y', -secondary_dir[1]) if secondary_dir[0] == 'y' else ('x', -secondary_dir[1]))
+                    directions_to_try.append(('x', -primary_dir[1]) if primary_dir[0] == 'x' else ('y', -primary_dir[1]))
+                    
+                    # Test each direction until we find a valid move
+                    for direction in directions_to_try:
+                        axis, value = direction
+                        
+                        # Create test rectangle
+                        test_rect = self.rect.copy()
+                        if axis == 'x':
+                            test_rect.x += value * 2  # Look ahead a bit farther
+                        else:
+                            test_rect.y += value * 2
+                        
+                        # Check if this move is valid
+                        if not (hasattr(player, 'level') and player.level.check_collision(test_rect)):
+                            # Found valid move, apply it
+                            if axis == 'x':
+                                self.velocity_x = value
+                                self.velocity_y = 0
+                                self.facing = 'right' if value > 0 else 'left'
+                            else:
+                                self.velocity_x = 0
+                                self.velocity_y = value
+                                self.facing = 'down' if value > 0 else 'up'
+                            break
+                    else:
+                        # No valid direction found, try random movement as last resort
+                        # This helps prevent getting completely stuck in corners
+                        possible_moves = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                        random.shuffle(possible_moves)
+                        
+                        for move_dx, move_dy in possible_moves:
+                            test_rect = self.rect.copy()
+                            test_rect.x += move_dx * self.speed * 2
+                            test_rect.y += move_dy * self.speed * 2
+                            
+                            if not (hasattr(player, 'level') and player.level.check_collision(test_rect)):
+                                self.velocity_x = move_dx * self.speed
+                                self.velocity_y = move_dy * self.speed
+                                
+                                if abs(move_dx) > abs(move_dy):
+                                    self.facing = 'right' if move_dx > 0 else 'left'
+                                else:
+                                    self.facing = 'down' if move_dy > 0 else 'up'
+                                break
+                        else:
+                            # If we're still stuck, just wait until next frame
+                            self.velocity_x = 0
+                            self.velocity_y = 0
+                
                 return
         
         # If we have a path, follow it
@@ -1164,6 +1298,10 @@ class Enemy(pygame.sprite.Sprite):
             self.frame = int(self.animation_time) % len(self.animations[self.current_state][self.facing])
             self.image = self.animations[self.current_state][self.facing][self.frame]
             
+            # Update collision rect to match main rect
+            self.collision_rect.centerx = self.rect.centerx
+            self.collision_rect.centery = self.rect.centery
+            
             return
             
         # Calculate distance to player
@@ -1197,6 +1335,7 @@ class Enemy(pygame.sprite.Sprite):
         
         # Store the old position to revert if collision happens
         old_rect = self.rect.copy()
+        old_collision_rect = self.collision_rect.copy()
         old_velocity_x = self.velocity_x
         old_velocity_y = self.velocity_y
         
@@ -1205,10 +1344,16 @@ class Enemy(pygame.sprite.Sprite):
         
         # Try moving horizontally first
         if self.velocity_x != 0:
+            # Move the main rect
             self.rect.x += self.velocity_x
-            # If collision, revert and mark as movement failure
-            if has_level and player.level.check_collision(self.rect):
+            # Move the collision rect to stay centered
+            self.collision_rect.centerx = self.rect.centerx
+            
+            # Check for collision using the smaller collision rect
+            if has_level and player.level.check_collision(self.collision_rect):
+                # Revert both rects on collision
                 self.rect.x = old_rect.x
+                self.collision_rect = old_collision_rect.copy()
                 self.velocity_x = 0  # Stop horizontal movement on collision
                 if self.state == 'chase':
                     self.movement_failed_counter += 1
@@ -1217,10 +1362,16 @@ class Enemy(pygame.sprite.Sprite):
         
         # Then try moving vertically
         if self.velocity_y != 0:
+            # Move the main rect
             self.rect.y += self.velocity_y
-            # If collision, revert and mark as movement failure
-            if has_level and player.level.check_collision(self.rect):
+            # Move the collision rect to stay centered
+            self.collision_rect.centery = self.rect.centery
+            
+            # Check for collision using the smaller collision rect
+            if has_level and player.level.check_collision(self.collision_rect):
+                # Revert both rects on collision
                 self.rect.y = old_rect.y
+                self.collision_rect = old_collision_rect.copy()
                 self.velocity_y = 0  # Stop vertical movement on collision
                 if self.state == 'chase':
                     self.movement_failed_counter += 1
@@ -1229,6 +1380,9 @@ class Enemy(pygame.sprite.Sprite):
         
         # Keep enemy on screen
         self.rect.clamp_ip(pygame.display.get_surface().get_rect())
+        # Make sure collision rect stays centered after clamping
+        self.collision_rect.centerx = self.rect.centerx
+        self.collision_rect.centery = self.rect.centery
         
         # Update animation
         self.animation_time += self.animation_speed
@@ -1260,26 +1414,30 @@ class Enemy(pygame.sprite.Sprite):
     def draw(self, surface):
         # Add a motion blur/trail effect when jumping
         if self.is_jumping:
-            # Draw a faded trail at the original position when jumping away
-            if self.jump_return_time == 0:
-                # Draw faded copy at original position
-                ghost_image = self.image.copy()
-                ghost_image.set_alpha(100)  # Semi-transparent
-                ghost_rect = self.rect.copy()
-                ghost_rect.x = self.original_pos[0]
-                ghost_rect.y = self.original_pos[1]
-                surface.blit(ghost_image, ghost_rect)
-            else:
-                # Draw faded copy at jump target position
-                ghost_image = self.image.copy()
-                ghost_image.set_alpha(100)  # Semi-transparent
-                ghost_rect = self.rect.copy()
-                ghost_rect.x = self.jump_target_pos[0]
-                ghost_rect.y = self.jump_target_pos[1]
-                surface.blit(ghost_image, ghost_rect)
+            # Create a faded copy of the sprite
+            alpha_sprite = self.image.copy()
+            alpha_sprite.set_alpha(100)  # 100/255 transparency
+            
+            # Calculate position based on distance from original to current
+            blur_positions = []
+            
+            # Create 3 trail sprites between original and current position
+            for i in range(1, 4):
+                factor = i / 4.0
+                trail_x = self.original_pos[0] * (1 - factor) + self.rect.x * factor
+                trail_y = self.original_pos[1] * (1 - factor) + self.rect.y * factor
+                blur_positions.append((int(trail_x), int(trail_y)))
+            
+            # Draw trail sprites
+            for pos in blur_positions:
+                surface.blit(alpha_sprite, pos)
         
-        # Draw the enemy
+        # Draw the enemy at its current position
         surface.blit(self.image, self.rect)
+        
+        # Optionally draw collision box for debugging
+        # Uncomment this to visualize the collision boxes
+        # pygame.draw.rect(surface, (255, 0, 0), self.collision_rect, 1)
         
         # Draw resurrection effects if in blood puddle state
         if self.is_dead:
@@ -1469,6 +1627,16 @@ class Boss(Enemy):
     def __init__(self, x, y, level, level_instance=None):
         """Initialize a boss enemy with strong attributes"""
         super().__init__(x, y, None, level, level_instance)
+        
+        # Make sure the collision rect is properly sized for bosses
+        # Bosses need a smaller collision box (50% of sprite size) to navigate better
+        self.collision_box_scale = 0.5
+        self.collision_rect = pygame.Rect(0, 0, 
+                                         int(self.rect.width * self.collision_box_scale),
+                                         int(self.rect.height * self.collision_box_scale))
+        # Center the collision rect within the image rect
+        self.collision_rect.centerx = self.rect.centerx
+        self.collision_rect.centery = self.rect.centery
         
         # Ensure level_instance is set, critical for Boss 9's egg spawning
         if not self.level_instance and level_instance:
@@ -1940,9 +2108,16 @@ class Boss(Enemy):
             self.velocity_y = 0
             return
         
-        # Use direct movement for close distances (2 tiles)
-        if distance < TILE_SIZE * 2:
-            if distance > 0:
+        # Use direct movement for close distances (2 tiles) ONLY if there's a clear line of sight
+        if distance < TILE_SIZE * 2 and hasattr(player, 'level'):
+            # Check if there's a clear line of sight to the player before using direct movement
+            has_line_of_sight = self.check_line_of_sight(
+                self.rect.centerx, self.rect.centery,
+                player.rect.centerx, player.rect.centery,
+                player.level
+            )
+            
+            if has_line_of_sight and distance > 0:
                 # Normalize direction
                 dx = dx / distance
                 dy = dy / distance
@@ -1956,7 +2131,7 @@ class Boss(Enemy):
                     self.facing = 'right' if dx > 0 else 'left'
                 else:
                     self.facing = 'down' if dy > 0 else 'up'
-            return
+                return
         
         # Get current target position
         target_pos = (player.rect.centerx, player.rect.centery)
@@ -1990,9 +2165,89 @@ class Boss(Enemy):
             else:
                 # If no path found, increment failure counter
                 self.movement_failed_counter += 1
-                # Stop moving if we can't find a path
-                self.velocity_x = 0
-                self.velocity_y = 0
+                
+                # Initialize wall-following behavior when no path is found
+                # This helps enemies navigate around obstacles to reach the player
+                
+                # Normalize direction to player
+                if distance > 0:
+                    norm_dx = dx / distance
+                    norm_dy = dy / distance
+                    
+                    # Wall-following algorithm:
+                    # 1. Start by trying to move in the direction of the player
+                    # 2. If blocked, try moving along the wall by testing perpendicular directions
+                    # 3. If all directions are blocked, try moving away temporarily to find new paths
+                    
+                    # Store directions in order of preference
+                    directions_to_try = []
+                    
+                    # First, try cardinal directions closest to player direction
+                    if abs(norm_dx) > abs(norm_dy):
+                        # Primarily horizontal
+                        primary_dir = ('x', (norm_dx / abs(norm_dx)) * self.speed if norm_dx != 0 else 0)
+                        secondary_dir = ('y', (norm_dy / abs(norm_dy)) * self.speed if norm_dy != 0 else 0)
+                    else:
+                        # Primarily vertical
+                        primary_dir = ('y', (norm_dy / abs(norm_dy)) * self.speed if norm_dy != 0 else 0)
+                        secondary_dir = ('x', (norm_dx / abs(norm_dx)) * self.speed if norm_dx != 0 else 0)
+                    
+                    # Add primary direction first (toward player)
+                    directions_to_try.append(primary_dir)
+                    
+                    # Then try perpendicular directions (wall-following)
+                    directions_to_try.append(secondary_dir)
+                    directions_to_try.append(('y', -secondary_dir[1]) if secondary_dir[0] == 'y' else ('x', -secondary_dir[1]))
+                    directions_to_try.append(('x', -primary_dir[1]) if primary_dir[0] == 'x' else ('y', -primary_dir[1]))
+                    
+                    # Test each direction until we find a valid move
+                    for direction in directions_to_try:
+                        axis, value = direction
+                        
+                        # Create test rectangle
+                        test_rect = self.rect.copy()
+                        if axis == 'x':
+                            test_rect.x += value * 2  # Look ahead a bit farther
+                        else:
+                            test_rect.y += value * 2
+                        
+                        # Check if this move is valid
+                        if not (hasattr(player, 'level') and player.level.check_collision(test_rect)):
+                            # Found valid move, apply it
+                            if axis == 'x':
+                                self.velocity_x = value
+                                self.velocity_y = 0
+                                self.facing = 'right' if value > 0 else 'left'
+                            else:
+                                self.velocity_x = 0
+                                self.velocity_y = value
+                                self.facing = 'down' if value > 0 else 'up'
+                            break
+                    else:
+                        # No valid direction found, try random movement as last resort
+                        # This helps prevent getting completely stuck in corners
+                        possible_moves = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                        random.shuffle(possible_moves)
+                        
+                        for move_dx, move_dy in possible_moves:
+                            test_rect = self.rect.copy()
+                            test_rect.x += move_dx * self.speed * 2
+                            test_rect.y += move_dy * self.speed * 2
+                            
+                            if not (hasattr(player, 'level') and player.level.check_collision(test_rect)):
+                                self.velocity_x = move_dx * self.speed
+                                self.velocity_y = move_dy * self.speed
+                                
+                                if abs(move_dx) > abs(move_dy):
+                                    self.facing = 'right' if move_dx > 0 else 'left'
+                                else:
+                                    self.facing = 'down' if move_dy > 0 else 'up'
+                                break
+                        else:
+                            # If we're still stuck, just wait until next frame
+                            self.velocity_x = 0
+                            self.velocity_y = 0
+                
                 return
         
         # If we have a path, follow it
@@ -2689,8 +2944,10 @@ class Boss(Enemy):
         self.rect.x += self.velocity_x
         
         # If collision occurs, try with half the velocity
-        if hasattr(player, 'level') and player.level and player.level.check_collision(self.rect):
+        if hasattr(player, 'level') and player.level and player.level.check_collision(self.collision_rect):
             self.rect.x = old_rect.x
+            # Update collision rect to match main rect
+            self.collision_rect.centerx = self.rect.centerx
             # Try to move vertically if horizontal movement is blocked
             if self.velocity_x != 0 and self.velocity_y == 0:
                 # Try to move up or down to get around the obstacle
@@ -2701,9 +2958,14 @@ class Boss(Enemy):
         
         # Vertical movement - simplified with no half-step attempts
         self.rect.y += self.velocity_y
-        if hasattr(player, 'level') and player.level and player.level.check_collision(self.rect):
+        # Update collision rect position
+        self.collision_rect.centery = self.rect.centery
+        
+        if hasattr(player, 'level') and player.level and player.level.check_collision(self.collision_rect):
             # Simply revert if collision occurs
             self.rect.y = old_rect.y
+            # Update collision rect to match main rect
+            self.collision_rect.centery = self.rect.centery
             # Try to move horizontally if vertical movement is blocked
             if self.velocity_y != 0 and self.velocity_x == 0:
                 # Try to move left or right to get around the obstacle
@@ -3569,9 +3831,16 @@ class Boss(Enemy):
             self.velocity_y = 0
             return
         
-        # Use direct movement for close distances (2 tiles)
-        if distance < TILE_SIZE * 2:
-            if distance > 0:
+        # Use direct movement for close distances (2 tiles) ONLY if there's a clear line of sight
+        if distance < TILE_SIZE * 2 and hasattr(player, 'level'):
+            # Check if there's a clear line of sight to the player before using direct movement
+            has_line_of_sight = self.check_line_of_sight(
+                self.rect.centerx, self.rect.centery,
+                player.rect.centerx, player.rect.centery,
+                player.level
+            )
+            
+            if has_line_of_sight and distance > 0:
                 # Normalize direction
                 dx = dx / distance
                 dy = dy / distance
@@ -3585,7 +3854,7 @@ class Boss(Enemy):
                     self.facing = 'right' if dx > 0 else 'left'
                 else:
                     self.facing = 'down' if dy > 0 else 'up'
-            return
+                return
         
         # Get current target position
         target_pos = (player.rect.centerx, player.rect.centery)
@@ -3619,9 +3888,89 @@ class Boss(Enemy):
             else:
                 # If no path found, increment failure counter
                 self.movement_failed_counter += 1
-                # Stop moving if we can't find a path
-                self.velocity_x = 0
-                self.velocity_y = 0
+                
+                # Initialize wall-following behavior when no path is found
+                # This helps enemies navigate around obstacles to reach the player
+                
+                # Normalize direction to player
+                if distance > 0:
+                    norm_dx = dx / distance
+                    norm_dy = dy / distance
+                    
+                    # Wall-following algorithm:
+                    # 1. Start by trying to move in the direction of the player
+                    # 2. If blocked, try moving along the wall by testing perpendicular directions
+                    # 3. If all directions are blocked, try moving away temporarily to find new paths
+                    
+                    # Store directions in order of preference
+                    directions_to_try = []
+                    
+                    # First, try cardinal directions closest to player direction
+                    if abs(norm_dx) > abs(norm_dy):
+                        # Primarily horizontal
+                        primary_dir = ('x', (norm_dx / abs(norm_dx)) * self.speed if norm_dx != 0 else 0)
+                        secondary_dir = ('y', (norm_dy / abs(norm_dy)) * self.speed if norm_dy != 0 else 0)
+                    else:
+                        # Primarily vertical
+                        primary_dir = ('y', (norm_dy / abs(norm_dy)) * self.speed if norm_dy != 0 else 0)
+                        secondary_dir = ('x', (norm_dx / abs(norm_dx)) * self.speed if norm_dx != 0 else 0)
+                    
+                    # Add primary direction first (toward player)
+                    directions_to_try.append(primary_dir)
+                    
+                    # Then try perpendicular directions (wall-following)
+                    directions_to_try.append(secondary_dir)
+                    directions_to_try.append(('y', -secondary_dir[1]) if secondary_dir[0] == 'y' else ('x', -secondary_dir[1]))
+                    directions_to_try.append(('x', -primary_dir[1]) if primary_dir[0] == 'x' else ('y', -primary_dir[1]))
+                    
+                    # Test each direction until we find a valid move
+                    for direction in directions_to_try:
+                        axis, value = direction
+                        
+                        # Create test rectangle
+                        test_rect = self.rect.copy()
+                        if axis == 'x':
+                            test_rect.x += value * 2  # Look ahead a bit farther
+                        else:
+                            test_rect.y += value * 2
+                        
+                        # Check if this move is valid
+                        if not (hasattr(player, 'level') and player.level.check_collision(test_rect)):
+                            # Found valid move, apply it
+                            if axis == 'x':
+                                self.velocity_x = value
+                                self.velocity_y = 0
+                                self.facing = 'right' if value > 0 else 'left'
+                            else:
+                                self.velocity_x = 0
+                                self.velocity_y = value
+                                self.facing = 'down' if value > 0 else 'up'
+                            break
+                    else:
+                        # No valid direction found, try random movement as last resort
+                        # This helps prevent getting completely stuck in corners
+                        possible_moves = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                        random.shuffle(possible_moves)
+                        
+                        for move_dx, move_dy in possible_moves:
+                            test_rect = self.rect.copy()
+                            test_rect.x += move_dx * self.speed * 2
+                            test_rect.y += move_dy * self.speed * 2
+                            
+                            if not (hasattr(player, 'level') and player.level.check_collision(test_rect)):
+                                self.velocity_x = move_dx * self.speed
+                                self.velocity_y = move_dy * self.speed
+                                
+                                if abs(move_dx) > abs(move_dy):
+                                    self.facing = 'right' if move_dx > 0 else 'left'
+                                else:
+                                    self.facing = 'down' if move_dy > 0 else 'up'
+                                break
+                        else:
+                            # If we're still stuck, just wait until next frame
+                            self.velocity_x = 0
+                            self.velocity_y = 0
+                
                 return
         
         # If we have a path, follow it
