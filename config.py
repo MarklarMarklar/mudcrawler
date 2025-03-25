@@ -44,7 +44,7 @@ SWORD_COOLDOWN = 500  # milliseconds
 
 # Enemy Settings
 ENEMY_TYPES = {
-    'level1': {'name': 'Slime', 'health': 50, 'damage': 10, 'speed': 2},
+    'level1': {'name': 'Slime', 'health': 50, 'damage': 10, 'speed': 2.2},
     'level2': {'name': 'Skeleton', 'health': 60, 'damage': 12, 'speed': 2},
     'level3': {'name': 'Ghost', 'health': 40, 'damage': 15, 'speed': 2},
     'level4': {'name': 'Goblin', 'health': 70, 'damage': 30, 'speed': 2.5},
@@ -58,14 +58,14 @@ ENEMY_TYPES = {
 
 # Boss Settings
 BOSS_TYPES = {
-    'level1': {'name': 'King Slime', 'health': 200, 'damage': 20, 'speed': 1.5},
-    'level2': {'name': 'Skeleton Lord', 'health': 250, 'damage': 25, 'speed': 1.5},
-    'level3': {'name': 'Phantom King', 'health': 300, 'damage': 25, 'speed': 1.5},
+    'level1': {'name': 'King Slime', 'health': 200, 'damage': 20, 'speed': 2.5},
+    'level2': {'name': 'Skeleton Lord', 'health': 250, 'damage': 25, 'speed': 2},
+    'level3': {'name': 'Phantom King', 'health': 300, 'damage': 25, 'speed': 2},
     'level4': {'name': 'Goblin Chief', 'health': 350, 'damage': 25, 'speed': 2},
     'level5': {'name': 'Dark Champion', 'health': 400, 'damage': 10, 'speed': 2},
-    'level6': {'name': 'Arch Wizard', 'health': 450, 'damage': 15, 'speed': 1.5},
-    'level7': {'name': 'Demon Lord', 'health': 500, 'damage': 10, 'speed': 1.7},
-    'level8': {'name': 'Dragon', 'health': 550, 'damage': 8, 'speed': 1.8},
+    'level6': {'name': 'Arch Wizard', 'health': 450, 'damage': 15, 'speed': 2},
+    'level7': {'name': 'Demon Lord', 'health': 500, 'damage': 10, 'speed': 2},
+    'level8': {'name': 'Dragon', 'health': 550, 'damage': 8, 'speed': 2},
     'level9': {'name': 'Shadow King', 'health': 600, 'damage': 5, 'speed': 2},
     'level10': {'name': 'Dark Lord', 'health': 1, 'damage': 10, 'speed': 1}
 }
