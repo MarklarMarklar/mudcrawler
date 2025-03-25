@@ -2098,10 +2098,10 @@ class Boss(Enemy):
             self.velocity_x = 0
             self.velocity_y = 0
             return
-            
+        
         # Use the base Enemy class's movement logic
         super().move_towards_player(player)
-    
+        
     def special_attack(self, player):
         current_time = pygame.time.get_ticks()
         if current_time - self.last_special_attack_time >= self.special_attack_cooldown:
@@ -3637,7 +3637,7 @@ class Boss(Enemy):
             self.velocity_x = 0
             self.velocity_y = 0
             return
-            
+        
         # Use the base Enemy class's movement logic
         super().move_towards_player(player)
 
@@ -3779,14 +3779,48 @@ class Boss(Enemy):
             print("Cannot lay egg: level_instance is None")
             return
             
-        # Create egg directly under the boss position
-        # Add a small random offset to prevent eggs from being in the exact same position
-        offset_x = random.randint(-10, 10)
-        offset_y = random.randint(-10, 10)
+        # Get the current room from level_instance
+        if not hasattr(self.level_instance, 'current_room_coords') or not hasattr(self.level_instance, 'rooms'):
+            print("Cannot lay egg: level_instance missing required attributes")
+            return
+            
+        current_room_coords = self.level_instance.current_room_coords
+        if current_room_coords not in self.level_instance.rooms:
+            print("Cannot lay egg: current_room_coords not in rooms dictionary")
+            return
+            
+        room = self.level_instance.rooms[current_room_coords]
         
-        # Position the egg at the boss's feet (bottom center of the boss)
-        egg_x = self.rect.centerx + offset_x
-        egg_y = self.rect.bottom + offset_y
+        # Convert boss position to tile coordinates
+        tile_x = int(self.rect.centerx // TILE_SIZE)
+        tile_y = int(self.rect.centery // TILE_SIZE)
+        
+        # Check if current tile is a floor tile
+        if room.tiles[tile_y][tile_x] != 0:  # Not a floor tile
+            # Search for nearest floor tile in a 3x3 grid around the boss
+            found_valid = False
+            for offset_y in range(-1, 2):
+                for offset_x in range(-1, 2):
+                    test_x = tile_x + offset_x
+                    test_y = tile_y + offset_y
+                    
+                    # Check bounds
+                    if 0 <= test_x < room.width and 0 <= test_y < room.height:
+                        if room.tiles[test_y][test_x] == 0:  # Found a floor tile
+                            tile_x = test_x
+                            tile_y = test_y
+                            found_valid = True
+                            break
+                if found_valid:
+                    break
+            
+            if not found_valid:
+                print("Cannot lay egg: no valid floor tile found nearby")
+                return
+        
+        # Convert back to pixel coordinates and add small random offset
+        egg_x = tile_x * TILE_SIZE + TILE_SIZE // 2 + random.randint(-5, 5)
+        egg_y = tile_y * TILE_SIZE + TILE_SIZE // 2 + random.randint(-5, 5)
         
         # Create a new egg object at the position
         egg = BossEgg(
@@ -3798,7 +3832,7 @@ class Boss(Enemy):
         
         # Add to egg sprite group
         self.eggs.add(egg)
-        print(f"Boss 9 laid an egg at position ({egg_x}, {egg_y}) with level_instance: {self.level_instance}")
+        print(f"Boss 9 laid an egg at position ({egg_x}, {egg_y}) on floor tile ({tile_x}, {tile_y})")
         
         # Debug: Print the current room from the level_instance
         if hasattr(self.level_instance, 'current_room'):

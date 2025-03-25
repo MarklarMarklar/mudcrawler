@@ -484,8 +484,8 @@ class Room:
             # North door - middle of top wall
             door_x = self.width // 2
             self.tiles[0][door_x] = 2  # Door tile
-            # Make sure there's a clear path from the door (2x2 area)
-            for y in range(1, 4):  # 3 tiles deep
+            # Make sure there's a clear path from the door
+            for y in range(1, 3):  # 2 tiles deep
                 for x in range(door_x - 1, door_x + 2):  # 3 tiles wide
                     if 0 <= y < self.height and 0 <= x < self.width:
                         self.tiles[y][x] = 0  # Floor tile
@@ -494,8 +494,8 @@ class Room:
             # South door - middle of bottom wall
             door_x = self.width // 2
             self.tiles[self.height - 1][door_x] = 2  # Door tile
-            # Make sure there's a clear path from the door (2x2 area)
-            for y in range(self.height - 4, self.height - 1):  # 3 tiles deep
+            # Make sure there's a clear path from the door
+            for y in range(self.height - 2, self.height - 1):  # 2 tiles deep
                 for x in range(door_x - 1, door_x + 2):  # 3 tiles wide
                     if 0 <= y < self.height and 0 <= x < self.width:
                         self.tiles[y][x] = 0  # Floor tile
@@ -504,9 +504,9 @@ class Room:
             # East door - middle of right wall
             door_y = self.height // 2
             self.tiles[door_y][self.width - 1] = 2  # Door tile
-            # Make sure there's a clear path from the door (2x2 area)
+            # Make sure there's a clear path from the door
             for y in range(door_y - 1, door_y + 2):  # 3 tiles high
-                for x in range(self.width - 4, self.width - 1):  # 3 tiles deep
+                for x in range(self.width - 2, self.width - 1):  # 2 tiles deep
                     if 0 <= y < self.height and 0 <= x < self.width:
                         self.tiles[y][x] = 0  # Floor tile
             
@@ -514,9 +514,9 @@ class Room:
             # West door - middle of left wall
             door_y = self.height // 2
             self.tiles[door_y][0] = 2  # Door tile
-            # Make sure there's a clear path from the door (2x2 area)
+            # Make sure there's a clear path from the door
             for y in range(door_y - 1, door_y + 2):  # 3 tiles high
-                for x in range(1, 4):  # 3 tiles deep
+                for x in range(1, 2):  # 2 tiles deep
                     if 0 <= y < self.height and 0 <= x < self.width:
                         self.tiles[y][x] = 0  # Floor tile
             
@@ -2261,34 +2261,34 @@ class Level:
             if door_direction == 'north':
                 # Coming in from the south door
                 entry_x = (new_room.width // 2) * TILE_SIZE + TILE_SIZE // 2
-                entry_y = (new_room.height - 3) * TILE_SIZE + TILE_SIZE // 2
+                entry_y = (new_room.height - 2) * TILE_SIZE + TILE_SIZE // 2
                 
                 # Calculate tile coordinates
                 tile_x = new_room.width // 2
-                tile_y = new_room.height - 3
+                tile_y = new_room.height - 2
             elif door_direction == 'south':
                 # Coming in from the north door
                 entry_x = (new_room.width // 2) * TILE_SIZE + TILE_SIZE // 2
-                entry_y = 2 * TILE_SIZE + TILE_SIZE // 2
+                entry_y = 1 * TILE_SIZE + TILE_SIZE // 2
                 
                 # Calculate tile coordinates
                 tile_x = new_room.width // 2
-                tile_y = 2
+                tile_y = 1
             elif door_direction == 'east':
                 # Coming in from the west door
-                entry_x = 2 * TILE_SIZE + TILE_SIZE // 2
+                entry_x = 1 * TILE_SIZE + TILE_SIZE // 2
                 entry_y = (new_room.height // 2) * TILE_SIZE + TILE_SIZE // 2
                 
                 # Calculate tile coordinates
-                tile_x = 2
+                tile_x = 1
                 tile_y = new_room.height // 2
             elif door_direction == 'west':
                 # Coming in from the east door
-                entry_x = (new_room.width - 3) * TILE_SIZE + TILE_SIZE // 2
+                entry_x = (new_room.width - 2) * TILE_SIZE + TILE_SIZE // 2
                 entry_y = (new_room.height // 2) * TILE_SIZE + TILE_SIZE // 2
                 
                 # Calculate tile coordinates
-                tile_x = new_room.width - 3
+                tile_x = new_room.width - 2
                 tile_y = new_room.height // 2
             else:
                 print(f"Invalid direction: {door_direction}")
