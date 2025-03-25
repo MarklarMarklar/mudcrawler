@@ -8,14 +8,14 @@ import argparse
 # Add the parent directory to the path so we can import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import *
-from player import Player
-from level import Level
-from weapons import WeaponManager
-from ui import Menu, HUD
-from asset_manager import get_asset_manager
-from camera import Camera  # Import our new Camera class
-from sound_manager import get_sound_manager  # Import our new sound manager
-from particle import ParticleSystem  # Import our new particle system
+from scripts.player import Player
+from scripts.level import Level
+from scripts.weapons import WeaponManager
+from scripts.ui import Menu, HUD
+from scripts.asset_manager import get_asset_manager
+from scripts.camera import Camera  # Import our new Camera class
+from scripts.sound_manager import get_sound_manager  # Import our new sound manager
+from scripts.particle import ParticleSystem  # Import our new particle system
 
 class Game:
     def __init__(self, start_fullscreen=False):

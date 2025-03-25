@@ -550,6 +550,14 @@ class Enemy(pygame.sprite.Sprite):
         self.level = level
         self.level_instance = level_instance
         
+        # Enemy ID for collision tracking
+        self.id = id(self)
+        
+        # Collision avoidance timers and flags
+        self.ignore_collision_until = 0  # Time until which to ignore collisions with other enemies
+        self.last_enemy_collision_time = 0  # Last time this enemy collided with another
+        self.last_collided_with = set()  # Set of IDs of recently collided enemies
+        
         # Animation properties
         self.animations = {
             'idle': {'up': [], 'down': [], 'left': [], 'right': []},
@@ -698,15 +706,16 @@ class Enemy(pygame.sprite.Sprite):
         self.rect.x = x
         self.rect.y = y
         
-        # Reduce collision box size to allow navigating through narrow corridors
-        # Make the collision box 60% of the sprite size, centered within the sprite
-        self.collision_box_scale = 0.6
-        self.collision_rect = pygame.Rect(0, 0, 
-                                         int(self.rect.width * self.collision_box_scale),
-                                         int(self.rect.height * self.collision_box_scale))
-        # Center the collision rect within the image rect
-        self.collision_rect.centerx = self.rect.centerx
-        self.collision_rect.centery = self.rect.centery
+        # Create a smaller collision rectangle centered within the main rect
+        # Reduce size to 40% of original to allow multiple enemies in narrow passages
+        collision_width = int(TILE_SIZE * 0.4)
+        collision_height = int(TILE_SIZE * 0.4)
+        self.collision_rect = pygame.Rect(
+            x + (TILE_SIZE - collision_width) // 2,
+            y + (TILE_SIZE - collision_height) // 2,
+            collision_width,
+            collision_height
+        )
         
         # Enemy stats
         self.health = self.enemy_data['health']
@@ -741,7 +750,7 @@ class Enemy(pygame.sprite.Sprite):
         self.is_patrolling = True  # Start with patrol active
         self.is_patrol_paused = False
         
-        # Movement
+        # Movement properties
         self.velocity_x = 0
         self.velocity_y = 0
         
@@ -826,104 +835,169 @@ class Enemy(pygame.sprite.Sprite):
                 # No valid floor tile found near target
                 return []
             
-        # A* algorithm
-        open_set = []  # Priority queue of nodes to explore
-        closed_set = set()  # Set of explored nodes
-        
-        # Add start node to open set
-        heapq.heappush(open_set, (0, 0, (start_tile_x, start_tile_y, None)))  # (f_score, tiebreaker, (x, y, parent))
-        
-        # Dict to store g_scores (cost from start to node)
-        g_scores = {(start_tile_x, start_tile_y): 0}
-        
-        # Dict to store parent pointers
-        came_from = {}
-        
-        # Dict to store f_scores (estimated total cost from start to goal)
-        f_scores = {(start_tile_x, start_tile_y): self.manhattan_distance(start_tile_x, start_tile_y, target_tile_x, target_tile_y)}
-        
-        tiebreaker = 0  # To break ties when f_scores are equal
-        
-        # Define possible movement directions (4-way only)
-        directions = [(0, -1), (1, 0), (0, 1), (-1, 0)]  # Up, right, down, left
-        
-        found_path = False
-        max_iterations = 1000  # Prevent infinite loops
-        iterations = 0
-        
-        while open_set and not found_path and iterations < max_iterations:
-            iterations += 1
-            # Get node with lowest f_score
-            _, _, (current_x, current_y, parent) = heapq.heappop(open_set)
+        # Get all enemies from current room for dynamic obstacle avoidance
+        other_enemies = []
+        enemy_paths = []
+        if level.current_room_coords in level.rooms:
+            room = level.rooms[level.current_room_coords]
+            other_enemies = [e for e in room.enemies if (e.rect.x // TILE_SIZE, e.rect.y // TILE_SIZE) != (start_tile_x, start_tile_y)]
             
-            # If we've reached the target, reconstruct path
-            if (current_x, current_y) == (target_tile_x, target_tile_y):
-                found_path = True
-                path = []
-                current = (current_x, current_y)
-                
-                # Reconstruct path from parents
-                while current in came_from:
-                    # Convert to pixel coordinates (center of tile)
-                    path.append((current[0] * TILE_SIZE + TILE_SIZE // 2, 
-                               current[1] * TILE_SIZE + TILE_SIZE // 2))
-                    current = came_from[current]
-                
-                # Add start position
-                path.append((start_tile_x * TILE_SIZE + TILE_SIZE // 2,
-                           start_tile_y * TILE_SIZE + TILE_SIZE // 2))
-                
-                # The path is from target to start, so reverse it
-                path.reverse()
-                
-                # Add target as final point
-                path.append((target_tile_x * TILE_SIZE + TILE_SIZE // 2,
-                           target_tile_y * TILE_SIZE + TILE_SIZE // 2))
-                
-                return path
-                
-            # Skip if we've already explored this node
-            if (current_x, current_y) in closed_set:
+            # Collect current paths that other enemies are following
+            for enemy in other_enemies:
+                if hasattr(enemy, 'path') and enemy.path:
+                    for point in enemy.path:
+                        tile_x, tile_y = point[0] // TILE_SIZE, point[1] // TILE_SIZE
+                        if 0 <= tile_x < room.width and 0 <= tile_y < room.height:
+                            enemy_paths.append((tile_x, tile_y))
+        
+        # Generate a small offset to target for this specific enemy 
+        # This helps create varied paths for multiple enemies
+        offset_radius = 3  # Tiles
+        if not hasattr(self, 'target_offset'):
+            # Only calculate this once per enemy to maintain path stability
+            angle = random.uniform(0, 2 * math.pi)
+            offset_distance = random.uniform(1, offset_radius)
+            self.target_offset = (
+                int(math.cos(angle) * offset_distance),
+                int(math.sin(angle) * offset_distance)
+            )
+        
+        # Create alternate targets around the original target
+        alternate_targets = []
+        for dx in range(-offset_radius, offset_radius + 1):
+            for dy in range(-offset_radius, offset_radius + 1):
+                alt_x, alt_y = target_tile_x + dx, target_tile_y + dy
+                if (0 <= alt_x < room.width and 0 <= alt_y < room.height and 
+                    room.tiles[alt_y][alt_x] == 0 and  # Must be a floor tile
+                    (dx*dx + dy*dy) <= offset_radius*offset_radius):  # Within radius
+                    # Calculate distance from original target
+                    dist_from_target = math.sqrt(dx*dx + dy*dy)
+                    alternate_targets.append(((alt_x, alt_y), dist_from_target))
+        
+        # Sort by distance from target
+        alternate_targets.sort(key=lambda x: x[1])
+        
+        # Add the original target as the first option
+        alternate_targets.insert(0, ((target_tile_x, target_tile_y), 0))
+        
+        # Try finding a path, first to original target, then to alternates
+        # Prioritize targets that aren't already on another enemy's path
+        for (alt_target_x, alt_target_y), _ in alternate_targets:
+            # Skip if this point is on another enemy's path
+            if (alt_target_x, alt_target_y) in enemy_paths and (alt_target_x, alt_target_y) != (target_tile_x, target_tile_y):
                 continue
                 
-            # Add to closed set
-            closed_set.add((current_x, current_y))
+            # A* algorithm
+            open_set = []  # Priority queue of nodes to explore
+            closed_set = set()  # Set of explored nodes
             
-            # Check neighboring tiles
-            for dx, dy in directions:
-                neighbor_x, neighbor_y = current_x + dx, current_y + dy
+            # Add start node to open set
+            heapq.heappush(open_set, (0, 0, (start_tile_x, start_tile_y, None)))  # (f_score, tiebreaker, (x, y, parent))
+            
+            # Dict to store g_scores (cost from start to node)
+            g_scores = {(start_tile_x, start_tile_y): 0}
+            
+            # Dict to store f_scores (estimated total cost from start to goal)
+            f_scores = {(start_tile_x, start_tile_y): self.manhattan_distance(start_tile_x, start_tile_y, alt_target_x, alt_target_y)}
+            
+            # Dict to store parent pointers
+            came_from = {}
+            
+            tiebreaker = 0  # To break ties when f_scores are equal
+            
+            # Define possible movement directions (only cardinal directions)
+            directions = [(0, -1), (1, 0), (0, 1), (-1, 0)]  # Up, right, down, left
+            
+            found_path = False
+            max_iterations = 1000  # Prevent infinite loops
+            iterations = 0
+            
+            while open_set and not found_path and iterations < max_iterations:
+                iterations += 1
                 
-                # Skip if out of bounds
-                if not (0 <= neighbor_x < room.width and 0 <= neighbor_y < room.height):
-                    continue
-                    
-                # Skip if it's a wall tile
-                if room.tiles[neighbor_y][neighbor_x] == 1:
-                    continue
-                    
-                # Skip if we've already explored this neighbor
-                if (neighbor_x, neighbor_y) in closed_set:
-                    continue
-                    
-                # Calculate tentative g_score
-                tentative_g_score = g_scores[(current_x, current_y)] + 1
+                # Get the node with lowest f_score from open set
+                _, _, (current_x, current_y, _) = heapq.heappop(open_set)
                 
-                # If we found a better path to this neighbor, update it
-                if (neighbor_x, neighbor_y) not in g_scores or tentative_g_score < g_scores[(neighbor_x, neighbor_y)]:
-                    # Update parent pointer
-                    came_from[(neighbor_x, neighbor_y)] = (current_x, current_y)
+                # Check if we've reached the goal
+                if (current_x, current_y) == (alt_target_x, alt_target_y):
+                    found_path = True
+                    break
                     
-                    # Update g_score
-                    g_scores[(neighbor_x, neighbor_y)] = tentative_g_score
+                # Skip if we've already explored this node
+                if (current_x, current_y) in closed_set:
+                    continue
                     
-                    # Calculate f_score
-                    h_score = self.manhattan_distance(neighbor_x, neighbor_y, target_tile_x, target_tile_y)
-                    f_score = tentative_g_score + h_score
-                    f_scores[(neighbor_x, neighbor_y)] = f_score
+                # Add to closed set
+                closed_set.add((current_x, current_y))
+                
+                # Consider all neighbors
+                for dx, dy in directions:
+                    neighbor_x, neighbor_y = current_x + dx, current_y + dy
                     
-                    # Add to open set
-                    tiebreaker += 1
-                    heapq.heappush(open_set, (f_score, tiebreaker, (neighbor_x, neighbor_y, (current_x, current_y))))
+                    # Skip if out of bounds
+                    if not (0 <= neighbor_x < room.width and 0 <= neighbor_y < room.height):
+                        continue
+                        
+                    # Skip if it's a wall tile
+                    if room.tiles[neighbor_y][neighbor_x] == 1:
+                        continue
+                        
+                    # Skip if we've already explored this neighbor
+                    if (neighbor_x, neighbor_y) in closed_set:
+                        continue
+                    
+                    # Calculate tentative g_score (1 for cardinal directions)
+                    tentative_g_score = g_scores[(current_x, current_y)] + 1
+                    
+                    # Add a small penalty for tiles that have enemies nearby
+                    # This encourages finding paths that avoid other enemies when possible
+                    enemy_penalty = 0
+                    for enemy in other_enemies:
+                        enemy_tile_x, enemy_tile_y = enemy.rect.centerx // TILE_SIZE, enemy.rect.centery // TILE_SIZE
+                        if abs(enemy_tile_x - neighbor_x) <= 1 and abs(enemy_tile_y - neighbor_y) <= 1:
+                            enemy_penalty += 1  # Add penalty for each enemy in adjacent tiles
+                    
+                    # Add penalty for tiles that are on other enemies' paths
+                    path_penalty = 0
+                    if (neighbor_x, neighbor_y) in enemy_paths:
+                        path_penalty = 2
+                    
+                    tentative_g_score += enemy_penalty * 0.5 + path_penalty  # Scale the penalty to not overwhelm the pathfinding
+                    
+                    # If we found a better path to this neighbor, update it
+                    if (neighbor_x, neighbor_y) not in g_scores or tentative_g_score < g_scores[(neighbor_x, neighbor_y)]:
+                        # Update parent pointer
+                        came_from[(neighbor_x, neighbor_y)] = (current_x, current_y)
+                        
+                        # Update g_score
+                        g_scores[(neighbor_x, neighbor_y)] = tentative_g_score
+                        
+                        # Calculate f_score
+                        h_score = self.manhattan_distance(neighbor_x, neighbor_y, alt_target_x, alt_target_y)
+                        f_score = tentative_g_score + h_score
+                        f_scores[(neighbor_x, neighbor_y)] = f_score
+                        
+                        # Add to open set
+                        tiebreaker += 1
+                        heapq.heappush(open_set, (f_score, tiebreaker, (neighbor_x, neighbor_y, (current_x, current_y))))
+            
+            # If we found a path, reconstruct it
+            if found_path:
+                path = []
+                current = (alt_target_x, alt_target_y)
+                
+                while current in came_from:
+                    # Convert tile position to pixel position (center of tile)
+                    pixel_x = current[0] * TILE_SIZE + TILE_SIZE // 2
+                    pixel_y = current[1] * TILE_SIZE + TILE_SIZE // 2
+                    path.append((pixel_x, pixel_y))
+                    
+                    current = came_from[current]
+                    
+                # Reverse path (from start to goal)
+                path.reverse()
+                
+                return path
         
         # If we get here, no path was found
         return []
@@ -982,41 +1056,31 @@ class Enemy(pygame.sprite.Sprite):
             self.velocity_y = 0
             return
         
-        # Use direct movement for close distances (2 tiles) ONLY if there's a clear line of sight
-        if distance < TILE_SIZE * 2 and hasattr(player, 'level'):
-            # Check if there's a clear line of sight to the player before using direct movement
-            has_line_of_sight = self.check_line_of_sight(
-                self.rect.centerx, self.rect.centery,
-                player.rect.centerx, player.rect.centery,
-                player.level
-            )
-            
-            if has_line_of_sight and distance > 0:
-                # Normalize direction
-                dx = dx / distance
-                dy = dy / distance
-                
-                # Set velocity directly
-                self.velocity_x = dx * self.speed
-                self.velocity_y = dy * self.speed
-                
-                # Update facing direction
-                if abs(dx) > abs(dy):
-                    self.facing = 'right' if dx > 0 else 'left'
-                else:
-                    self.facing = 'down' if dy > 0 else 'up'
-                return
-        
         # Get current target position
         target_pos = (player.rect.centerx, player.rect.centery)
+        
+        # Check for crowd avoidance - if there are multiple enemies nearby, try to spread out
+        if hasattr(player, 'level') and player.level.current_room_coords in player.level.rooms:
+            room = player.level.rooms[player.level.current_room_coords]
+            nearby_enemies = []
+            for enemy in room.enemies:
+                if enemy != self and self.is_nearby(enemy, TILE_SIZE * 1.5):
+                    nearby_enemies.append(enemy)
+                    
+            # If we have multiple nearby enemies, try to move away from the center of the crowd
+            if len(nearby_enemies) >= 2:
+                self.avoid_crowd(nearby_enemies)
+                return
         
         # Update path if:
         # 1. We don't have a path, or
         # 2. Player has moved significantly (more than 2 tiles), or
         # 3. We've hit too many movement failures
+        # 4. The timer for path updates has elapsed
         should_update_path = (
             not self.path or
-            self.movement_failed_counter >= 3 or
+            self.movement_failed_counter >= 2 or  # Reduced from 3 to 2 to recalculate more quickly when stuck
+            self.path_update_timer >= self.path_update_frequency or
             (self.last_target_position and 
              ((abs(self.last_target_position[0] - target_pos[0]) > TILE_SIZE * 2) or 
               (abs(self.last_target_position[1] - target_pos[1]) > TILE_SIZE * 2)))
@@ -1036,6 +1100,7 @@ class Enemy(pygame.sprite.Sprite):
             if self.path:
                 self.movement_failed_counter = 0
                 self.last_target_position = target_pos
+                self.path_update_timer = 0
             else:
                 # If no path found, increment failure counter
                 self.movement_failed_counter += 1
@@ -1085,7 +1150,7 @@ class Enemy(pygame.sprite.Sprite):
                         else:
                             test_rect.y += value * 2
                         
-                        # Check if this move is valid
+                        # Check if this move is valid (no collision with walls)
                         if not (hasattr(player, 'level') and player.level.check_collision(test_rect)):
                             # Found valid move, apply it
                             if axis == 'x':
@@ -1097,68 +1162,125 @@ class Enemy(pygame.sprite.Sprite):
                                 self.velocity_y = value
                                 self.facing = 'down' if value > 0 else 'up'
                             break
-                    else:
-                        # No valid direction found, try random movement as last resort
-                        # This helps prevent getting completely stuck in corners
-                        possible_moves = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-                        random.shuffle(possible_moves)
-                        
-                        for move_dx, move_dy in possible_moves:
-                            test_rect = self.rect.copy()
-                            test_rect.x += move_dx * self.speed * 2
-                            test_rect.y += move_dy * self.speed * 2
-                            
-                            if not (hasattr(player, 'level') and player.level.check_collision(test_rect)):
-                                self.velocity_x = move_dx * self.speed
-                                self.velocity_y = move_dy * self.speed
-                                
-                                if abs(move_dx) > abs(move_dy):
-                                    self.facing = 'right' if move_dx > 0 else 'left'
-                                else:
-                                    self.facing = 'down' if move_dy > 0 else 'up'
-                                break
-                        else:
-                            # If we're still stuck, just wait until next frame
-                            self.velocity_x = 0
-                            self.velocity_y = 0
-                
-                return
-        
+        else:
+            # Increment path update timer
+            self.path_update_timer += 1
+            
         # If we have a path, follow it
         if self.path:
-            # Get the next point in the path
-            next_point = self.path[0]
-            dx = next_point[0] - self.rect.centerx
-            dy = next_point[1] - self.rect.centery
+            # Get the next point to move to
+            target_x, target_y = self.path[0]
+            
+            # Calculate direction to next point
+            dx = target_x - self.rect.centerx
+            dy = target_y - self.rect.centery
             distance = math.sqrt(dx * dx + dy * dy)
             
-            # If we've reached the current point (or close enough), move to next point
+            # If we're close enough to this point, remove it and move to the next
             if distance < self.speed:
                 self.path.pop(0)
+                
+                # If we've reached the end of the path, stop moving
                 if not self.path:
-                    # If no more points, stop moving
                     self.velocity_x = 0
                     self.velocity_y = 0
                     return
-                # Get the next point
-                next_point = self.path[0]
-                dx = next_point[0] - self.rect.centerx
-                dy = next_point[1] - self.rect.centery
+                    
+                # Otherwise, get new target
+                target_x, target_y = self.path[0]
+                dx = target_x - self.rect.centerx
+                dy = target_y - self.rect.centery
                 distance = math.sqrt(dx * dx + dy * dy)
             
-            # Move towards the next point using cardinal directions
+            # Normalize direction and set velocity
             if distance > 0:
-                # Determine primary movement direction (4-directional movement)
+                dx = dx / distance
+                dy = dy / distance
+                
+                self.velocity_x = dx * self.speed
+                self.velocity_y = dy * self.speed
+                
+                # Add a small random jitter to avoid perfect alignment with other enemies
+                if random.random() < 0.1:  # 10% chance each frame
+                    jitter_x = random.uniform(-0.5, 0.5)
+                    jitter_y = random.uniform(-0.5, 0.5)
+                    
+                    self.velocity_x += jitter_x
+                    self.velocity_y += jitter_y
+                
+                # Update facing direction
                 if abs(dx) > abs(dy):
-                    # Move horizontally
-                    self.velocity_x = (dx / abs(dx)) * self.speed
-                    self.velocity_y = 0
                     self.facing = 'right' if dx > 0 else 'left'
                 else:
-                    # Move vertically
-                    self.velocity_x = 0
-                    self.velocity_y = (dy / abs(dy)) * self.speed
                     self.facing = 'down' if dy > 0 else 'up'
+            else:
+                # If distance is zero (unlikely), stop moving
+                self.velocity_x = 0
+                self.velocity_y = 0
+                
+    def is_nearby(self, other_enemy, distance_threshold):
+        """Check if another enemy is within the specified distance threshold"""
+        dx = other_enemy.rect.centerx - self.rect.centerx
+        dy = other_enemy.rect.centery - self.rect.centery
+        distance = math.sqrt(dx * dx + dy * dy)
+        return distance < distance_threshold
+        
+    def avoid_crowd(self, nearby_enemies):
+        """Move away from the center of a crowd of enemies"""
+        # Calculate center of the crowd (including this enemy)
+        total_x = self.rect.centerx
+        total_y = self.rect.centery
+        count = 1
+        
+        for enemy in nearby_enemies:
+            total_x += enemy.rect.centerx
+            total_y += enemy.rect.centery
+            count += 1
+            
+        center_x = total_x / count
+        center_y = total_y / count
+        
+        # Calculate direction away from center
+        dx = self.rect.centerx - center_x
+        dy = self.rect.centery - center_y
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        # If we're already away from center, don't move
+        if distance > TILE_SIZE * 2:
+            self.velocity_x = 0
+            self.velocity_y = 0
+            return
+            
+        # Add a bit of randomization to prevent all enemies from moving the same way
+        dx += random.uniform(-0.3, 0.3)
+        dy += random.uniform(-0.3, 0.3)
+        
+        # Recalculate distance after adding randomization
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        # If we're at the exact center (very unlikely), move in a random direction
+        if distance < 0.1:
+            angle = random.uniform(0, 2 * math.pi)
+            dx = math.cos(angle)
+            dy = math.sin(angle)
+            distance = 1.0
+        
+        # Set velocity to move away from center with a slightly faster speed to break the group
+        if distance > 0:
+            norm_dx = dx / distance
+            norm_dy = dy / distance
+            
+            # Use a slightly higher speed for crowd avoidance
+            avoid_speed = self.speed * 1.5
+            
+            self.velocity_x = norm_dx * avoid_speed
+            self.velocity_y = norm_dy * avoid_speed
+            
+            # Update facing direction
+            if abs(norm_dx) > abs(norm_dy):
+                self.facing = 'right' if norm_dx > 0 else 'left'
+            else:
+                self.facing = 'down' if norm_dy > 0 else 'up'
 
     def can_attack(self):
         current_time = pygame.time.get_ticks()
@@ -1342,6 +1464,42 @@ class Enemy(pygame.sprite.Sprite):
         # Ensure player has level attribute before checking collision
         has_level = hasattr(player, 'level') and player.level is not None
         
+        # Get all enemies from current room for collision detection
+        other_enemies = []
+        if has_level and player.level.current_room_coords in player.level.rooms:
+            room = player.level.rooms[player.level.current_room_coords]
+            other_enemies = [e for e in room.enemies if e != self]
+        
+        # Save initial priority values - closer enemies to player get higher priority
+        if not hasattr(self, 'movement_priority'):
+            self.movement_priority = 0
+        
+        # Update movement priority based on distance to player and time spent waiting
+        player_distance = math.sqrt(dx * dx + dy * dy)
+        # Priority increases with proximity to player and time spent waiting
+        self.movement_priority = (1000 / (player_distance + 1)) + self.movement_failed_counter
+        
+        # If stuck for too long, temporarily ignore collisions with other enemies
+        if self.movement_failed_counter >= 5:
+            # Enable collision ignoring for 500ms
+            self.ignore_collision_until = current_time + 500
+            
+            # Record a longer ignore time for enemies we've recently collided with
+            for enemy_id in self.last_collided_with:
+                # Try to find the enemy with this ID
+                for enemy in other_enemies:
+                    if id(enemy) == enemy_id:
+                        if hasattr(enemy, 'ignore_collision_until'):
+                            enemy.ignore_collision_until = current_time + 500
+                        break
+        
+        # Apply a small random jitter to movement if we're in chase state
+        if self.state == 'chase' and self.movement_failed_counter > 0:
+            jitter_x = random.uniform(-0.5, 0.5)
+            jitter_y = random.uniform(-0.5, 0.5)
+            self.velocity_x += jitter_x
+            self.velocity_y += jitter_y
+        
         # Try moving horizontally first
         if self.velocity_x != 0:
             # Move the main rect
@@ -1349,17 +1507,118 @@ class Enemy(pygame.sprite.Sprite):
             # Move the collision rect to stay centered
             self.collision_rect.centerx = self.rect.centerx
             
-            # Check for collision using the smaller collision rect
+            # Flag to track if we collided with anything
+            collision_detected = False
+            wall_collision = False
+            enemy_collision = False
+            colliding_enemy = None
+            
+            # Check for collision with walls
             if has_level and player.level.check_collision(self.collision_rect):
+                collision_detected = True
+                wall_collision = True
+            
+            # Check for collision with other enemies (if not in collision ignore period)
+            if current_time < self.ignore_collision_until:
+                # We're in collision ignore period, so no enemy collisions
+                pass
+            else:
+                for enemy in other_enemies:
+                    # Skip collision check if the other enemy is also ignoring collisions with us
+                    if hasattr(enemy, 'ignore_collision_until') and current_time < enemy.ignore_collision_until:
+                        continue
+                        
+                    if self.collision_rect.colliderect(enemy.collision_rect):
+                        # Only count as a collision if the other enemy is stationary or has higher priority
+                        if (enemy.velocity_x == 0 and enemy.velocity_y == 0) or \
+                           (hasattr(enemy, 'movement_priority') and enemy.movement_priority > self.movement_priority):
+                            collision_detected = True
+                            enemy_collision = True
+                            colliding_enemy = enemy
+                            
+                            # Record this collision
+                            self.last_enemy_collision_time = current_time
+                            self.last_collided_with.add(id(enemy))
+                            if hasattr(enemy, 'last_collided_with'):
+                                enemy.last_collided_with.add(id(self))
+                            
+                            break
+            
+            # Revert position if collision detected
+            if collision_detected:
                 # Revert both rects on collision
                 self.rect.x = old_rect.x
                 self.collision_rect = old_collision_rect.copy()
-                self.velocity_x = 0  # Stop horizontal movement on collision
-                if self.state == 'chase':
-                    self.movement_failed_counter += 1
+                
+                if enemy_collision and not wall_collision and self.state == 'chase':
+                    # For enemy-to-enemy collisions during chase, try to slide around
+                    # Determine which direction to slide (perpendicular to movement)
+                    if old_velocity_x != 0:
+                        # Calculate perpendicular direction (up or down)
+                        # Determine slide direction based on relative positions
+                        if colliding_enemy and self.rect.centery > colliding_enemy.rect.centery:
+                            # Try to slide down
+                            slide_y = 2  # Increased from 1 to make the slide more aggressive
+                        else:
+                            # Try to slide up
+                            slide_y = -2  # Increased from -1 to make the slide more aggressive
+                            
+                        # Try the slide movement
+                        self.rect.y += slide_y
+                        self.collision_rect.centery = self.rect.centery
+                        
+                        # If slide causes collision, revert it
+                        if (has_level and player.level.check_collision(self.collision_rect) or
+                            any(self.collision_rect.colliderect(e.collision_rect) for e in other_enemies if 
+                               current_time >= self.ignore_collision_until and
+                               (not hasattr(e, 'ignore_collision_until') or current_time >= e.ignore_collision_until) and
+                               ((e.velocity_x == 0 and e.velocity_y == 0) or 
+                               (hasattr(e, 'movement_priority') and e.movement_priority > self.movement_priority)))):
+                            self.rect.y = old_rect.y
+                            self.collision_rect.centery = self.rect.centery
+                            
+                            # Try sliding in the opposite direction
+                            self.rect.y -= slide_y
+                            self.collision_rect.centery = self.rect.centery
+                            
+                            # If that causes collision too, revert everything
+                            if (has_level and player.level.check_collision(self.collision_rect) or
+                                any(self.collision_rect.colliderect(e.collision_rect) for e in other_enemies if 
+                                   current_time >= self.ignore_collision_until and
+                                   (not hasattr(e, 'ignore_collision_until') or current_time >= e.ignore_collision_until) and
+                                   ((e.velocity_x == 0 and e.velocity_y == 0) or 
+                                   (hasattr(e, 'movement_priority') and e.movement_priority > self.movement_priority)))):
+                                self.rect.y = old_rect.y
+                                self.collision_rect.centery = self.rect.centery
+                                self.velocity_x = 0
+                                self.movement_failed_counter += 1
+                    else:
+                        self.velocity_x = 0
+                        self.movement_failed_counter += 1
+                else:
+                    self.velocity_x = 0  # Stop horizontal movement on collision
+                    if self.state == 'chase':
+                        self.movement_failed_counter += 1
+                    
+                    # Try to move a small step instead of the full velocity
+                    if old_velocity_x != 0:  # Prevent division by zero
+                        small_step = old_velocity_x / abs(old_velocity_x) * 1  # Just 1 pixel in direction
+                        self.rect.x += small_step
+                        self.collision_rect.centerx = self.rect.centerx
+                        
+                        # Check collision again
+                        if (has_level and player.level.check_collision(self.collision_rect) or 
+                            any(self.collision_rect.colliderect(enemy.collision_rect) for enemy in other_enemies if 
+                               current_time >= self.ignore_collision_until and
+                               (not hasattr(enemy, 'ignore_collision_until') or current_time >= enemy.ignore_collision_until) and
+                               ((enemy.velocity_x == 0 and enemy.velocity_y == 0) or 
+                               (hasattr(enemy, 'movement_priority') and enemy.movement_priority > self.movement_priority)))):
+                            # Revert the small step too
+                            self.rect.x = old_rect.x
+                            self.collision_rect.centerx = self.rect.centerx
             else:
                 self.movement_failed_counter = 0
-        
+
         # Then try moving vertically
         if self.velocity_y != 0:
             # Move the main rect
@@ -1367,16 +1626,225 @@ class Enemy(pygame.sprite.Sprite):
             # Move the collision rect to stay centered
             self.collision_rect.centery = self.rect.centery
             
-            # Check for collision using the smaller collision rect
+            # Flag to track if we collided with anything
+            collision_detected = False
+            wall_collision = False
+            enemy_collision = False
+            colliding_enemy = None
+            
+            # Check for collision with walls
             if has_level and player.level.check_collision(self.collision_rect):
+                collision_detected = True
+                wall_collision = True
+            
+            # Check for collision with other enemies (if not in collision ignore period)
+            if current_time < self.ignore_collision_until:
+                # We're in collision ignore period, so no enemy collisions
+                pass
+            else:
+                for enemy in other_enemies:
+                    # Skip collision check if the other enemy is also ignoring collisions with us
+                    if hasattr(enemy, 'ignore_collision_until') and current_time < enemy.ignore_collision_until:
+                        continue
+                        
+                    if self.collision_rect.colliderect(enemy.collision_rect):
+                        # Only count as a collision if the other enemy is stationary or has higher priority
+                        if (enemy.velocity_x == 0 and enemy.velocity_y == 0) or \
+                           (hasattr(enemy, 'movement_priority') and enemy.movement_priority > self.movement_priority):
+                            collision_detected = True
+                            enemy_collision = True
+                            colliding_enemy = enemy
+                            
+                            # Record this collision
+                            self.last_enemy_collision_time = current_time
+                            self.last_collided_with.add(id(enemy))
+                            if hasattr(enemy, 'last_collided_with'):
+                                enemy.last_collided_with.add(id(self))
+                                
+                            break
+            
+            # Revert position if collision detected
+            if collision_detected:
                 # Revert both rects on collision
                 self.rect.y = old_rect.y
                 self.collision_rect = old_collision_rect.copy()
-                self.velocity_y = 0  # Stop vertical movement on collision
-                if self.state == 'chase':
-                    self.movement_failed_counter += 1
+                
+                if enemy_collision and not wall_collision and self.state == 'chase':
+                    # For enemy-to-enemy collisions during chase, try to slide around
+                    # Determine which direction to slide (perpendicular to movement)
+                    if old_velocity_y != 0:
+                        # Calculate perpendicular direction (left or right)
+                        # Determine slide direction based on relative positions
+                        if colliding_enemy and self.rect.centerx > colliding_enemy.rect.centerx:
+                            # Try to slide right
+                            slide_x = 2  # Increased from 1 to make the slide more aggressive
+                        else:
+                            # Try to slide left
+                            slide_x = -2  # Increased from -1 to make the slide more aggressive
+                            
+                        # Try the slide movement
+                        self.rect.x += slide_x
+                        self.collision_rect.centerx = self.rect.centerx
+                        
+                        # If slide causes collision, revert it
+                        if (has_level and player.level.check_collision(self.collision_rect) or
+                            any(self.collision_rect.colliderect(e.collision_rect) for e in other_enemies if 
+                               current_time >= self.ignore_collision_until and
+                               (not hasattr(e, 'ignore_collision_until') or current_time >= e.ignore_collision_until) and
+                               ((e.velocity_x == 0 and e.velocity_y == 0) or 
+                               (hasattr(e, 'movement_priority') and e.movement_priority > self.movement_priority)))):
+                            self.rect.x = old_rect.x
+                            self.collision_rect.centerx = self.rect.centerx
+                            
+                            # Try sliding in the opposite direction
+                            self.rect.x -= slide_x
+                            self.collision_rect.centerx = self.rect.centerx
+                            
+                            # If that causes collision too, revert everything
+                            if (has_level and player.level.check_collision(self.collision_rect) or
+                                any(self.collision_rect.colliderect(e.collision_rect) for e in other_enemies if 
+                                   current_time >= self.ignore_collision_until and
+                                   (not hasattr(e, 'ignore_collision_until') or current_time >= e.ignore_collision_until) and
+                                   ((e.velocity_x == 0 and e.velocity_y == 0) or 
+                                   (hasattr(e, 'movement_priority') and e.movement_priority > self.movement_priority)))):
+                                self.rect.x = old_rect.x
+                                self.collision_rect.centerx = self.rect.centerx
+                                self.velocity_y = 0
+                                self.movement_failed_counter += 1
+                    else:
+                        self.velocity_y = 0
+                        self.movement_failed_counter += 1
+                else:
+                    self.velocity_y = 0  # Stop vertical movement on collision
+                    if self.state == 'chase':
+                        self.movement_failed_counter += 1
+                    
+                    # Try to move a small step instead of the full velocity
+                    if old_velocity_y != 0:  # Prevent division by zero
+                        small_step = old_velocity_y / abs(old_velocity_y) * 1  # Just 1 pixel in direction
+                        self.rect.y += small_step
+                        self.collision_rect.centery = self.rect.centery
+                        
+                        # Check collision again
+                        if (has_level and player.level.check_collision(self.collision_rect) or 
+                            any(self.collision_rect.colliderect(enemy.collision_rect) for enemy in other_enemies if 
+                               current_time >= self.ignore_collision_until and
+                               (not hasattr(enemy, 'ignore_collision_until') or current_time >= enemy.ignore_collision_until) and
+                               ((enemy.velocity_x == 0 and enemy.velocity_y == 0) or 
+                               (hasattr(enemy, 'movement_priority') and enemy.movement_priority > self.movement_priority)))):
+                            # Revert the small step too
+                            self.rect.y = old_rect.y
+                            self.collision_rect.centery = self.rect.centery
             else:
                 self.movement_failed_counter = 0
+                
+        # In narrow passages, allow temporary overlapping with other enemies
+        if self.state == 'chase' and self.movement_failed_counter >= 3:
+            # Check if we're in a narrow passage by checking walls on both sides
+            test_left = self.rect.copy()
+            test_left.x -= TILE_SIZE
+            test_right = self.rect.copy()
+            test_right.x += TILE_SIZE
+            test_up = self.rect.copy()
+            test_up.y -= TILE_SIZE
+            test_down = self.rect.copy()
+            test_down.y += TILE_SIZE
+            
+            horizontal_narrow = False
+            vertical_narrow = False
+            
+            if has_level:
+                # Check horizontal narrow passage (walls on left and right)
+                if player.level.check_collision(test_left) and player.level.check_collision(test_right):
+                    horizontal_narrow = True
+                    
+                # Check vertical narrow passage (walls above and below)
+                if player.level.check_collision(test_up) and player.level.check_collision(test_down):
+                    vertical_narrow = True
+            
+            # If we're in a narrow passage and blocked by other enemies, allow pushing through
+            if horizontal_narrow or vertical_narrow:
+                # Make collision box even smaller in narrow passages (40% of tile size)
+                old_width = self.collision_rect.width
+                old_height = self.collision_rect.height
+                
+                # Save center position
+                center_x = self.collision_rect.centerx
+                center_y = self.collision_rect.centery
+                
+                # Reduce collision box size to 40% of tile size
+                self.collision_rect.width = int(TILE_SIZE * 0.4)
+                self.collision_rect.height = int(TILE_SIZE * 0.4)
+                
+                # Re-center the collision rect
+                self.collision_rect.centerx = center_x
+                self.collision_rect.centery = center_y
+                
+                # Calculate direction to player
+                if distance > 0:
+                    normalized_dx = dx / distance
+                    normalized_dy = dy / distance
+                    
+                    # Move towards player, ignoring enemy collisions in narrow passages
+                    self.rect.x += normalized_dx * self.speed * 0.5  # Half speed when pushing through
+                    self.rect.y += normalized_dy * self.speed * 0.5
+                    
+                    # Update collision rect position
+                    self.collision_rect.centerx = self.rect.centerx
+                    self.collision_rect.centery = self.rect.centery
+                    
+                    # Still check for wall collisions
+                    if has_level and player.level.check_collision(self.collision_rect):
+                        # Revert if we hit a wall
+                        self.rect = old_rect.copy()
+                        # Also restore collision rect size and position
+                        self.collision_rect.width = old_width
+                        self.collision_rect.height = old_height
+                        self.collision_rect.centerx = old_collision_rect.centerx
+                        self.collision_rect.centery = old_collision_rect.centery
+                        
+                        self.movement_failed_counter += 1
+                    else:
+                        # Successfully pushed through
+                        self.movement_failed_counter = 0
+                        # Keep the smaller collision size for a while
+                        self.ignore_collision_until = current_time + 500
+        
+        # Occasionally make a small random movement to break up potential clusters
+        if self.state == 'chase' and self.movement_failed_counter > 0 and random.random() < 0.1:  # Increased from 5% to 10%
+            # Try a random direction
+            random_dir = random.choice(['up', 'down', 'left', 'right'])
+            test_rect = self.rect.copy()
+            
+            if random_dir == 'up':
+                test_rect.y -= 3
+            elif random_dir == 'down':
+                test_rect.y += 3
+            elif random_dir == 'left':
+                test_rect.x -= 3
+            elif random_dir == 'right':
+                test_rect.x += 3
+                
+            # If this random move doesn't cause collisions with walls, do it
+            # But allow it even if it collides with other enemies when we're stuck
+            test_collision_rect = self.collision_rect.copy()
+            test_collision_rect.centerx = test_rect.centerx
+            test_collision_rect.centery = test_rect.centery
+            
+            wall_collision = has_level and player.level.check_collision(test_collision_rect)
+            
+            if not wall_collision and self.movement_failed_counter >= 3:
+                # When stuck for a while, allow moving even if it creates enemy collisions
+                self.rect = test_rect
+                self.collision_rect = test_collision_rect
+            elif not wall_collision and not any(test_collision_rect.colliderect(enemy.collision_rect) for enemy in other_enemies):
+                # Otherwise, only move if it doesn't cause any collisions
+                self.rect = test_rect
+                self.collision_rect = test_collision_rect
+        
+        # Clean up old collision records every few seconds
+        if current_time - self.last_enemy_collision_time > 3000:  # 3 seconds
+            self.last_collided_with.clear()
         
         # Keep enemy on screen
         self.rect.clamp_ip(pygame.display.get_surface().get_rect())
