@@ -998,26 +998,15 @@ class WeaponManager:
         if self.bow.cooldown > 0:
             return None
             
-        # Get direction based on player's attack_direction (which is now based on mouse position)
-        dx, dy = 0, 0
-        
-        # Calculate direction based on player's attack_direction
-        if 'right' in self.player.attack_direction:
-            dx += 1
-        if 'left' in self.player.attack_direction:
-            dx -= 1
-        if 'up' in self.player.attack_direction:
-            dy -= 1
-        if 'down' in self.player.attack_direction:
-            dy += 1
-            
-        # Alternatively, calculate direction directly from mouse position
-        # This gives more precise aiming than the 8-direction attack_direction
+        # Calculate direction directly from mouse position for precise aiming
         mouse_dx = mouse_pos[0] - self.player.rect.centerx
         mouse_dy = mouse_pos[1] - self.player.rect.centery
         distance = math.sqrt(mouse_dx*mouse_dx + mouse_dy*mouse_dy)
         
-        # Use direct mouse vector for more precise aiming
+        # Default to right if mouse is exactly on player (extremely rare case)
+        dx, dy = 1, 0
+        
+        # Use direct mouse vector for precise aiming
         if distance > 0:
             dx = mouse_dx / distance
             dy = mouse_dy / distance

@@ -546,15 +546,22 @@ class Player(pygame.sprite.Sprite):
         # Store the current movement facing direction
         self.movement_facing = self.facing
         
-        # Get primary direction from attack_direction
-        if '-' in self.attack_direction:
-            primary_direction = self.attack_direction.split('-')[0]
-        else:
-            primary_direction = self.attack_direction
+        # Calculate angle to mouse position
+        dx = mouse_pos[0] - self.rect.centerx
+        dy = mouse_pos[1] - self.rect.centery
+        angle = math.degrees(math.atan2(dy, dx))
+        
+        # Set facing direction based on angle (use the closest cardinal direction)
+        if -45 <= angle <= 45:
+            self.facing = 'right'
+        elif 45 < angle <= 135:
+            self.facing = 'down'
+        elif angle > 135 or angle < -135:
+            self.facing = 'left'
+        elif -135 <= angle < -45:
+            self.facing = 'up'
             
-        # Set facing to attack direction for animation
-        print(f"Bow attack direction: {self.attack_direction}, Setting facing to: {primary_direction}")
-        self.facing = primary_direction
+        print(f"Bow attack angle: {angle:.1f} degrees, Setting facing to: {self.facing}")
         
         # Return True to indicate that the arrow was successfully shot
         return True

@@ -469,33 +469,14 @@ class Game:
                         self.activate_special_attack()
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
-                        # Use player's attack direction instead of mouse position
-                        attack_dir = self.player.attack_direction
+                        # Get screen mouse position 
+                        screen_mouse_pos = pygame.mouse.get_pos()
+                        # Convert to world coordinates
+                        world_mouse_pos = self.screen_to_world_coords(*screen_mouse_pos)
                         
-                        # Calculate a point in the attack direction
-                        direction_vec = [0, 0]
-                        if 'right' in attack_dir:
-                            direction_vec[0] = 1
-                        if 'left' in attack_dir:
-                            direction_vec[0] = -1
-                        if 'up' in attack_dir:
-                            direction_vec[1] = -1
-                        if 'down' in attack_dir:
-                            direction_vec[1] = 1
-                            
-                        # Normalize the vector if it's diagonal
-                        if direction_vec[0] != 0 and direction_vec[1] != 0:
-                            length = math.sqrt(direction_vec[0]**2 + direction_vec[1]**2)
-                            direction_vec[0] /= length
-                            direction_vec[1] /= length
-                        
-                        # Create a point far in the attack direction
-                        target_x = self.player.rect.centerx + direction_vec[0] * 1000
-                        target_y = self.player.rect.centery + direction_vec[1] * 1000
-                        
-                        # Attack with bow using the calculated direction
-                        self.weapon_manager.attack_bow((target_x, target_y))
-                        print(f"Bow attack in direction: {attack_dir}")
+                        # Attack with bow using the exact mouse position
+                        self.weapon_manager.attack_bow(world_mouse_pos)
+                        print(f"Bow attack toward cursor position: {world_mouse_pos}")
                     elif event.button == 3:  # Right click
                         # Trigger dodge in the facing direction
                         if self.player.dodge():
