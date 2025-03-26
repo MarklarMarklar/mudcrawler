@@ -11,7 +11,8 @@ from sound_manager import get_sound_manager
 class BossProjectile(pygame.sprite.Sprite):
     def __init__(self, x, y, direction, speed=1.4, damage=25, color=(255, 0, 0), 
                  is_orbiting=False, orbit_boss=None, orbit_angle=0, orbit_radius=0, orbit_speed=0, 
-                 become_stationary=False, stationary_time=0, is_homing=False, boss_level=None):
+                 become_stationary=False, stationary_time=0, is_homing=False, boss_level=None,
+                 spawn_secondary=False, spawn_time=0):  # Added new parameters
         super().__init__()
         self.x = x
         self.y = y
@@ -143,6 +144,11 @@ class BossProjectile(pygame.sprite.Sprite):
             # For ghost projectiles, use a slower pulse rate
             self.pulse_counter = 0
             self.pulse_rate = 0.05
+        
+        # Secondary projectile properties
+        self.spawn_secondary = spawn_secondary
+        self.spawn_time = spawn_time
+        self.has_spawned = False
     
     def choose_standard_projectile_image(self, is_orbiting, color):
         """Choose the appropriate image for non-boss 8 projectiles"""
@@ -192,6 +198,11 @@ class BossProjectile(pygame.sprite.Sprite):
     
     def update(self):
         current_time = pygame.time.get_ticks()
+        
+        # Check if we need to spawn secondary projectiles
+        if self.spawn_secondary and not self.has_spawned and current_time - self.creation_time >= self.spawn_time:
+            self.spawn_secondary_projectiles()
+            self.has_spawned = True
         
         # Update warning pulse for Boss 8 floor projectiles during casting
         if self.is_floor_projectile and self.creation_time == 0:
@@ -530,6 +541,32 @@ class BossProjectile(pygame.sprite.Sprite):
             # Collision detected and projectile is in a damage-dealing state
             return True
         return False
+
+    def spawn_secondary_projectiles(self):
+        """Spawn three projectiles in a 360-degree pattern"""
+        if not hasattr(self.orbit_boss, 'projectiles'):
+            return
+            
+        # Create 3 projectiles at 120-degree intervals
+        for i in range(3):
+            angle = (i * 2 * math.pi / 3) + random.uniform(0, math.pi/6)  # Add slight randomness
+            dx = math.cos(angle)
+            dy = math.sin(angle)
+            
+            # Create new projectile with same properties but no secondary spawn
+            secondary = BossProjectile(
+                self.rect.centerx,
+                self.rect.centery,
+                (dx, dy),
+                self.speed,
+                self.damage,
+                self.color,
+                boss_level=self.boss_level,
+                spawn_secondary=False  # Prevent infinite spawning
+            )
+            
+            # Add to boss's projectile group
+            self.orbit_boss.projectiles.add(secondary)
 
 class Enemy(pygame.sprite.Sprite):
     def __init__(self, x, y, enemy_type, level, level_instance=None):
@@ -2632,12 +2669,6 @@ class Boss(Enemy):
                 right_dx = right_dx / right_length
                 right_dy = right_dy / right_length
                 
-                # Print for debugging
-                print(f"Player dir: ({dx:.2f}, {dy:.2f})")
-                print(f"Center: ({center_dx:.2f}, {center_dy:.2f})")
-                print(f"Left: ({left_dx:.2f}, {left_dy:.2f})")
-                print(f"Right: ({right_dx:.2f}, {right_dy:.2f})")
-                
                 # Create the projectiles with different colors
                 # Center projectile - offset slightly ahead of the others and use brighter color
                 center_projectile = BossProjectile(
@@ -2647,7 +2678,10 @@ class Boss(Enemy):
                     1.4, 
                     self.damage * 1.5, 
                     color=(20, 150, 255),  # Brighter blue
-                    boss_level=self.level  # Pass the boss level
+                    boss_level=self.level,  # Pass the boss level
+                    spawn_secondary=True,  # Enable secondary projectiles
+                    spawn_time=2000,  # Spawn after 2 seconds
+                    orbit_boss=self  # Pass reference to boss for spawning
                 )
                 
                 left_projectile = BossProjectile(
@@ -2657,7 +2691,10 @@ class Boss(Enemy):
                     1.4, 
                     self.damage * 1.5, 
                     color=(255, 0, 255),  # Magenta
-                    boss_level=self.level  # Pass the boss level
+                    boss_level=self.level,  # Pass the boss level
+                    spawn_secondary=True,  # Enable secondary projectiles
+                    spawn_time=2000,  # Spawn after 2 seconds
+                    orbit_boss=self  # Pass reference to boss for spawning
                 )
                 
                 right_projectile = BossProjectile(
@@ -2667,7 +2704,10 @@ class Boss(Enemy):
                     1.4, 
                     self.damage * 1.5, 
                     color=(255, 165, 0),  # Orange
-                    boss_level=self.level  # Pass the boss level
+                    boss_level=self.level,  # Pass the boss level
+                    spawn_secondary=True,  # Enable secondary projectiles
+                    spawn_time=2000,  # Spawn after 2 seconds
+                    orbit_boss=self  # Pass reference to boss for spawning
                 )
                 
                 # Add to projectile group
