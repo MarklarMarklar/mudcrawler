@@ -2500,6 +2500,17 @@ class Boss(Enemy):
         # Trail color based on level
         self.trail_color = (150, 0, 0) if level == 1 else (0, 150, 150)  # Red for level 1, Cyan for level 2
         
+        # Boss 1 blood zone attributes
+        if level == 1:
+            self.blood_zones = pygame.sprite.Group()
+            self.zone_creation_interval = 6000  # Create a zone every 6 seconds
+            self.last_zone_creation_time = 0
+            self.zone_creation_delay = 2000  # First zone appears after 6 seconds of engagement
+            self.combat_start_time = 0
+            self.in_combat_with_player = False
+            self.zone_damage = self.damage * 0.15  # Each zone does 15% of the boss's damage
+            self.zone_size = TILE_SIZE * 4  # 2x2 tiles size (4 tiles total)
+        
         # Sound manager for boss voice
         self.sound_manager = get_sound_manager()
         
@@ -2979,6 +2990,14 @@ class Boss(Enemy):
                 # This ensures the boss doesn't immediately enter defensive mode
                 self.last_defensive_mode_time = current_time
                 print("Level 4 boss engaging in combat - chase phase starting")
+                
+            # Start combat timer for level 1 boss blood zones
+            if self.level == 1 and not self.in_combat_with_player:
+                self.in_combat_with_player = True
+                self.combat_start_time = current_time
+                # Set last zone creation time so first zone appears after the delay
+                self.last_zone_creation_time = current_time
+                print(f"Level 1 boss engaging in combat - blood zone mechanic activated")
         
         # Level 4 boss defensive mode logic
         if self.level == 4 and self.in_combat:
@@ -3368,6 +3387,74 @@ class Boss(Enemy):
                 if not screen_rect.colliderect(projectile.rect):
                     projectile.kill()
         
+        # Update blood zones for boss 1
+        if self.level == 1 and self.in_combat_with_player:
+            # First, update all existing blood zones
+            self.blood_zones.update()
+            
+            # Check if it's time to create a new blood zone
+            combat_duration = current_time - self.combat_start_time
+            if (combat_duration >= self.zone_creation_delay and 
+                current_time - self.last_zone_creation_time >= self.zone_creation_interval):
+                
+                # Create a blood zone under the player
+                blood_zone = BloodZone(
+                    player.rect.centerx, 
+                    player.rect.centery,
+                    self.zone_size,
+                    self.zone_damage,
+                    creator=self
+                )
+                self.blood_zones.add(blood_zone)
+                self.last_zone_creation_time = current_time
+                
+                # Create visual effect and play sound
+                if hasattr(player, 'game') and player.game and hasattr(player.game, 'particle_system'):
+                    for _ in range(10):
+                        offset_x = random.randint(-20, 20)
+                        offset_y = random.randint(-20, 20)
+                        player.game.particle_system.create_particle(
+                            player.rect.centerx + offset_x,
+                            player.rect.centery + offset_y,
+                            color=(220, 0, 0),
+                            size=random.randint(3, 7),
+                            speed=random.uniform(0.7, 1.8),
+                            lifetime=random.randint(25, 40)
+                        )
+                
+                # Play sound effect for blood zone creation
+                if self.sound_manager:
+                    self.sound_manager.play_sound('boss_special')
+                
+                print(f"Boss 1 created a blood zone under the player")
+            
+            # Check collision with player for all blood zones
+            for zone in self.blood_zones:
+                if zone.check_collision(player.hitbox) and zone.can_damage():
+                    # Damage player
+                    player.take_damage(zone.damage)
+                    
+                    # Heal the boss by the same amount
+                    self.health = min(self.max_health, self.health + zone.damage)
+                    
+                    # Display healing effect
+                    if hasattr(player, 'game') and player.game and hasattr(player.game, 'particle_system'):
+                        for _ in range(5):
+                            offset_x = random.randint(-15, 15)
+                            offset_y = random.randint(-15, 15)
+                            player.game.particle_system.create_particle(
+                                self.rect.centerx + offset_x,
+                                self.rect.centery + offset_y,
+                                color=(0, 255, 0),  # Green healing particles
+                                size=random.randint(3, 6),
+                                speed=random.uniform(0.5, 1.2),
+                                lifetime=random.randint(20, 30)
+                            )
+                    
+                    # Display feedback message if possible
+                    if hasattr(player, 'game') and hasattr(player.game, 'display_message'):
+                        player.game.display_message("Boss healed from blood zone!", (220, 0, 0))
+        
         # Handle boss voice sound effect
         if distance <= detection_range:
             if not self.has_seen_player:
@@ -3635,6 +3722,11 @@ class Boss(Enemy):
         if self.level == 9 and hasattr(self, 'poison_trails') and self.poison_trails:
             for trail in self.poison_trails:
                 surface.blit(trail.image, trail.rect)
+        
+        # Draw blood zones for Boss 1 BEFORE drawing the boss
+        if self.level == 1 and hasattr(self, 'blood_zones') and self.blood_zones:
+            for zone in self.blood_zones:
+                surface.blit(zone.image, zone.rect)
                 
         # Calculate position with visual offset
         draw_x = self.rect.x - self.visual_offset_x
@@ -4802,3 +4894,90 @@ class BossEgg(pygame.sprite.Sprite):
             surface.blit(alpha_img, self.rect)
         else:
             surface.blit(self.image, self.rect)
+
+class BloodZone(pygame.sprite.Sprite):
+    """A blood zone created by boss 1 that damages the player and heals the boss"""
+    def __init__(self, x, y, size, damage, creator=None):
+        super().__init__()
+        self.creation_time = pygame.time.get_ticks()
+        self.duration = 18000  # 18 seconds lifetime
+        self.damage = damage
+        self.creator = creator  # Reference to the boss that created this zone
+        
+        # Size should be 4 tiles (2x2 grid)
+        self.size = size
+        
+        # Create the image with transparency
+        self.image = pygame.Surface((size, size), pygame.SRCALPHA)
+        
+        # Calculate center point
+        center_point = (size // 2, size // 2)
+        
+        # Add a glowing effect (red mist)
+        for i in range(6):
+            glow_radius = size // 2 + (5 - i) * 3
+            glow_alpha = 15 + i * 10
+            glow_col = (150, 0, 0, glow_alpha)  # Red glow for blood
+            pygame.draw.circle(self.image, glow_col, center_point, glow_radius)
+        
+        # Main blood puddle colors - dark red
+        outer_color = (120, 0, 0, 190)  # Dark red
+        main_color = (180, 0, 0, 200)   # Medium red
+        inner_color = (220, 0, 0, 220)  # Lighter red
+        
+        # Draw the base puddle shape as a circle
+        pygame.draw.circle(self.image, outer_color, center_point, size // 2 - 2)
+        
+        # Draw a smaller inner puddle
+        pygame.draw.circle(self.image, main_color, center_point, int(size * 0.4) - 1)
+        
+        # Draw the blood center
+        pygame.draw.circle(self.image, inner_color, center_point, int(size * 0.25))
+        
+        # Add some blood splatter details
+        for _ in range(8):
+            angle = random.uniform(0, math.pi * 2)
+            distance = random.uniform(0, size // 4)
+            
+            dot_x = center_point[0] + int(math.cos(angle) * distance)
+            dot_y = center_point[1] + int(math.sin(angle) * distance)
+            
+            dot_size = random.randint(2, 5)
+            bubble_color = (220, 0, 0, 230)  # Bright red for blood drops
+            pygame.draw.circle(self.image, bubble_color, (dot_x, dot_y), dot_size)
+        
+        self.rect = self.image.get_rect(center=(x, y))
+        self.true_center = (x, y)  # Store the exact center for accurate positioning
+        
+        # Add damage cooldown
+        self.last_damage_time = 0
+        self.damage_cooldown = 1000  # 1 second between damage applications
+        
+        # Add pulse/glow effect
+        self.pulse_time = random.uniform(0, math.pi * 2)  # Random start phase
+        self.pulse_speed = 0.08  # Speed of pulsing
+        
+    def update(self):
+        # Check if the zone should disappear
+        if pygame.time.get_ticks() - self.creation_time > self.duration:
+            self.kill()
+            return
+            
+        # Update pulse effect
+        self.pulse_time += self.pulse_speed
+        if self.pulse_time > math.pi * 2:
+            self.pulse_time -= math.pi * 2
+
+    def check_collision(self, rect):
+        # Don't collide with the boss that created this zone
+        if hasattr(self, 'creator') and self.creator and self.creator.rect == rect:
+            return False
+        return self.rect.colliderect(rect)
+        
+    def can_damage(self):
+        # Check if the cooldown has elapsed
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_damage_time >= self.damage_cooldown:
+            self.last_damage_time = current_time
+            return True
+        return False
