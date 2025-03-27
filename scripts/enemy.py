@@ -2257,6 +2257,12 @@ class Boss(Enemy):
         self.last_defensive_sound_time = 0  # Track when defensive sound was last played
         self.reflected_damage = 0  # Track damage to reflect during defensive mode
         
+        # Level 3 boss defensive mode - active when minions are alive
+        if level == 3:
+            self.defensive_mode = True  # Start in defensive mode until all minions are dead
+            self.defensive_image_level3 = None # No special image for level 3 defensive mode
+            print("Level 3 boss initialized with defensive mode active while minions alive")
+        
         # Level 7 boss shield mode attributes (based on level 4)
         if level == 7:
             self.defensive_mode = False
@@ -2847,6 +2853,61 @@ class Boss(Enemy):
             
             # Return early since boss is in blood puddle state
             return
+        
+        # Level 3 boss defensive mode - check if any enemies are alive in the room
+        if self.level == 3:
+            # Find the room that contains this boss
+            room = None
+            
+            # Try different approaches to find the boss's room
+            if hasattr(self, 'level_instance') and self.level_instance:
+                # First try with current_room
+                if hasattr(self.level_instance, 'current_room'):
+                    # Check if the boss is in the current room
+                    if self.level_instance.current_room.boss == self:
+                        room = self.level_instance.current_room
+                
+                # If not found, search all rooms
+                if room is None and hasattr(self.level_instance, 'rooms'):
+                    for coords, r in self.level_instance.rooms.items():
+                        if hasattr(r, 'boss') and r.boss == self:
+                            room = r
+                            break
+            
+            # Try through player's game if available
+            if room is None and hasattr(player, 'game') and hasattr(player.game, 'level'):
+                level = player.game.level
+                
+                # Check current room first
+                if hasattr(level, 'current_room') and level.current_room.boss == self:
+                    room = level.current_room
+                
+                # If not found, search all rooms
+                if room is None and hasattr(level, 'rooms'):
+                    for coords, r in level.rooms.items():
+                        if hasattr(r, 'boss') and r.boss == self:
+                            room = r
+                            break
+            
+            # Check if we found a room and update defensive mode
+            if room and hasattr(room, 'enemies'):
+                # Boss is in defensive mode if any enemies are ALIVE (not in blood puddle state)
+                # Count only enemies that are not in blood puddle state (not resurrecting)
+                alive_enemies = [enemy for enemy in room.enemies if not hasattr(enemy, 'is_dead') or not enemy.is_dead]
+                enemies_alive = len(alive_enemies) > 0
+                was_defensive = self.defensive_mode
+                self.defensive_mode = enemies_alive
+                
+                # Log state change
+                if was_defensive and not self.defensive_mode:
+                    print("Level 3 boss dropped defensive mode - all minions defeated!")
+                elif not was_defensive and self.defensive_mode:
+                    print("Level 3 boss entered defensive mode - minions protecting the boss!")
+            else:
+                # Failed to find room or enemies - default to no defensive mode
+                if self.defensive_mode:
+                    self.defensive_mode = False
+                    print("Level 3 boss dropped defensive mode - could not find valid room!")
         
         # Update Boss 9 animation
         if self.level == 9:
@@ -3752,22 +3813,22 @@ class Boss(Enemy):
                 
                 # Draw the ghost sprite at the historical position
                 surface.blit(ghost_img, (x - self.visual_offset_x, y - self.visual_offset_y))
-        
+                
         # Draw poison trails for Boss 6 BEFORE drawing the boss
         if self.level == 6 and self.poison_trails:
             for trail in self.poison_trails:
                 surface.blit(trail.image, trail.rect)
-        
+                
         # Draw poison trails for Boss 9 BEFORE drawing the boss
         if self.level == 9 and hasattr(self, 'poison_trails') and self.poison_trails:
             for trail in self.poison_trails:
                 surface.blit(trail.image, trail.rect)
-        
+                
         # Draw blood zones for Boss 1 BEFORE drawing the boss
         if self.level == 1 and hasattr(self, 'blood_zones') and self.blood_zones:
             for zone in self.blood_zones:
                 surface.blit(zone.image, zone.rect)
-                
+        
         # Calculate position with visual offset
         draw_x = self.rect.x - self.visual_offset_x
         draw_y = self.rect.y - self.visual_offset_y
@@ -3809,6 +3870,35 @@ class Boss(Enemy):
             
             # Draw the selected image
             surface.blit(img_to_draw, (draw_x, draw_y))
+            
+        elif self.level == 3 and self.defensive_mode:
+            # First draw the normal image
+            surface.blit(self.image, (draw_x, draw_y))
+            
+            # Create a defensive aura around the boss
+            aura_size = max(self.image.get_width(), self.image.get_height()) + 20
+            aura_surface = pygame.Surface((aura_size, aura_size), pygame.SRCALPHA)
+            
+            # Draw multiple layers of the aura with different colors and sizes
+            center = (aura_size // 2, aura_size // 2)
+            
+            # Outer shield ring (blue)
+            shield_color = (0, 100, 255, 50)  # Light blue with transparency
+            for i in range(3):
+                radius = aura_size // 2 - i * 4
+                thickness = 3 - i  # Decreasing thickness for inner rings
+                pygame.draw.circle(aura_surface, shield_color, center, radius, thickness)
+            
+            # Pulsing inner shield (more solid)
+            pulse_time = pygame.time.get_ticks() / 500  # Control pulse speed
+            pulse_radius = aura_size // 3 + (math.sin(pulse_time) * 5)  # Pulsing effect
+            pygame.draw.circle(aura_surface, (0, 150, 255, 80), center, pulse_radius, 0)
+            
+            # Draw the aura centered on the boss
+            aura_x = draw_x + (self.image.get_width() - aura_size) // 2
+            aura_y = draw_y + (self.image.get_height() - aura_size) // 2
+            surface.blit(aura_surface, (aura_x, aura_y))
+        
         elif self.level != 9:
             # For non-Boss 9 enemies, draw normally
             surface.blit(self.image, (draw_x, draw_y))
@@ -4240,7 +4330,7 @@ class Boss(Enemy):
         
         # Use the base Enemy class's movement logic
         super().move_towards_player(player)
-
+        
     def load_texture(self, image_path):
         """Load boss texture with proper scaling"""
         max_boss_size = (int(TILE_SIZE * 2.2), int(TILE_SIZE * 2.2))
@@ -4450,6 +4540,12 @@ class Boss(Enemy):
             # Always reset reflection when taking damage
             if not self.defensive_mode:
                 self.reflected_damage = 0  # Ensure no reflection when not in defensive mode
+        
+        # Level 3 boss damage immunity during defensive mode (when minions are alive)
+        if self.level == 3 and self.defensive_mode:
+            # Don't take damage while minions are alive, but don't reflect it either
+            print(f"Level 3 boss is in defensive mode - immune to damage!")
+            return False
         
         # Level 4 boss damage reflection during defensive mode
         if self.level == 4 and self.defensive_mode:

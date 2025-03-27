@@ -46,7 +46,7 @@ SWORD_COOLDOWN = 500  # milliseconds
 ENEMY_TYPES = {
     'level1': {'name': 'Slime', 'health': 50, 'damage': 10, 'speed': 2},
     'level2': {'name': 'Skeleton', 'health': 60, 'damage': 12, 'speed': 2},
-    'level3': {'name': 'Ghost', 'health': 40, 'damage': 15, 'speed': 2},
+    'level3': {'name': 'Ghost', 'health': 40, 'damage': 2, 'speed': 2},
     'level4': {'name': 'Goblin', 'health': 70, 'damage': 30, 'speed': 2.5},
     'level5': {'name': 'Dark Knight', 'health': 80, 'damage': 23, 'speed': 2},
     'level6': {'name': 'Wizard', 'health': 65, 'damage': 15, 'speed': 1.8},
@@ -60,7 +60,7 @@ ENEMY_TYPES = {
 BOSS_TYPES = {
     'level1': {'name': 'King Slime', 'health': 200, 'damage': 20, 'speed': 2},
     'level2': {'name': 'Skeleton Lord', 'health': 250, 'damage': 25, 'speed': 2},
-    'level3': {'name': 'Phantom King', 'health': 300, 'damage': 25, 'speed': 2},
+    'level3': {'name': 'Phantom King', 'health': 300, 'damage': 5, 'speed': 2},
     'level4': {'name': 'Goblin Chief', 'health': 350, 'damage': 25, 'speed': 2},
     'level5': {'name': 'Dark Champion', 'health': 400, 'damage': 10, 'speed': 2},
     'level6': {'name': 'Arch Wizard', 'health': 450, 'damage': 15, 'speed': 2},
@@ -91,5 +91,5 @@ CONTROLS = {
 }
 
 # Debug Settings
-DEBUG_MODE = False  # Set to False for production
-DEBUG_HITBOXES = False  # Set to True to show hitboxes 
+DEBUG_MODE = True  # Set to False for production
+DEBUG_HITBOXES = True  # Set to True to show hitboxes 
