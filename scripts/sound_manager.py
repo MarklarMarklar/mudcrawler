@@ -203,7 +203,16 @@ class SoundManager:
             
         # Load the sound if not already loaded
         if sound_name not in self.sounds:
+            # First try with .wav extension
             sound_path = os.path.join(self.sound_dir, f"{sound_name}.wav")
+            
+            # If .wav doesn't exist, try .mp3
+            if not os.path.exists(sound_path):
+                mp3_path = os.path.join(self.sound_dir, f"{sound_name}.mp3")
+                if os.path.exists(mp3_path):
+                    sound_path = mp3_path
+                    print(f"Using MP3 sound file: {sound_path}")
+            
             try:
                 self.sounds[sound_name] = pygame.mixer.Sound(sound_path)
                 self.sounds[sound_name].set_volume(self.sfx_volume)

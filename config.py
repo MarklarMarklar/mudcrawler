@@ -71,6 +71,7 @@ BOSS_TYPES = {
 }
 
 # Game States
+SPLASH_SCREEN = 'splash_screen'
 MENU = 'menu'
 PLAYING = 'playing'
 PAUSED = 'paused'

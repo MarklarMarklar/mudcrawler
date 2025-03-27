@@ -124,7 +124,7 @@ class Game:
         
         # Game state
         self.running = True
-        self.state = MENU
+        self.state = SPLASH_SCREEN  # Start with splash screen instead of menu
         self.current_level = 1
         self.max_levels = 10
         
@@ -147,13 +147,41 @@ class Game:
         # Level is initialized only when starting the game, not at menu
         self.level = None
         
-        # Start playing menu music
-        self.sound_manager.play_music('menu')
+        # Don't play welcome music during splash screen - it will be started after splash screen
         
         # Print debug info
         print(f"Game initialized. State: {self.state}")
         print(f"Screen size: {WINDOW_WIDTH}x{WINDOW_HEIGHT}")
         print(f"Camera zoom: {self.camera.zoom}x")
+        
+        # Splash screen
+        self.splash_start_time = None
+        self.splash_duration = 5000  # 5 seconds in milliseconds
+        self.splash_image = None
+        self.glitch_duration = 1500  # 1.5 seconds in milliseconds
+        self.glitch_last_update = 0
+        self.glitch_update_rate = 50  # milliseconds between glitch updates
+        self.original_splash_image = None
+        self.glitched_splash_image = None
+        
+        try:
+            splash_path = os.path.join(ASSET_PATH, "images/near_human.png")
+            if not os.path.exists(splash_path):
+                # Try alternative image if specified one doesn't exist
+                splash_path = os.path.join(ASSET_PATH, "images/almost_human.png")
+                print(f"Splash screen image 'near_human.png' not found, trying alternative: {splash_path}")
+                
+            if os.path.exists(splash_path):
+                self.original_splash_image = pygame.image.load(splash_path)
+                self.original_splash_image = pygame.transform.scale(self.original_splash_image, (WINDOW_WIDTH, WINDOW_HEIGHT))
+                self.splash_image = self.original_splash_image.copy()
+                print(f"Successfully loaded splash screen image: {splash_path}")
+            else:
+                print(f"Splash screen image not found: {splash_path}")
+                self.state = MENU  # Skip to menu if image not found
+        except Exception as e:
+            print(f"Failed to load splash screen image: {e}")
+            self.state = MENU  # Skip to menu if there's an error
         
     def ensure_asset_directories(self):
         """Make sure all the asset directories exist"""
@@ -256,6 +284,15 @@ class Game:
             if event.type == pygame.QUIT:
                 self.running = False
                 
+            # Skip other event handling during splash screen except for clicks/keys to skip
+            if self.state == SPLASH_SCREEN:
+                if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                    print(f"Splash screen skipped after {pygame.time.get_ticks() - self.splash_start_time}ms")
+                    self.state = MENU
+                    print("Starting welcome screen music (after skip)")
+                    self.sound_manager.play_music('menu')
+                continue
+            
             # Update player's attack direction based on mouse position
             # We need to do this continuously, not just on mouse click
             if self.state == PLAYING and not self.death_sequence_active:
@@ -487,6 +524,36 @@ class Game:
                             self.sound_manager.play_sound("effects/dodge")
                 
     def update(self):
+        # Update splash screen timer
+        if self.state == SPLASH_SCREEN:
+            current_time = pygame.time.get_ticks()
+            
+            # Initialize start time if not set
+            if self.splash_start_time is None:
+                self.splash_start_time = current_time
+                print(f"Splash screen started at time: {current_time}")
+                
+            # Update glitch effect during the first 1.5 seconds
+            if current_time - self.splash_start_time < self.glitch_duration:
+                # Update glitch effect at regular intervals
+                if current_time - self.glitch_last_update > self.glitch_update_rate:
+                    print(f"Applying glitch effect at time: {current_time - self.splash_start_time}ms")
+                    self.glitched_splash_image = self._apply_horizontal_glitch(self.original_splash_image)
+                    self.glitch_last_update = current_time
+                    self.splash_image = self.glitched_splash_image
+            else:
+                if self.splash_image != self.original_splash_image:
+                    print(f"Glitch effect ended at time: {current_time - self.splash_start_time}ms")
+                    self.splash_image = self.original_splash_image
+                
+            # Check if splash duration has passed
+            if current_time - self.splash_start_time >= self.splash_duration:
+                print(f"Splash screen complete at time: {current_time - self.splash_start_time}ms")
+                self.state = MENU
+                print("Starting welcome screen music")
+                self.sound_manager.play_music('menu')
+            return  # Skip other updates during splash screen
+            
         if self.state != PLAYING:
             return
             
@@ -1165,7 +1232,10 @@ class Game:
         self.screen.fill(BLACK)
         
         # Render based on game state
-        if self.state == MENU:
+        if self.state == SPLASH_SCREEN:
+            if self.splash_image:
+                self.screen.blit(self.splash_image, (0, 0))
+        elif self.state == MENU:
             if self.menu.showing_controls:
                 self.menu.draw_controls_menu()
             elif self.menu.showing_options:
@@ -1543,12 +1613,36 @@ class Game:
         
     def run(self):
         print("Starting game loop")
+        self.splash_start_time = pygame.time.get_ticks()  # Initialize splash timer at the start
+        
+        # Play splash sound at the beginning if we're in splash screen mode
+        if self.state == SPLASH_SCREEN:
+            try:
+                # Use absolute path for splash sound
+                splash_path = os.path.join(ASSET_PATH, "sounds", "effects", "splash.mp3")
+                print(f"Attempting to play splash sound from: {splash_path}")
+                print(f"File exists: {os.path.exists(splash_path)}")
+                
+                if os.path.exists(splash_path):
+                    try:
+                        print(f"Loading splash sound...")
+                        splash_sound = pygame.mixer.Sound(splash_path)
+                        print(f"Splash sound loaded successfully, playing now...")
+                        splash_sound.play()
+                        print(f"Splash sound played successfully")
+                    except Exception as e:
+                        print(f"Error loading or playing splash sound: {e}")
+                else:
+                    print(f"Splash sound file not found at: {splash_path}")
+            except Exception as e:
+                print(f"Error with splash sound (outer try/catch): {e}")
+                
         while self.running:
             self.handle_events()
             self.update()
             self.render()
             self.clock.tick(FPS)
-        
+            
         # Clean up resources before quitting
         if hasattr(self, 'menu') and self.menu:
             self.menu.cleanup()
@@ -2245,6 +2339,80 @@ class Game:
         except Exception as e:
             print(f"Error setting custom cursor: {e}")
             print(f"Using default cursor instead")
+
+    def _apply_horizontal_glitch(self, image):
+        """Apply horizontal glitching effect to the image"""
+        if image is None:
+            return None
+            
+        # Create a copy of the original image
+        glitched = image.copy()
+        
+        # Apply several horizontal glitch effects
+        for _ in range(10):  # Number of glitch lines
+            # Choose random y position for the glitch line
+            y_pos = random.randint(0, WINDOW_HEIGHT - 1)
+            # Determine random height of the glitch
+            glitch_height = random.randint(5, 30)
+            # Determine random shift amount
+            shift_amount = random.randint(10, 60)
+            
+            # Randomize whether to shift left or right
+            if random.random() > 0.5:
+                shift_amount = -shift_amount
+                
+            # Define the area to glitch
+            glitch_area = pygame.Rect(0, y_pos, WINDOW_WIDTH, glitch_height)
+            
+            # Create a surface for the glitched part
+            glitched_part = pygame.Surface((WINDOW_WIDTH, glitch_height))
+            # Copy the slice from the original image
+            glitched_part.blit(glitched, (0, 0), glitch_area)
+            
+            # Draw the sliced part with a horizontal shift
+            glitched.blit(glitched_part, (shift_amount, y_pos))
+            
+            # Sometimes add color distortion (without using surfarray)
+            if random.random() > 0.7:
+                # Create a colorful overlay with random color and transparency
+                color_rect = pygame.Surface((random.randint(50, 200), glitch_height))
+                
+                # Choose a random RGB color with high intensity
+                r = random.randint(150, 255) if random.random() > 0.5 else 0
+                g = random.randint(150, 255) if random.random() > 0.5 else 0
+                b = random.randint(150, 255) if random.random() > 0.5 else 0
+                
+                # Fill with that color
+                color_rect.fill((r, g, b))
+                
+                # Set alpha for partial transparency
+                color_rect.set_alpha(random.randint(50, 150))
+                
+                # Blit onto a random position on the same line
+                x_pos = random.randint(0, WINDOW_WIDTH - color_rect.get_width())
+                glitched.blit(color_rect, (x_pos, y_pos))
+        
+        # Add occasional vertical strips
+        for _ in range(3):  # Number of vertical strips
+            if random.random() > 0.5:  # 50% chance for vertical strips
+                # Choose random x position for the vertical strip
+                x_pos = random.randint(0, WINDOW_WIDTH - 1)
+                # Determine random width of the strip
+                strip_width = random.randint(5, 15)
+                # Choose random color
+                color = (
+                    random.randint(150, 255) if random.random() > 0.5 else 0,
+                    random.randint(150, 255) if random.random() > 0.5 else 0,
+                    random.randint(150, 255) if random.random() > 0.5 else 0
+                )
+                
+                # Draw vertical strip
+                vertical_strip = pygame.Surface((strip_width, WINDOW_HEIGHT))
+                vertical_strip.fill(color)
+                vertical_strip.set_alpha(random.randint(50, 150))
+                glitched.blit(vertical_strip, (x_pos, 0))
+        
+        return glitched
 
 if __name__ == "__main__":
     import argparse
