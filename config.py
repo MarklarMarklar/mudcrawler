@@ -61,7 +61,7 @@ BOSS_TYPES = {
     'level1': {'name': 'King Slime', 'health': 200, 'damage': 20, 'speed': 2},
     'level2': {'name': 'Skeleton Lord', 'health': 250, 'damage': 25, 'speed': 2},
     'level3': {'name': 'Phantom King', 'health': 300, 'damage': 5, 'speed': 2},
-    'level4': {'name': 'Goblin Chief', 'health': 350, 'damage': 20, 'speed': 2},
+    'level4': {'name': 'Goblin Chief', 'health': 800, 'damage': 35, 'speed': 3},
     'level5': {'name': 'Dark Champion', 'health': 400, 'damage': 10, 'speed': 2},
     'level6': {'name': 'Arch Wizard', 'health': 450, 'damage': 15, 'speed': 2},
     'level7': {'name': 'Demon Lord', 'health': 500, 'damage': 10, 'speed': 2},

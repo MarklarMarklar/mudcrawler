@@ -2257,6 +2257,21 @@ class Boss(Enemy):
         self.last_defensive_sound_time = 0  # Track when defensive sound was last played
         self.reflected_damage = 0  # Track damage to reflect during defensive mode
         
+        # Level 4 boss rope mechanic attributes
+        self.is_shooting_rope = False
+        self.rope_start_time = 0
+        self.rope_duration = 1500  # 1.5 seconds to shoot rope
+        self.rope_target = None
+        self.rope_length = 0
+        self.rope_max_length = TILE_SIZE * 8  # Maximum rope length
+        self.rope_speed = 10  # Pixels per frame
+        self.rope_reached_player = False
+        self.rope_pull_speed = 6  # How fast to pull player
+        self.is_pulling_player = False
+        self.pull_duration = 1000  # 1 second to pull player
+        self.pull_start_time = 0
+        self.rope_end_pos = None  # Position of the end of the rope
+        
         # Level 3 boss defensive mode - active when minions are alive
         if level == 3:
             self.defensive_mode = True  # Start in defensive mode until all minions are dead
@@ -3143,6 +3158,16 @@ class Boss(Enemy):
                     # Ensure reflected damage is reset when leaving defensive mode
                     self.reflected_damage = 0
                     
+                    # After leaving defensive mode, shoot a rope at the player
+                    self.is_shooting_rope = True
+                    self.rope_start_time = current_time
+                    self.rope_target = player
+                    self.rope_length = 0
+                    self.rope_reached_player = False
+                    self.rope_end_pos = (self.rect.centerx, self.rect.centery)
+                    self.is_pulling_player = False
+                    print(f"Level 4 boss starting to shoot rope at player at time {current_time}!")
+                    
                     # Play the boss voice when leaving defensive mode
                     voice_file = f"effects/boss_{self.level}_voice"
                     self.sound_manager.play_sound(voice_file)
@@ -3150,6 +3175,87 @@ class Boss(Enemy):
                         
                     print(f"Level 4 boss leaving defensive mode at time {current_time}!")
         
+        # Handle rope shooting and player pulling for boss level 4
+        if self.level == 4 and self.is_shooting_rope:
+            # Calculate rope extension
+            time_shooting_rope = current_time - self.rope_start_time
+            
+            # Update rope end position while it's extending
+            if not self.rope_reached_player and not self.is_pulling_player:
+                # Calculate direction vector to player
+                dx = player.rect.centerx - self.rect.centerx
+                dy = player.rect.centery - self.rect.centery
+                distance = math.sqrt(dx*dx + dy*dy)
+                
+                if distance > 0:
+                    # Normalize direction
+                    dx /= distance
+                    dy /= distance
+                    
+                    # Calculate new rope length but don't exceed max length
+                    self.rope_length = min(self.rope_length + self.rope_speed, self.rope_max_length)
+                    
+                    # Calculate new end position
+                    new_x = self.rect.centerx + dx * self.rope_length
+                    new_y = self.rect.centery + dy * self.rope_length
+                    
+                    # Check if there's a clear line of sight to the new position
+                    has_line_of_sight = self.check_line_of_sight(
+                        self.rect.centerx, self.rect.centery,
+                        new_x, new_y,
+                        player.level
+                    )
+                    
+                    if has_line_of_sight:
+                        # Update rope end position
+                        self.rope_end_pos = (new_x, new_y)
+                        
+                        # Check if rope reached player
+                        player_rect = pygame.Rect(player.rect.x, player.rect.y, player.rect.width, player.rect.height)
+                        rope_end_rect = pygame.Rect(new_x - 5, new_y - 5, 10, 10)
+                        if rope_end_rect.colliderect(player_rect):
+                            # Rope reached player, start pulling
+                            self.rope_reached_player = True
+                            self.is_pulling_player = True
+                            self.pull_start_time = current_time
+                            print(f"Rope reached player! Starting pull at {current_time}")
+                    else:
+                        # Hit a wall, stop extending rope
+                        print(f"Rope hit a wall at length {self.rope_length}")
+                        self.is_shooting_rope = False
+            
+            # Handle player pulling if rope has reached player
+            if self.is_pulling_player:
+                time_pulling = current_time - self.pull_start_time
+                
+                if time_pulling < self.pull_duration:
+                    # Calculate pull direction
+                    dx = self.rect.centerx - player.rect.x
+                    dy = self.rect.centery - player.rect.y
+                    distance = math.sqrt(dx*dx + dy*dy)
+                    
+                    if distance > 0:
+                        # Normalize and scale by pull speed
+                        dx = dx / distance * self.rope_pull_speed
+                        dy = dy / distance * self.rope_pull_speed
+                        
+                        # Move player toward boss
+                        player.rect.x += dx
+                        player.rect.y += dy
+                        
+                        # Keep rope end at player position
+                        self.rope_end_pos = (player.rect.centerx, player.rect.centery)
+                else:
+                    # Pulling complete
+                    self.is_pulling_player = False
+                    self.is_shooting_rope = False
+                    print(f"Finished pulling player at {current_time}")
+            
+            # End rope shooting after its duration
+            if time_shooting_rope > self.rope_duration and not self.is_pulling_player:
+                self.is_shooting_rope = False
+                print(f"Rope shooting ended at {current_time}")
+                
         # Level 5 boss casting mode logic
         if (self.level == 5 or self.level == 8) and self.has_spotted_player:
             if not self.casting_mode:
@@ -4125,7 +4231,176 @@ class Boss(Enemy):
         if self.level == 9 and self.eggs:
             for egg in self.eggs:
                 egg.draw(surface)
-
+        
+        # Draw rope for level 4 boss
+        if self.level == 4 and self.is_shooting_rope and self.rope_end_pos:
+            current_time = pygame.time.get_ticks()
+            
+            # Get rope start position (boss center)
+            rope_start = (self.rect.centerx, self.rect.centery)
+            rope_end = self.rope_end_pos
+            
+            # Calculate rope parameters
+            rope_length = math.sqrt((rope_end[0] - rope_start[0])**2 + (rope_end[1] - rope_start[1])**2)
+            segments = max(3, int(rope_length / 10))  # One segment every 10 pixels, minimum 3
+            
+            # Create a semi-transparent surface for the rope
+            width = abs(rope_start[0] - rope_end[0]) + 10
+            height = abs(rope_start[1] - rope_end[1]) + 10
+            rope_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+            
+            # Determine surface position and local coordinates
+            rope_x = min(rope_start[0], rope_end[0]) - 5
+            rope_y = min(rope_start[1], rope_end[1]) - 5
+            
+            # Calculate local coordinates within rope surface
+            local_start = (
+                rope_start[0] - rope_x,
+                rope_start[1] - rope_y
+            )
+            local_end = (
+                rope_end[0] - rope_x,
+                rope_end[1] - rope_y
+            )
+            
+            # Draw segments with slight variation for realistic rope effect
+            prev_point = local_start
+            
+            # Use pulsing animation for the rope
+            pulse = math.sin(current_time / 100) * 2
+            
+            # Draw rope with bright to dark blue gradient
+            for i in range(1, segments + 1):
+                # Calculate straight segment end point
+                t = i / segments
+                straight_x = local_start[0] + t * (local_end[0] - local_start[0])
+                straight_y = local_start[1] + t * (local_end[1] - local_start[1])
+                
+                # Add slight variation perpendicular to rope direction
+                if i < segments:  # Don't modify the end point
+                    # Calculate perpendicular vector
+                    dx = local_end[0] - local_start[0]
+                    dy = local_end[1] - local_start[1]
+                    length = math.sqrt(dx*dx + dy*dy)
+                    if length > 0:
+                        # Normalize and rotate 90 degrees
+                        perpendicular_x = -dy / length
+                        perpendicular_y = dx / length
+                        
+                        # Add variation based on segment and time
+                        variation = math.sin(i + current_time / 200) * pulse
+                        straight_x += perpendicular_x * variation
+                        straight_y += perpendicular_y * variation
+                
+                # Calculate color (gradient from blue to dark blue)
+                blue = 255 - int(180 * t)  # Fades from 255 to 75
+                segment_color = (50, 150, blue, 255)
+                
+                # Draw rope segment
+                pygame.draw.line(rope_surface, segment_color, prev_point, (straight_x, straight_y), 4)
+                prev_point = (straight_x, straight_y)
+            
+            # Draw energy particles along the rope for visual effect
+            for i in range(segments):
+                if random.random() < 0.3:  # 30% chance per segment
+                    t = (i + random.random()) / segments
+                    particle_x = local_start[0] + t * (local_end[0] - local_start[0])
+                    particle_y = local_start[1] + t * (local_end[1] - local_start[1])
+                    
+                    # Calculate color (brighter blue)
+                    particle_color = (100, 200, 255, 200)
+                    
+                    # Draw particle
+                    pygame.draw.circle(rope_surface, particle_color, 
+                                    (int(particle_x), int(particle_y)), random.randint(2, 4))
+            
+            # Draw rope end with a hook/claw effect if it has reached the player
+            if self.rope_reached_player:
+                # Draw a glowing circle at the end
+                glow_colors = [
+                    (200, 220, 255, 50),  # Outer glow
+                    (150, 200, 255, 100),  # Middle glow
+                    (100, 180, 255, 200)   # Inner glow
+                ]
+                
+                for i, color in enumerate(glow_colors):
+                    radius = 7 - i*2
+                    pygame.draw.circle(rope_surface, color, local_end, radius)
+            
+            # Blit the rope surface onto the main surface
+            surface.blit(rope_surface, (rope_x, rope_y))
+        
+        # Draw shield mode effect for level 7 boss (based on level 4)
+        if self.level == 7 and self.defensive_mode:
+            current_time = pygame.time.get_ticks()
+            
+            # Create an expanding shield effect (grows to 300% of original size instead of 200%)
+            base_shield_size = self.image.get_width() * 1.2  # Base size (same as level 4)
+            expansion_factor = 1.0 + (self.shield_growth * 2.0)  # Grows from 1x to 3x (300% growth)
+            shield_pulse = 0.1 * math.sin(current_time / 100)  # Subtle pulsing effect
+            shield_radius = int(base_shield_size / 2 * expansion_factor * (1 + shield_pulse))
+            
+            # Store the current shield radius for collision detection
+            self.shield_radius = shield_radius
+            
+            # Create a transparent surface for the shield
+            shield_surface = pygame.Surface((shield_radius * 2, shield_radius * 2), pygame.SRCALPHA)
+            
+            # Purple shield color with pulsing opacity (different from level 4's blue)
+            shield_alpha = int(100 + 50 * math.sin(current_time / 150))
+            
+            # Change shield color if damage was just reflected - make it brighter
+            if hasattr(self, 'reflected_damage') and self.reflected_damage > 0:
+                shield_color = (150, 50, 255, shield_alpha + 50)  # Brighter purple shield
+                # Also add an extra outer ring to show reflection
+                reflection_radius = shield_radius + 10
+                pygame.draw.circle(shield_surface, (255, 255, 255, shield_alpha // 2), 
+                                  (shield_radius, shield_radius), reflection_radius, 3)
+            else:
+                shield_color = (128, 0, 255, shield_alpha)  # Regular purple shield
+            
+            # Draw shield
+            center = (shield_radius, shield_radius)
+            pygame.draw.circle(shield_surface, shield_color, center, shield_radius, 5)  # Outline shield
+            
+            # Draw energy lines within the shield
+            for i in range(8):  # 8 energy lines
+                angle = i * math.pi / 4 + current_time / 500  # Rotate over time
+                start_x = center[0] + math.cos(angle) * (shield_radius * 0.3)
+                start_y = center[1] + math.sin(angle) * (shield_radius * 0.3)
+                end_x = center[0] + math.cos(angle) * (shield_radius * 0.9)
+                end_y = center[1] + math.sin(angle) * (shield_radius * 0.9)
+                
+                line_color = (200, 100, 255, shield_alpha)
+                pygame.draw.line(shield_surface, line_color, (start_x, start_y), (end_x, end_y), 2)
+            
+            # Draw energy particles
+            for _ in range(5):  # Add 5 particles
+                angle = random.uniform(0, math.pi * 2)
+                dist = random.uniform(shield_radius * 0.5, shield_radius * 0.9)
+                particle_x = center[0] + math.cos(angle) * dist
+                particle_y = center[1] + math.sin(angle) * dist
+                particle_size = random.randint(2, 4)
+                
+                particle_color = (220, 150, 255, 200)
+                pygame.draw.circle(shield_surface, particle_color, 
+                                  (int(particle_x), int(particle_y)), particle_size)
+            
+            # Position and draw the shield
+            shield_x = draw_x + self.image.get_width()//2 - shield_radius
+            shield_y = draw_y + self.image.get_height()//2 - shield_radius
+            surface.blit(shield_surface, (shield_x, shield_y))
+        
+        # Draw projectiles for level 2, 5, 6 and 8 bosses
+        if self.level in [2, 5, 6, 8] and self.projectiles:
+            for projectile in self.projectiles:
+                projectile.draw(surface)
+                
+        # Draw projectiles for level 7 boss
+        if self.level == 7 and self.projectiles:
+            for projectile in self.projectiles:
+                projectile.draw(surface)
+    
     def cast_projectiles(self, player):
         """Create projectiles that become stationary after a delay for Boss 5 and 8"""
         if self.level != 5 and self.level != 8:
@@ -4726,7 +5001,7 @@ class CursedShield(pygame.sprite.Sprite):
         self.last_damage_time = 0
         
         # Duration for the shield to remain active
-        self.duration = 8000  # Changed from 2000 to 8000 (8 seconds)
+        self.duration = 18000  # Changed from 8000 to 18000 (18 seconds)
         self.creation_time = pygame.time.get_ticks()
         
         # Create a surface for the shield
