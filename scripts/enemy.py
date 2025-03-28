@@ -4921,7 +4921,7 @@ class PoisonTrail(pygame.sprite.Sprite):
         self.creator = creator  # Store reference to the boss that created this trail
         
         # Create a larger surface to accommodate the glow effect
-        glow_size = int(size * 1.5)
+        glow_size = int(size * 2)  # Larger surface for better glow distribution
         self.image = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
         
         # Try to load a random blood puddle texture first
@@ -4933,7 +4933,7 @@ class PoisonTrail(pygame.sprite.Sprite):
                 if blood_files:
                     selected_blood = random.choice(blood_files)
                     blood_texture = self.asset_manager.load_image(
-                        selected_blood, scale=(glow_size, glow_size)
+                        selected_blood, scale=(size, size)  # Smaller scale for the base texture
                     )
         except Exception as e:
             print(f"Failed to load blood puddle texture for poison trail: {e}")
@@ -4942,27 +4942,34 @@ class PoisonTrail(pygame.sprite.Sprite):
         center_point = (glow_size // 2, glow_size // 2)
             
         if blood_texture:
-            # Use the blood texture as the base
-            self.image = blood_texture.copy()
+            # Position the blood texture at the center of our larger surface
+            blood_rect = blood_texture.get_rect(center=center_point)
             
             # Create a green overlay to tint the blood texture
-            green_overlay = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
-            green_overlay.fill((0, 255, 0, 100))  # Semi-transparent green
-            self.image.blit(green_overlay, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            green_overlay = pygame.Surface(blood_texture.get_size(), pygame.SRCALPHA)
+            green_overlay.fill((0, 255, 0, 170))  # Semi-transparent green
             
-            # Add a green glow around the edges
-            overlay = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
+            # Apply the green tint to the blood texture
+            tinted_blood = blood_texture.copy()
+            tinted_blood.blit(green_overlay, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
             
-            # Add a green pulsing glow around the puddle
-            for i in range(6):
-                glow_radius = size // 2 + (5 - i) * 3
-                glow_alpha = 20 + i * 10  # More transparent on outside
-                # Use green glow for poison
-                glow_col = (50, 200, 50, glow_alpha)
-                pygame.draw.circle(overlay, glow_col, center_point, glow_radius)
+            # Draw the tinted blood texture on our main surface
+            self.image.blit(tinted_blood, blood_rect)
             
-            # Apply the overlay
-            self.image.blit(overlay, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+            # Create a separate surface for the glow effect
+            glow_overlay = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
+            
+            # Draw a smooth gradient glow using multiple circles with decreasing opacity
+            for i in range(12):  # More steps for a smoother gradient
+                glow_radius = (size // 2) + i * 4  # Gradually increasing radius
+                # Decreasing alpha as we move outward
+                glow_alpha = max(5, 50 - i * 5)  # Start at 50 alpha, decrease by 5 each step
+                # Use softer green glow for poison
+                glow_col = (40, 180, 40, glow_alpha)
+                pygame.draw.circle(glow_overlay, glow_col, center_point, glow_radius)
+            
+            # Apply the glow overlay
+            self.image.blit(glow_overlay, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
             
             # Add some toxic bubble details
             for _ in range(6):
@@ -4978,12 +4985,20 @@ class PoisonTrail(pygame.sprite.Sprite):
         else:
             # Fallback to a manually drawn poison puddle if no texture
             
-            # Draw the glow around the edges of the main puddle
-            for i in range(6):
-                glow_radius = size // 2 + (5 - i) * 3
-                glow_alpha = 20 + i * 10
-                glow_col = (50, 200, 50, glow_alpha)  # Green glow for poison
-                pygame.draw.circle(self.image, glow_col, center_point, glow_radius)
+            # Create a separate surface for the glow effect
+            glow_overlay = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
+            
+            # Draw a smooth gradient glow using multiple circles with decreasing opacity
+            for i in range(12):  # More steps for a smoother gradient
+                glow_radius = (size // 2) + i * 4  # Gradually increasing radius
+                # Decreasing alpha as we move outward
+                glow_alpha = max(5, 50 - i * 5)  # Start at 50 alpha, decrease by 5 each step
+                # Use softer green glow for poison
+                glow_col = (40, 180, 40, glow_alpha)
+                pygame.draw.circle(glow_overlay, glow_col, center_point, glow_radius)
+            
+            # Apply the glow overlay
+            self.image.blit(glow_overlay, (0, 0))
             
             # Main puddle colors - toxic green
             outer_color = (40, 150, 40, 190)  # Dark toxic green
@@ -5011,10 +5026,11 @@ class PoisonTrail(pygame.sprite.Sprite):
                 bubble_color = (220, 255, 150, 230)  # Yellowish-green for toxic effect
                 pygame.draw.circle(self.image, bubble_color, (dot_x, dot_y), dot_size)
         
+        # Create a properly positioned rect
         self.rect = self.image.get_rect(center=(x, y))
         self.true_center = (x, y)  # Store the exact center for accurate positioning
         
-        # Pulse effect
+        # Add pulsing glow effect
         self.damage = damage
         self.creation_time = pygame.time.get_ticks()
         self.duration = 12000  # 12 seconds lifetime (reduced from 15)
@@ -5028,6 +5044,7 @@ class PoisonTrail(pygame.sprite.Sprite):
         # Add pulse/glow effect
         self.pulse_time = random.uniform(0, math.pi * 2)  # Random start phase
         self.pulse_speed = 0.08  # Speed of pulsing
+        self.base_image = self.image.copy()  # Store the original image for pulsing
 
     def update(self):
         # Check if the trail should disappear
@@ -5038,6 +5055,19 @@ class PoisonTrail(pygame.sprite.Sprite):
         self.pulse_time += self.pulse_speed
         if self.pulse_time > math.pi * 2:
             self.pulse_time -= math.pi * 2
+            
+        # Apply pulsing effect by creating a new image with pulsing glow
+        pulse_factor = 0.15 * math.sin(self.pulse_time) + 1.0  # Value between 0.85 and 1.15
+        
+        # Apply the pulse by creating a slightly larger/smaller version of the image
+        if hasattr(self, 'base_image'):
+            current_size = self.base_image.get_width()
+            new_size = int(current_size * pulse_factor)
+            self.image = pygame.transform.smoothscale(self.base_image, (new_size, new_size))
+            
+            # Ensure the rect stays centered at the same position
+            old_center = self.rect.center
+            self.rect = self.image.get_rect(center=old_center)
 
     def check_collision(self, rect):
         # Don't collide with the boss that created this trail
