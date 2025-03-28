@@ -20,8 +20,92 @@ from scripts.particle import ParticleSystem  # Import our new particle system
 class Game:
     def __init__(self, start_fullscreen=False):
         global WINDOW_WIDTH, WINDOW_HEIGHT
+        
+        # Initialize pygame
         pygame.init()
+        
+        # Create screen
+        if start_fullscreen:
+            self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.FULLSCREEN)
+            self.fullscreen = True
+        else:
+            self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+            self.fullscreen = False
+            
+        # Set window title and icon
         pygame.display.set_caption("Mud Crawler")
+        
+        # Try to load icon
+        try:
+            icon_path = os.path.join(ASSET_PATH, "icon.ico")
+            if os.path.exists(icon_path):
+                icon = pygame.image.load(icon_path)
+                pygame.display.set_icon(icon)
+                print(f"Successfully loaded game icon: {icon_path}")
+        except Exception as e:
+            print(f"Failed to load game icon: {e}")
+            
+        # Initialize clock for controlling frame rate
+        self.clock = pygame.time.Clock()
+        
+        # Splash screen attributes
+        self.splash_start_time = 0
+        self.splash_image = None
+        self.original_splash_image = None
+        self.glitched_splash_image = None
+        self.glitch_next_frame = False
+        self.splash_duration = 3000  # 3 seconds
+        self.glitch_duration = 1500  # Show glitches for first 1.5 seconds
+        self.glitch_last_update = 0  # Time of last glitch update
+        self.glitch_update_rate = 50  # Update glitches every 50ms
+        
+        # Try to create a simple splash screen
+        try:
+            # Create a black screen with logo
+            self.splash_image = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+            self.splash_image.fill((0, 0, 0))
+            
+            # Add a simple gradient background
+            for y in range(WINDOW_HEIGHT):
+                for x in range(WINDOW_WIDTH):
+                    brightness = 30 + (y / WINDOW_HEIGHT) * 30
+                    self.splash_image.set_at((x, y), (int(brightness), int(brightness * 0.8), int(brightness * 0.5)))
+            
+            # Add "MUD CRAWLER" text
+            font_path = os.path.join(ASSET_PATH, "fonts/PixelatedEleganceRegular-ovyAA.ttf")
+            if os.path.exists(font_path):
+                font = pygame.font.Font(font_path, 72)
+            else:
+                font = pygame.font.Font(None, 72)
+            
+            logo_text = font.render("MUD CRAWLER", True, (255, 255, 255))
+            shadow_text = font.render("MUD CRAWLER", True, (0, 0, 0))
+            
+            # Position in center with shadow
+            text_x = (WINDOW_WIDTH - logo_text.get_width()) // 2
+            text_y = (WINDOW_HEIGHT - logo_text.get_height()) // 2
+            self.splash_image.blit(shadow_text, (text_x + 3, text_y + 3))
+            self.splash_image.blit(logo_text, (text_x, text_y))
+            
+            # Add "loading..." text at bottom
+            small_font = pygame.font.Font(None, 24)
+            loading_text = small_font.render("Loading...", True, (200, 200, 200))
+            self.splash_image.blit(loading_text, ((WINDOW_WIDTH - loading_text.get_width()) // 2, WINDOW_HEIGHT - 100))
+            
+            # Store the original splash image
+            self.original_splash_image = self.splash_image.copy()
+            
+            # Create a glitched version for visual effects
+            self.glitched_splash_image = self._apply_horizontal_glitch(self.original_splash_image.copy())
+            
+            print("Splash screen created successfully")
+        except Exception as e:
+            print(f"Failed to create splash screen: {e}")
+            # Create a minimal fallback
+            self.splash_image = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+            self.splash_image.fill((0, 0, 0))
+            self.original_splash_image = self.splash_image
+            self.glitched_splash_image = self.splash_image
         
         # Game configuration
         self.god_mode = False
@@ -359,6 +443,15 @@ class Game:
                         # Update button positions before showing options
                         self.menu.showing_options = True
                         self.menu._update_button_positions('options_menu')
+                    elif button_clicked == 'artworks':
+                        print("Artworks button clicked")
+                        # Show artworks menu
+                        self.menu.showing_artworks = True
+                        self.menu._update_button_positions('artworks_menu')
+                        # Remember the previously playing music to restore it later
+                        self.previous_music = self.sound_manager.current_music
+                        # Play music for the selected level
+                        self.play_artwork_music(self.menu.selected_level)
                     elif button_clicked == 'back':
                         print("Back button clicked")
                         # If we're in the controls menu, go back to options
@@ -366,6 +459,15 @@ class Game:
                             self.menu.showing_controls = False
                             self.menu.showing_options = True
                             self.menu._update_button_positions('options_menu')
+                        # If we're in the artworks menu, go back to main menu
+                        elif self.menu.showing_artworks:
+                            self.menu.showing_artworks = False
+                            self.menu._update_button_positions('main_menu')
+                            # Restore the previous music
+                            if hasattr(self, 'previous_music') and self.previous_music:
+                                self.sound_manager.play_music(self.previous_music)
+                            else:
+                                self.sound_manager.play_music('menu')
                         else:
                             # Otherwise normal back button behavior for options menu
                             self.menu.showing_options = False
@@ -393,7 +495,14 @@ class Game:
                     elif button_clicked == 'quit':
                         print("Quit button clicked")
                         self.running = False
-                    
+                    # Handle level selection in artworks menu
+                    elif button_clicked and button_clicked.startswith('level_'):
+                        # Extract level number from the button clicked
+                        level_num = int(button_clicked.split('_')[1])
+                        print(f"Selected level {level_num} in artworks menu")
+                        # Update music to match the selected level
+                        self.play_artwork_music(level_num)
+            
             if event.type == pygame.KEYDOWN:
                 # Print debug info on key press
                 print(f"Key pressed: {pygame.key.name(event.key)}")
@@ -529,23 +638,34 @@ class Game:
             current_time = pygame.time.get_ticks()
             
             # Initialize start time if not set
-            if self.splash_start_time is None:
+            if self.splash_start_time == 0:
                 self.splash_start_time = current_time
                 print(f"Splash screen started at time: {current_time}")
+                # Force an immediate glitch effect at the beginning
+                self.glitched_splash_image = self._apply_horizontal_glitch(self.original_splash_image)
+                self.glitch_last_update = current_time
+                self.splash_image = self.glitched_splash_image
+                self.glitch_next_frame = True
                 
             # Update glitch effect during the first 1.5 seconds
             if current_time - self.splash_start_time < self.glitch_duration:
                 # Update glitch effect at regular intervals
                 if current_time - self.glitch_last_update > self.glitch_update_rate:
                     print(f"Applying glitch effect at time: {current_time - self.splash_start_time}ms")
-                    self.glitched_splash_image = self._apply_horizontal_glitch(self.original_splash_image)
+                    self.glitched_splash_image = self._apply_horizontal_glitch(self.original_splash_image.copy())
                     self.glitch_last_update = current_time
                     self.splash_image = self.glitched_splash_image
+                    self.glitch_next_frame = True
+                else:
+                    # Reset glitch flag to occasionally show normal image between glitches
+                    if random.random() < 0.3:  # 30% chance to show normal image
+                        self.glitch_next_frame = False
             else:
                 if self.splash_image != self.original_splash_image:
                     print(f"Glitch effect ended at time: {current_time - self.splash_start_time}ms")
                     self.splash_image = self.original_splash_image
-                
+                    self.glitch_next_frame = False
+            
             # Check if splash duration has passed
             if current_time - self.splash_start_time >= self.splash_duration:
                 print(f"Splash screen complete at time: {current_time - self.splash_start_time}ms")
@@ -777,6 +897,8 @@ class Game:
                     if self.current_level == 10:
                         self.sound_manager.play_music('level10_boss')
                         print("Playing level 10 boss music")
+                        return
+                
         except Exception as e:
             print(f"Error during door transition: {e}")
             
@@ -1231,15 +1353,34 @@ class Game:
         # Clear screen first
         self.screen.fill(BLACK)
         
-        # Render based on game state
+        # Handle different game states
         if self.state == SPLASH_SCREEN:
-            if self.splash_image:
-                self.screen.blit(self.splash_image, (0, 0))
+            # Simple splash screen with generated logo
+            if self.splash_start_time == 0:
+                self.splash_start_time = pygame.time.get_ticks()
+            
+            # Skip splash screen after 3 seconds
+            current_time = pygame.time.get_ticks()
+            if current_time - self.splash_start_time > self.splash_duration:
+                print("Splash screen timed out, transitioning to menu")
+                self.state = MENU
+                # Start welcome screen music after splash screen
+                self.sound_manager.play_music('menu')
+                    
+            # Render the splash screen
+            if self.glitch_next_frame:
+                # Show a glitched version of the splash screen
+                self.screen.blit(self.glitched_splash_image, (0, 0))
+            else:
+                # Show the normal splash screen
+                self.screen.blit(self.original_splash_image, (0, 0))
         elif self.state == MENU:
             if self.menu.showing_controls:
                 self.menu.draw_controls_menu()
             elif self.menu.showing_options:
                 self.menu.draw_options_menu()
+            elif self.menu.showing_artworks:
+                self.menu.draw_artworks_menu()
             else:
                 self.menu.draw_main_menu()
         elif self.state == PLAYING:
@@ -1267,7 +1408,7 @@ class Game:
             mouse_pos = pygame.mouse.get_pos()
             mouse_text = font.render(f"Mouse: {mouse_pos}", True, WHITE)
             self.screen.blit(mouse_text, (10, 30))
-            
+        
         # Actually update the display
         pygame.display.flip()
         
@@ -1792,6 +1933,31 @@ class Game:
         else:
             self.sound_manager.play_music('game')
             print(f"Playing standard game music for level {self.current_level}")
+
+    def play_artwork_music(self, level_num):
+        """Play the music appropriate for the selected level in the artworks menu"""
+        if level_num == 1 or level_num == 2:
+            self.sound_manager.play_music('game')
+            print(f"Playing standard game music for level {level_num} artwork")
+        elif level_num == 3 or level_num == 4:
+            self.sound_manager.play_music('level3')
+            print(f"Playing level 3-4 music for level {level_num} artwork")
+        elif level_num == 5 or level_num == 6:
+            self.sound_manager.play_music('level5')
+            print(f"Playing level 5-6 music for level {level_num} artwork")
+        elif level_num == 7 or level_num == 8:
+            self.sound_manager.play_music('level7')
+            print(f"Playing level 7-8 music for level {level_num} artwork")
+        elif level_num == 9:
+            self.sound_manager.play_music('level9')
+            print(f"Playing level 9 music for level {level_num} artwork")
+        elif level_num == 10:
+            self.sound_manager.play_music('level10')
+            print(f"Playing level 10 music for level {level_num} artwork")
+        else:
+            # Default fallback
+            self.sound_manager.play_music('game')
+            print(f"Playing default game music for unknown level {level_num}")
 
     def warp_to_level(self, level_number):
         """DEVELOPMENT FEATURE: Warps the player to the specified level"""

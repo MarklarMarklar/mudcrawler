@@ -427,6 +427,7 @@ class Menu:
             'resume': Button(self.center_x, 0, self.button_width, self.button_height, "Resume", font_size=32),
             'restart': Button(self.center_x, 0, self.button_width, self.button_height, "Restart", font_size=32),
             'options': Button(self.center_x, 0, self.button_width, self.button_height, "Options", font_size=32),
+            'artworks': Button(self.center_x, 0, self.button_width, self.button_height, "Artworks", font_size=32),
             'quit': Button(self.center_x, 0, self.button_width, self.button_height, "Quit", font_size=32),
             'back': Button(self.center_x, 0, self.button_width, self.button_height, "Back", font_size=32),
             'fullscreen': Button(self.center_x, 0, self.button_width, self.button_height, "Fullscreen: Off", font_size=28),
@@ -436,6 +437,7 @@ class Menu:
         # Track menu states
         self.showing_options = False
         self.showing_controls = False
+        self.showing_artworks = False
         self.in_pause_menu = False
         self.in_game_over = False
         self.in_victory = False
@@ -492,6 +494,36 @@ class Menu:
         self.show_credits = False
         self.credits_started_time = 0
         
+        # Artworks menu variables
+        self.selected_level = 1
+        self.artworks_bg = None
+        self.level_buttons = []
+        self.current_artwork_index = 0
+        self.artwork_images = []
+        
+        # Create arrows for level navigation instead of individual buttons
+        screen_center_x = WINDOW_WIDTH // 2
+        self.left_level_arrow = Button(screen_center_x - 70, 50, 40, 40, "<", font_size=28)
+        self.right_level_arrow = Button(screen_center_x + 30, 50, 40, 40, ">", font_size=28)
+        
+        # Try to load artwork background
+        try:
+            artwork_bg_path = os.path.join(ASSET_PATH, "images/artwork.png")
+            if os.path.exists(artwork_bg_path):
+                self.artworks_bg = self.asset_manager.load_image(artwork_bg_path, scale=(WINDOW_WIDTH, WINDOW_HEIGHT))
+                print(f"Successfully loaded artworks background: {artwork_bg_path}")
+        except Exception as e:
+            print(f"Failed to load artworks background: {e}")
+            # Create a default background if loading fails
+            self.artworks_bg = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+            self.artworks_bg.fill((30, 30, 50))
+            # Add some simple decoration
+            for i in range(0, WINDOW_HEIGHT, 40):
+                pygame.draw.line(self.artworks_bg, (40, 40, 70), (0, i), (WINDOW_WIDTH, i), 1)
+            for i in range(0, WINDOW_WIDTH, 40):
+                pygame.draw.line(self.artworks_bg, (40, 40, 70), (i, 0), (i, WINDOW_HEIGHT), 1)
+        
+            
     def _update_button_positions(self, menu_type):
         """Update button positions based on the menu type being displayed"""
         if menu_type == 'main_menu':
@@ -502,8 +534,11 @@ class Menu:
             self.buttons['options'].rect.x = self.center_x
             self.buttons['options'].rect.y = WINDOW_HEIGHT // 2 + 70
             
+            self.buttons['artworks'].rect.x = self.center_x
+            self.buttons['artworks'].rect.y = WINDOW_HEIGHT // 2 + 140
+            
             self.buttons['quit'].rect.x = self.center_x
-            self.buttons['quit'].rect.y = WINDOW_HEIGHT // 2 + 140
+            self.buttons['quit'].rect.y = WINDOW_HEIGHT // 2 + 210
             
         elif menu_type == 'pause_menu':
             # Position buttons for pause menu
@@ -542,6 +577,11 @@ class Menu:
             
             self.buttons['quit'].rect.x = self.center_x
             self.buttons['quit'].rect.y = WINDOW_HEIGHT // 2 + 130
+            
+        elif menu_type == 'artworks_menu':
+            # Position back button for artworks menu
+            self.buttons['back'].rect.x = self.center_x
+            self.buttons['back'].rect.y = WINDOW_HEIGHT - 70
     
     def draw_main_menu(self):
         # Update button positions first
@@ -594,6 +634,7 @@ class Menu:
         # Draw buttons with enhanced visibility
         self.buttons['start'].draw(self.screen)
         self.buttons['options'].draw(self.screen)
+        self.buttons['artworks'].draw(self.screen)
         self.buttons['quit'].draw(self.screen)
         
         # Draw instructions with pixelated font
@@ -777,46 +818,53 @@ class Menu:
             self.video_player = None
     
     def handle_event(self, event):
-        # Define which buttons should be active based on current state
+        """Handle a pygame event and return any button that was clicked"""
+        # Determine which buttons should be active based on menu state
         active_buttons = []
         
-        if self.showing_controls:
-            # Only back button is active in controls menu
-            active_buttons = ['back']
-        elif self.showing_options:
-            # Fullscreen, controls and back buttons are active in options menu
+        if self.showing_options:
             active_buttons = ['fullscreen', 'controls', 'back']
-        elif hasattr(self, 'in_pause_menu') and self.in_pause_menu:
-            # Pause menu buttons
+        elif self.showing_controls:
+            active_buttons = ['back']
+        elif self.showing_artworks:
+            active_buttons = ['back']
+        elif self.in_pause_menu:
             active_buttons = ['resume', 'restart', 'options', 'quit']
-        elif hasattr(self, 'in_game_over') and self.in_game_over:
-            # Game over buttons
+        elif self.in_game_over or self.in_victory:
             active_buttons = ['restart', 'quit']
-        elif hasattr(self, 'in_victory') and self.in_victory:
-            # On victory screen, handle click or key press to exit credits and show buttons
-            if event.type == pygame.MOUSEBUTTONDOWN or (event.type == pygame.KEYDOWN and event.key in [pygame.K_RETURN, pygame.K_ESCAPE, pygame.K_SPACE]):
-                self.show_credits = False
-                return 'restart'  # Return to main menu or restart
-            return None  # No buttons active during credits
         else:
             # Default to main menu buttons
-            active_buttons = ['start', 'options', 'quit']
-            
-        # If it's a mouse move or click event, update hover states and check clicks for all active buttons
-        if event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN):
-            # Get current mouse position
+            active_buttons = ['start', 'options', 'artworks', 'quit']
+        
+        # Get current mouse position for hover check
+        if event.type == pygame.MOUSEMOTION:
             mouse_pos = pygame.mouse.get_pos()
-            
-            # Update hover states for all buttons (even on click events)
-            # This ensures hover states are updated before processing clicks
-            if event.type == pygame.MOUSEMOTION:
-                for button_name in active_buttons:
-                    if button_name in self.buttons:
-                        self.buttons[button_name].is_hovered = self.buttons[button_name].rect.collidepoint(mouse_pos)
-            
-            # Check for clicks (even without prior mouse movement)
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click
-                print(f"Menu received click at {mouse_pos}")
+            for button_name, button in self.buttons.items():
+                previous_hover = button.is_hovered
+                button.is_hovered = button.rect.collidepoint(mouse_pos)
+                
+                # Debug logging when hover state changes
+                if DEBUG_MODE and previous_hover != button.is_hovered:
+                    if button.is_hovered:
+                        print(f"Mouse hovering over button: {button_name}")
+                    else:
+                        print(f"Mouse left button: {button_name}")
+        
+        # If we're showing the artworks menu, handle its specialized events
+        if self.showing_artworks:
+            artworks_action = self.handle_artworks_navigation(event)
+            if artworks_action:
+                # If the action is a level selection, return that
+                if artworks_action.startswith("level_"):
+                    return artworks_action
+                # Otherwise, just return None as we handled a navigation action
+                return None
+        
+        # For mouse click events
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Left mouse button
+                mouse_pos = event.pos
+                print(f"Menu mouse click at {mouse_pos}")
                 # Check all active buttons for click collision
                 for button_name in active_buttons:
                     if button_name in self.buttons:
@@ -830,7 +878,7 @@ class Menu:
                                     self.video_player.stop()
                             
                             return button_name
-                
+        
         # Handle all other events through normal button processing
         for button_name in active_buttons:
             if button_name in self.buttons and self.buttons[button_name].handle_event(event):
@@ -896,6 +944,252 @@ class Menu:
         
         # Draw back button
         self.buttons['back'].draw(self.screen)
+
+    def draw_artworks_menu(self):
+        """Draw the artworks gallery menu"""
+        # Update button positions first
+        self._update_button_positions('artworks_menu')
+        
+        # Draw the artwork background
+        if self.artworks_bg:
+            self.screen.blit(self.artworks_bg, (0, 0))
+        else:
+            # Fallback to a simple background
+            self.screen.fill((30, 30, 50))
+        
+        # Center the level selector in the top area of the screen
+        screen_center_x = WINDOW_WIDTH // 2
+        
+        # Update arrow button positions to be centered
+        self.left_level_arrow.rect.x = screen_center_x - 70  # 40px left of center (plus offset for button width)
+        self.left_level_arrow.rect.y = 50
+        self.right_level_arrow.rect.x = screen_center_x + 30  # 40px right of center
+        self.right_level_arrow.rect.y = 50
+        
+        # Draw level selector with arrows and number display
+        self.left_level_arrow.draw(self.screen)
+        self.right_level_arrow.draw(self.screen)
+        
+        # Draw level number between arrows with decorative background
+        level_bg = pygame.Surface((60, 40), pygame.SRCALPHA)
+        level_bg.fill((80, 60, 120, 180))  # Semi-transparent purple background
+        pygame.draw.rect(level_bg, (255, 255, 100), pygame.Rect(0, 0, 60, 40), 2)  # Yellow border
+        
+        # Position the level number background between the arrows in the center
+        level_bg_x = screen_center_x - 30  # Center the 60px background
+        level_bg_y = 50  # Same Y as arrows
+        self.screen.blit(level_bg, (level_bg_x, level_bg_y))
+        
+        # Draw the level number on top of the background
+        level_text = self.font.render(f"{self.selected_level}", True, (255, 255, 100))
+        level_rect = level_text.get_rect(center=(screen_center_x, level_bg_y + 20))  # Center in the background
+        self.screen.blit(level_text, level_rect)
+        
+        # Label for the level selector
+        level_label = self.instruction_font.render("Level", True, (200, 200, 200))
+        level_label_rect = level_label.get_rect(center=(screen_center_x, 30))
+        self.screen.blit(level_label, level_label_rect)
+        
+        # Load artwork images for the selected level if not already loaded
+        if not self.artwork_images or len(self.artwork_images) == 0:
+            self.load_artwork_images(self.selected_level)
+        
+        # Display the current artwork image
+        if self.artwork_images and len(self.artwork_images) > 0:
+            # Center the image in the main display area
+            current_img = self.artwork_images[self.current_artwork_index]
+            # Scale image to fit within the display area while maintaining aspect ratio
+            display_area_width = WINDOW_WIDTH - 100
+            display_area_height = WINDOW_HEIGHT - 150
+            img_width, img_height = current_img.get_size()
+            
+            # Calculate scale factor to fit within display area
+            scale_w = display_area_width / img_width
+            scale_h = display_area_height / img_height
+            scale = min(scale_w, scale_h)
+            
+            # Scale image
+            new_width = int(img_width * scale)
+            new_height = int(img_height * scale)
+            scaled_img = pygame.transform.scale(current_img, (new_width, new_height))
+            
+            # Position in center of display area
+            img_x = (WINDOW_WIDTH - new_width) // 2
+            img_y = 120 + (display_area_height - new_height) // 2
+            
+            self.screen.blit(scaled_img, (img_x, img_y))
+            
+            # Draw navigation arrows if there are multiple images
+            if len(self.artwork_images) > 1:
+                # Calculate vertical center position for the navigation buttons
+                vert_center = img_y + new_height // 2
+                
+                # Left arrow
+                if self.current_artwork_index > 0:
+                    left_text = self.instruction_font.render("< Prev", True, (255, 255, 100))
+                    left_rect = left_text.get_rect(midright=(img_x - 20, vert_center))
+                    self.screen.blit(left_text, left_rect)
+                
+                # Right arrow
+                if self.current_artwork_index < len(self.artwork_images) - 1:
+                    right_text = self.instruction_font.render("Next >", True, (255, 255, 100))
+                    right_rect = right_text.get_rect(midleft=(img_x + new_width + 20, vert_center))
+                    self.screen.blit(right_text, right_rect)
+        else:
+            # Display message if no images are available
+            no_img_text = self.font.render("No artwork available for this level", True, WHITE)
+            no_img_rect = no_img_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
+            self.screen.blit(no_img_text, no_img_rect)
+        
+        # Draw back button
+        self.buttons['back'].draw(self.screen)
+    
+    def load_artwork_images(self, level):
+        """Load artwork images for the selected level"""
+        self.artwork_images = []
+        self.current_artwork_index = 0
+        
+        # Load enemy sprites
+        enemy_path = None
+        if level == 1:
+            enemy_path = os.path.join(ENEMY_SPRITES_PATH, "slimes")
+        elif level == 2:
+            enemy_path = os.path.join(ENEMY_SPRITES_PATH, "skeletons")
+        elif level == 3:
+            enemy_path = os.path.join(ENEMY_SPRITES_PATH, "ghost")
+        elif level == 4:
+            enemy_path = os.path.join(ENEMY_SPRITES_PATH, "goblins")
+        elif level == 5:
+            enemy_path = os.path.join(ENEMY_SPRITES_PATH, "knights")
+        elif level == 6:
+            enemy_path = os.path.join(ENEMY_SPRITES_PATH, "wizard")
+        elif level == 7:
+            enemy_path = os.path.join(ENEMY_SPRITES_PATH, "demon")
+        elif level == 8:
+            enemy_path = os.path.join(ENEMY_SPRITES_PATH, "dragon")
+        elif level == 9:
+            enemy_path = os.path.join(ENEMY_SPRITES_PATH, "shadows")
+        elif level == 10:
+            enemy_path = os.path.join(ENEMY_SPRITES_PATH, "elfs")
+        
+        # Load enemy images - use a modified path key to avoid affecting game sprites
+        if enemy_path and os.path.exists(enemy_path):
+            for file in os.listdir(enemy_path):
+                if file.endswith('.png') and not file.startswith('attack_') and not file.startswith('walk_') and not file.startswith('idle_'):
+                    img_path = os.path.join(enemy_path, file)
+                    try:
+                        # Load the original image without scaling
+                        original_img = pygame.image.load(img_path).convert_alpha()
+                        # Create a copy for the artwork display
+                        img = original_img.copy()
+                        # Add to artwork images
+                        self.artwork_images.append(img)
+                    except Exception as e:
+                        print(f"Failed to load enemy artwork: {img_path}, Error: {e}")
+        
+        # Load boss sprite - use a modified path key to avoid affecting game sprites
+        boss_img_path = os.path.join(BOSS_SPRITES_PATH, f"boss_{level}.png")
+        if os.path.exists(boss_img_path):
+            try:
+                # Load the original image without scaling
+                original_boss_img = pygame.image.load(boss_img_path).convert_alpha()
+                # Create a copy for the artwork display
+                boss_img = original_boss_img.copy()
+                # Add to artwork images
+                self.artwork_images.append(boss_img)
+            except Exception as e:
+                print(f"Failed to load boss artwork: {boss_img_path}, Error: {e}")
+    
+    def handle_artworks_navigation(self, event):
+        """Handle navigation in the artworks menu"""
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Left mouse button
+                # Check level navigation arrows 
+                if self.left_level_arrow.rect.collidepoint(event.pos) and self.selected_level > 1:
+                    self.selected_level -= 1
+                    self.load_artwork_images(self.selected_level)
+                    self.current_artwork_index = 0  # Reset to first image when changing levels
+                    return f"level_{self.selected_level}"
+                
+                if self.right_level_arrow.rect.collidepoint(event.pos) and self.selected_level < 10:
+                    self.selected_level += 1
+                    self.load_artwork_images(self.selected_level)
+                    self.current_artwork_index = 0  # Reset to first image when changing levels
+                    return f"level_{self.selected_level}"
+                
+                # Check left/right navigation for images
+                if len(self.artwork_images) > 0 and self.artwork_images:
+                    # Get the current image dimensions and position
+                    current_img = self.artwork_images[self.current_artwork_index]
+                    display_area_width = WINDOW_WIDTH - 100
+                    display_area_height = WINDOW_HEIGHT - 150
+                    img_width, img_height = current_img.get_size()
+                    
+                    # Calculate scale factor to fit within display area
+                    scale_w = display_area_width / img_width
+                    scale_h = display_area_height / img_height
+                    scale = min(scale_w, scale_h)
+                    
+                    # Get scaled dimensions
+                    new_width = int(img_width * scale)
+                    new_height = int(img_height * scale)
+                    
+                    # Position in center of display area
+                    img_x = (WINDOW_WIDTH - new_width) // 2
+                    img_y = 120 + (display_area_height - new_height) // 2
+                    vert_center = img_y + new_height // 2
+                    
+                    # Create click areas for prev/next buttons
+                    if len(self.artwork_images) > 1:
+                        # Left navigation area (prev)
+                        left_area = pygame.Rect(img_x - 100, vert_center - 30, 80, 60)
+                        if left_area.collidepoint(event.pos) and self.current_artwork_index > 0:
+                            self.current_artwork_index -= 1
+                            return "prev_image"
+                        
+                        # Right navigation area (next)
+                        right_area = pygame.Rect(img_x + new_width + 20, vert_center - 30, 80, 60)
+                        if right_area.collidepoint(event.pos) and self.current_artwork_index < len(self.artwork_images) - 1:
+                            self.current_artwork_index += 1
+                            return "next_image"
+        
+        # Handle keyboard navigation
+        elif event.type == pygame.KEYDOWN:
+            # Left/right arrows for image navigation
+            if event.key == pygame.K_LEFT and self.current_artwork_index > 0:
+                self.current_artwork_index -= 1
+                return "prev_image"
+            elif event.key == pygame.K_RIGHT and self.current_artwork_index < len(self.artwork_images) - 1:
+                self.current_artwork_index += 1
+                return "next_image"
+            
+            # Up/down arrows for level navigation
+            elif event.key == pygame.K_UP and self.selected_level < 10:
+                self.selected_level += 1
+                self.load_artwork_images(self.selected_level)
+                self.current_artwork_index = 0  # Reset to first image when changing levels
+                return f"level_{self.selected_level}"
+            elif event.key == pygame.K_DOWN and self.selected_level > 1:
+                self.selected_level -= 1
+                self.load_artwork_images(self.selected_level)
+                self.current_artwork_index = 0  # Reset to first image when changing levels
+                return f"level_{self.selected_level}"
+            
+            # Number keys for direct level selection
+            if event.key >= pygame.K_1 and event.key <= pygame.K_9:
+                level = event.key - pygame.K_1 + 1
+                if level <= 10:  # Make sure it's a valid level
+                    self.selected_level = level
+                    self.load_artwork_images(self.selected_level)
+                    self.current_artwork_index = 0  # Reset to first image when changing levels
+                    return f"level_{self.selected_level}"
+            elif event.key == pygame.K_0:
+                self.selected_level = 10
+                self.load_artwork_images(self.selected_level)
+                self.current_artwork_index = 0  # Reset to first image when changing levels
+                return "level_10"
+        
+        return None
 
 class HUD:
     def __init__(self, screen):
