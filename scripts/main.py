@@ -1256,6 +1256,48 @@ class Game:
                             lifetime=10
                         )
             
+            # NEW CODE - Check for sword collisions with summoned bosses from Dark Lord (level 10 boss)
+            if current_room.boss and hasattr(current_room.boss, 'summoned_bosses'):
+                # Iterate over all summoned bosses
+                for summoned_boss in current_room.boss.summoned_bosses:
+                    if summoned_boss.health > 0 and hasattr(summoned_boss, 'damage_hitbox'):
+                        if (self.weapon_manager.sword.active and 
+                            sword_hitbox and sword_hitbox.colliderect(summoned_boss.damage_hitbox) and
+                            not summoned_boss.has_been_hit_this_swing):
+                            
+                            # Check line of sight
+                            has_line_of_sight = summoned_boss.check_line_of_sight(
+                                self.player.rect.centerx, self.player.rect.centery,
+                                summoned_boss.rect.centerx, summoned_boss.rect.centery,
+                                self.level
+                            )
+                            
+                            if has_line_of_sight:
+                                print(f"SWORD HIT SUMMONED BOSS! Health before: {summoned_boss.health}")
+                                # Apply sword damage based on sword type
+                                damage = SWORD_DAMAGE
+                                if self.weapon_manager.has_fire_sword:
+                                    damage = int(SWORD_DAMAGE * 1.5)  # 50% damage bonus
+                                    # Create fire particles on hit
+                                    self.particle_system.create_fire_effect(
+                                        summoned_boss.rect.centerx, 
+                                        summoned_boss.rect.centery,
+                                        amount=10
+                                    )
+                                elif self.weapon_manager.has_lightning_sword:
+                                    damage = int(SWORD_DAMAGE * 1.8)  # 80% damage bonus
+                                    # Create lightning particles on hit
+                                    self.particle_system.create_lightning_effect(
+                                        summoned_boss.rect.centerx, 
+                                        summoned_boss.rect.centery,
+                                        amount=12
+                                    )
+                                
+                                # Apply damage
+                                summoned_boss.take_damage(damage)
+                                summoned_boss.has_been_hit_this_swing = True
+                                print(f"Applied {damage} damage. Health after: {summoned_boss.health}")
+            
             # Check for arrow collisions with boss (completely separate logic)
             if current_room.boss and current_room.boss.health > 0:
                 arrows_to_remove = []
@@ -1304,6 +1346,17 @@ class Game:
                         print(f"Error checking arrow-boss collision: {e}")
                         arrows_to_remove.append(arrow)
                 
+                # NEW CODE - Check for arrow collisions with summoned bosses from Dark Lord
+                if hasattr(current_room.boss, 'summoned_bosses'):
+                    for summoned_boss in current_room.boss.summoned_bosses:
+                        if summoned_boss.health > 0 and hasattr(summoned_boss, 'damage_hitbox'):
+                            for arrow in self.weapon_manager.bow.arrows:
+                                if arrow not in arrows_to_remove and arrow.rect.colliderect(summoned_boss.damage_hitbox):
+                                    print(f"ARROW HIT SUMMONED BOSS! Health before: {summoned_boss.health}")
+                                    summoned_boss.take_damage(BOW_DAMAGE)
+                                    print(f"Applied {BOW_DAMAGE} damage. Health after: {summoned_boss.health}")
+                                    arrows_to_remove.append(arrow)
+                
                 # Remove arrows that hit the boss
                 for arrow in arrows_to_remove:
                     try:
@@ -1319,6 +1372,11 @@ class Game:
                 enemy.has_been_hit_this_swing = False
             if current_room.boss:
                 current_room.boss.has_been_hit_this_swing = False
+                # Reset hit tracking for summoned bosses
+                if hasattr(current_room.boss, 'summoned_bosses'):
+                    for summoned_boss in current_room.boss.summoned_bosses:
+                        if hasattr(summoned_boss, 'has_been_hit_this_swing'):
+                            summoned_boss.has_been_hit_this_swing = False
 
         # Check if level is completed
         if self.level.completed:

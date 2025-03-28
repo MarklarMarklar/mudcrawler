@@ -4,9 +4,10 @@ import os
 import math
 import glob
 from config import *
-from enemy import Enemy, Boss
+from enemy import Enemy
 from asset_manager import get_asset_manager
 from pickups import ArrowPickup, HealthPickup, KeyPickup, WeaponPickup
+from scripts.boss_factory import create_boss
 
 class BloodPuddle:
     """Blood puddle that appears when monsters die"""
@@ -1005,7 +1006,7 @@ class Room:
         
         # Check if center position is valid (not a wall)
         if self.is_valid_spawn_position(center_x, center_y):
-            self.boss = Boss(center_x, center_y, self.level_number, level_instance)
+            self.boss = create_boss(center_x, center_y, self.level_number, level_instance)
             print(f"Boss spawned at center position ({center_x}, {center_y})")
             return
             
@@ -1025,7 +1026,7 @@ class Room:
                     test_y = center_y + offset_y * TILE_SIZE
                     
                     if self.is_valid_spawn_position(test_x, test_y):
-                        self.boss = Boss(test_x, test_y, self.level_number, level_instance)
+                        self.boss = create_boss(test_x, test_y, self.level_number, level_instance)
                         print(f"Boss spawned at alternative position ({test_x}, {test_y})")
                         return
         
@@ -1038,7 +1039,7 @@ class Room:
                     pixel_y = y * TILE_SIZE
                     
                     if self.is_valid_spawn_position(pixel_x, pixel_y):
-                        self.boss = Boss(pixel_x, pixel_y, self.level_number, level_instance)
+                        self.boss = create_boss(pixel_x, pixel_y, self.level_number, level_instance)
                         print(f"Boss spawned at fallback position ({pixel_x}, {pixel_y})")
                         return
                         
@@ -1292,8 +1293,20 @@ class Room:
                 if sparkle['life'] <= 0:
                     self.sparkle_particles.remove(sparkle)
         
-    def check_collision(self, rect):
-        """Check if a rectangle collides with walls in this room"""
+    def check_collision(self, rect, check_only_walls=False):
+        """Check if a rectangle collides with walls in this room
+        
+        If check_only_walls is True, only check for collisions with wall tiles
+        and ignore room boundaries for entities that should be able to move freely.
+        """
+        # Skip bounds checking if we're only checking for wall collisions
+        if not check_only_walls:
+            # Check room boundaries first
+            if (rect.left < 0 or rect.right > self.width * TILE_SIZE or
+                rect.top < 0 or rect.bottom > self.height * TILE_SIZE):
+                return True
+        
+        # Check wall tile collisions
         tile_x1 = max(0, rect.left // TILE_SIZE)
         tile_x2 = min(self.width - 1, rect.right // TILE_SIZE)
         tile_y1 = max(0, rect.top // TILE_SIZE)
@@ -2142,6 +2155,10 @@ class Level:
                     # The cursed shield mechanic makes the fight challenging enough
                     num_enemies = 0
                     print(f"No additional enemies spawned in level 7 boss room")
+                elif self.level_number == 10:
+                    # No additional enemies in level 10 boss room - Dark Lord fight
+                    num_enemies = 0
+                    print(f"No additional enemies spawned in level 10 boss room")
                 else:
                     num_enemies = self.max_enemies_per_room // 2  # Fewer regular enemies in boss room
             elif room.room_type == 'treasure':
@@ -2474,10 +2491,10 @@ class Level:
                 if hasattr(self, 'game') and hasattr(self.game, 'display_message'):
                     self.game.display_message("Cursed area damage!", (150, 50, 255))
         
-    def check_collision(self, rect):
+    def check_collision(self, rect, check_only_walls=False):
         """Check collision with walls in the current room only"""
         current_room = self.rooms[self.current_room_coords]
-        return current_room.check_collision(rect)
+        return current_room.check_collision(rect, check_only_walls=check_only_walls)
         
     def try_destroy_wall(self, x, y):
         """Try to destroy a wall at the given tile coordinates"""
