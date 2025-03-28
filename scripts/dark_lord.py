@@ -100,6 +100,7 @@ class DarkLord(Boss):
         
         # Debug attributes
         self.debug_messages = []
+        self.debug_enabled = DEBUG_MODE  # Initialize debug_enabled based on DEBUG_MODE
         
         # Clear the boss room of normal enemies
         if level_instance and hasattr(level_instance, 'current_room'):
@@ -204,7 +205,7 @@ class DarkLord(Boss):
             new_copy.target_x = target_x
             new_copy.target_y = target_y
             new_copy.is_moving = True
-            new_copy.move_speed = random.uniform(0.08, 0.12)  # Random speed for more natural movement
+            new_copy.move_speed = random.uniform(0.04, 0.06)  # Half speed for easier understanding (original was 0.08-0.12)
             
             self.copies.append(new_copy)
         
@@ -212,6 +213,12 @@ class DarkLord(Boss):
         self.ritual_timer = pygame.time.get_ticks()
         self.ritual_active = True
         
+        # Rotation properties
+        self.rotation_active = False  # Will be set to True when copies are positioned
+        self.rotation_speed = 0.0005  # Slow CCW rotation in radians per millisecond
+        self.rotation_angle = 0  # Current rotation angle
+        self.last_rotation_time = 0  # Last time the rotation was updated
+
         # Wait for copies to reach their positions before selecting one to blink
         # We'll set this in the update method after all copies have reached their positions
         self.blinking_copy_index = None
@@ -282,6 +289,177 @@ class DarkLord(Boss):
         self.summoned_boss.max_health = self.summoned_boss.health
         self.summoned_boss.damage = self.summoned_boss.damage * 0.7  # 70% damage
         
+        # Store the original shoot_projectile method
+        original_shoot_projectile = self.summoned_boss.shoot_projectile
+        
+        # Override the shoot_projectile method to create faster projectiles
+        def enhanced_shoot_projectile(player):
+            if not self.summoned_boss.can_shoot:
+                return False
+            
+            current_time = pygame.time.get_ticks()
+            if current_time - self.summoned_boss.last_shot_time < self.summoned_boss.projectile_cooldown:
+                return False
+            
+            # Only shoot if player is visible and not too close
+            if not self.summoned_boss.has_spotted_player:
+                return False
+                
+            # Calculate direction to player
+            dx = player.rect.centerx - self.summoned_boss.rect.centerx
+            dy = player.rect.centery - self.summoned_boss.rect.centery
+            distance = math.sqrt(dx * dx + dy * dy)
+            
+            # Don't shoot if player is too close (within melee range)
+            if distance <= self.summoned_boss.attack_range * 2:
+                return False
+            
+            # Normalize direction
+            if distance > 0:
+                dx = dx / distance
+                dy = dy / distance
+            else:
+                dx, dy = 0, -1
+                
+            # Create the projectile with higher speed
+            projectile = BossProjectile(
+                self.summoned_boss.rect.centerx, 
+                self.summoned_boss.rect.centery, 
+                (dx, dy), 
+                speed=2,  # Increased from default 1.4 to 3.0
+                damage=self.summoned_boss.projectile_damage, 
+                color=self.summoned_boss.projectile_color,
+                is_homing=True,  # Make the projectile homing
+                boss_level=self.summoned_boss.level,
+                spawn_secondary=True,  # Enable projectile splitting
+                spawn_time=1500,  # Split after 1.5 seconds
+                orbit_boss=self.summoned_boss  # Add reference to the boss for spawning
+            )
+            
+            # Set the player as the target for homing
+            projectile.player_target = player
+            
+            # Add to projectile group
+            self.summoned_boss.projectiles.add(projectile)
+            
+            # Update last shot time
+            self.summoned_boss.last_shot_time = current_time
+            
+            # Play sound if available
+            if hasattr(self.summoned_boss, 'sound_manager'):
+                self.summoned_boss.sound_manager.play_sound("effects/projectile")
+                
+            return True
+        
+        # Replace the shoot_projectile method
+        self.summoned_boss.shoot_projectile = enhanced_shoot_projectile
+        
+        # Similarly, override the special_attack method to create faster projectiles in the special attack
+        original_special_attack = self.summoned_boss.special_attack
+        
+        def enhanced_special_attack(player):
+            current_time = pygame.time.get_ticks()
+            if current_time - self.summoned_boss.last_special_attack_time >= self.summoned_boss.special_attack_cooldown:
+                self.summoned_boss.last_special_attack_time = current_time
+                
+                # Level 2 boss special attack with faster projectiles
+                if self.summoned_boss.level == 2:
+                    # Calculate direction to player
+                    dx = player.rect.centerx - self.summoned_boss.rect.centerx
+                    dy = player.rect.centery - self.summoned_boss.rect.centery
+                    length = math.sqrt(dx*dx + dy*dy)
+                    
+                    if length > 0:
+                        # Normalize
+                        dx = dx / length
+                        dy = dy / length
+                    else:
+                        # Default direction if player is exactly at the same position
+                        dx, dy = 0, -1  # Up
+                    
+                    # Create center projectile (directly at player)
+                    center_dx, center_dy = dx, dy
+                    
+                    # Create perpendicular vector for creating the left/right projectiles
+                    perp_dx, perp_dy = -dy, dx
+                    
+                    # Calculate rotated vectors for left and right projectiles
+                    rotation_factor = 0.5
+                    
+                    # Left projectile - rotate towards perpendicular
+                    left_dx = center_dx + perp_dx * rotation_factor
+                    left_dy = center_dy + perp_dy * rotation_factor
+                    # Normalize
+                    left_length = math.sqrt(left_dx*left_dx + left_dy*left_dy)
+                    left_dx = left_dx / left_length
+                    left_dy = left_dy / left_length
+                    
+                    # Right projectile - rotate away from perpendicular
+                    right_dx = center_dx - perp_dx * rotation_factor
+                    right_dy = center_dy - perp_dy * rotation_factor
+                    # Normalize
+                    right_length = math.sqrt(right_dx*right_dx + right_dy*right_dy)
+                    right_dx = right_dx / right_length
+                    right_dy = right_dy / right_length
+                    
+                    # Create the projectiles with different colors and faster speed
+                    # Center projectile
+                    center_projectile = BossProjectile(
+                        self.summoned_boss.rect.centerx + center_dx * 10,
+                        self.summoned_boss.rect.centery + center_dy * 10,
+                        (center_dx, center_dy),
+                        speed=2,  # Increased from default 1.4 to 3.0
+                        damage=self.summoned_boss.damage * 1.5,
+                        color=(20, 150, 255),  # Brighter blue
+                        boss_level=self.summoned_boss.level,
+                        spawn_secondary=True,  # Enable projectile splitting
+                        spawn_time=1500,  # Split after 1.5 seconds
+                        orbit_boss=self.summoned_boss  # Add reference to the boss for spawning
+                    )
+                    
+                    # Left projectile
+                    left_projectile = BossProjectile(
+                        self.summoned_boss.rect.centerx,
+                        self.summoned_boss.rect.centery,
+                        (left_dx, left_dy),
+                        speed=2,  # Increased from default 1.4 to 3.0
+                        damage=self.summoned_boss.damage * 1.5,
+                        color=(255, 0, 255),  # Magenta
+                        boss_level=self.summoned_boss.level,
+                        spawn_secondary=True,  # Enable projectile splitting
+                        spawn_time=1500,  # Split after 1.5 seconds
+                        orbit_boss=self.summoned_boss  # Add reference to the boss for spawning
+                    )
+                    
+                    # Right projectile
+                    right_projectile = BossProjectile(
+                        self.summoned_boss.rect.centerx,
+                        self.summoned_boss.rect.centery,
+                        (right_dx, right_dy),
+                        speed=2,  # Increased from default 1.4 to 3.0
+                        damage=self.summoned_boss.damage * 1.5,
+                        color=(255, 165, 0),  # Orange
+                        boss_level=self.summoned_boss.level,
+                        spawn_secondary=True,  # Enable projectile splitting
+                        spawn_time=1500,  # Split after 1.5 seconds
+                        orbit_boss=self.summoned_boss  # Add reference to the boss for spawning
+                    )
+                    
+                    # Add to projectile group
+                    self.summoned_boss.projectiles.add(center_projectile, left_projectile, right_projectile)
+                    
+                    # Switch to special attack animation
+                    self.summoned_boss.current_state = 'special'
+                    self.summoned_boss.frame = 0  # Reset animation frame
+                    return True
+                
+                # For other boss levels, use the original method
+                return original_special_attack(player)
+            return False
+        
+        # Replace the special_attack method
+        self.summoned_boss.special_attack = lambda player: enhanced_special_attack(player)
+        
         # Remove room boundary restrictions for the summoned boss
         # This replaces the default update method to prevent boundary clamping
         original_update = self.summoned_boss.update
@@ -294,7 +472,7 @@ class DarkLord(Boss):
             result = original_update(player)
             
             # Apply a speed reduction factor to prevent erratic movement
-            speed_factor = 0.5  # Reduces speed by half
+            speed_factor = 0.4  # Reduces speed by half
             
             # Move with reduced velocity
             self.summoned_boss.rect.x += self.summoned_boss.velocity_x * speed_factor
@@ -488,13 +666,45 @@ class DarkLord(Boss):
                     
             if all_positioned:
                 self.copies_positioned = True
+                self.rotation_active = True
+                self.last_rotation_time = current_time
                 # Now select a copy to blink and start summoning
                 self.blinking_copy_index = random.randint(0, 4)
                 self.copies[self.blinking_copy_index].is_blinking = True
                 self.copies[self.blinking_copy_index].will_summon_boss = True
                 self.start_summoning()
                 self.add_debug_message(f"Copy {self.blinking_copy_index} will summon boss")
+        
+        # Handle rotation after copies are positioned
+        if self.rotation_active:
+            # Calculate time delta
+            delta_time = current_time - self.last_rotation_time
+            self.last_rotation_time = current_time
+            
+            # Update rotation angle (negative for CCW)
+            self.rotation_angle -= self.rotation_speed * delta_time
+            
+            # Calculate new positions for the pentagram points
+            for i in range(5):
+                # Now always rotate ALL copies, including the blinking one
+                # Get the base angle for this point (2π/5 * i, plus the initial -π/2)
+                base_angle = -math.pi / 2 + (2 * math.pi * i) / 5
                 
+                # Apply the current rotation
+                angle = base_angle + self.rotation_angle
+                
+                # Calculate the new position
+                new_x = self.pentagram_center[0] + self.outer_circle_radius * math.cos(angle)
+                new_y = self.pentagram_center[1] + self.outer_circle_radius * math.sin(angle)
+                
+                # Update the pentagram point and the copy's position
+                self.pentagram_points[i] = (new_x, new_y)
+                
+                # Update the copy's position if it still exists
+                if i < len(self.copies) and self.copies[i] is not None:
+                    self.copies[i].rect.centerx = new_x
+                    self.copies[i].rect.centery = new_y
+        
         # Update blinking copy if in summoning state
         if self.summoning_active and self.blinking_copy_index is not None:
             self.update_blinking_copy()
@@ -727,87 +937,89 @@ class DarkLord(Boss):
         surface.blit(aura_surface, aura_pos)
     
     def draw_pentagram(self, surface):
-        """Draw pentagram connecting the copies"""
-        if not self.pentagram_points or len(self.pentagram_points) < 5:
+        """Draw the pentagram and effects"""
+        if not self.pentagram_active or not self.pentagram_points:
             return
             
-        # Draw large circle around the entire pentagram
-        if self.pentagram_active and self.outer_circle_radius > 0:
-            # Pulsing alpha for outer circle - make it more intense and visible
-            circle_alpha = int(100 + 80 * self.pentagram_pulse)  # Pulsing alpha between 100-180
-            outer_circle_color = list(self.outer_circle_color[:3]) + [circle_alpha]
-            
-            # Draw the outer circle with slight pulse in size - more intense pulsing
-            radius_pulse = self.outer_circle_radius * (0.96 + 0.08 * self.pentagram_pulse)
-            pygame.draw.circle(
-                surface,
-                outer_circle_color,
-                (int(self.pentagram_center[0]), int(self.pentagram_center[1])),
-                int(radius_pulse),
-                self.outer_circle_width
-            )
-            
-            # Draw a fainter, smaller inner circle to enhance the death zone effect
-            inner_radius = self.outer_circle_radius * 0.9
-            inner_circle_color = (255, 0, 0, 30 + int(50 * self.pentagram_pulse))  # Red with pulsing alpha
-            pygame.draw.circle(
-                surface,
-                inner_circle_color,
-                (int(self.pentagram_center[0]), int(self.pentagram_center[1])),
-                int(inner_radius),
-                2
-            )
-            
-        # Draw lines between points to form a pentagram
-        # Draw lines in the order of a pentagram (not just connecting adjacent points)
-        pentagram_order = [0, 2, 4, 1, 3, 0]  # Connect points in this order, back to start
+        # Draw outer circle
+        circle_color = (255, 0, 0, int(100 * self.pentagram_pulse))
+        pygame.draw.circle(
+            surface, 
+            circle_color, 
+            self.pentagram_center, 
+            self.outer_circle_radius,
+            2  # Width of the circle
+        )
         
-        # Draw lines with pulsing alpha
-        line_alpha = int(100 + 100 * self.pentagram_pulse)  # Pulsing alpha between 100-200
-        line_color = list(self.pentagram_line_color[:3]) + [line_alpha]  # RGB + updated alpha
+        # Draw inner circle
+        inner_circle_radius = self.outer_circle_radius * 0.5
+        pygame.draw.circle(
+            surface, 
+            circle_color, 
+            self.pentagram_center, 
+            inner_circle_radius,
+            2  # Width of the circle
+        )
         
-        # Draw the pentagram lines
-        for i in range(len(pentagram_order) - 1):
-            start_idx = pentagram_order[i]
-            end_idx = pentagram_order[i+1]
+        # Draw pentagram lines connecting the points
+        # We connect: 0->2, 2->4, 4->1, 1->3, 3->0 to form a pentagram
+        sequence = [0, 2, 4, 1, 3, 0]  # Repeat 0 at the end to close the shape
+        
+        for i in range(len(sequence) - 1):
+            start_idx = sequence[i]
+            end_idx = sequence[i+1]
+            
+            # Skip lines connected to the missing copy if it's been destroyed
+            if self.summoned_boss is not None and self.blinking_copy_index is not None:
+                if start_idx == self.blinking_copy_index or end_idx == self.blinking_copy_index:
+                    if not any(copy.is_blinking for copy in self.copies):
+                        continue
             
             if start_idx < len(self.pentagram_points) and end_idx < len(self.pentagram_points):
                 start_pos = self.pentagram_points[start_idx]
                 end_pos = self.pentagram_points[end_idx]
                 
+                # Draw line with pulsing intensity
+                line_color = (255, 0, 0, int(150 + 100 * self.pentagram_pulse))
                 pygame.draw.line(
-                    surface, 
-                    line_color, 
-                    start_pos, 
-                    end_pos, 
-                    self.pentagram_line_width
+                    surface,
+                    line_color,
+                    start_pos,
+                    end_pos,
+                    2  # Line width
                 )
         
-        # Draw circles at each active point of the pentagram
-        if self.draw_pentagram_circles:
-            for i, point in enumerate(self.pentagram_points):
-                # Only draw circles for active points
-                if i < len(self.active_pentagram_points) and self.active_pentagram_points[i]:
-                    # Pulsing circle size
-                    circle_radius = self.pentagram_circle_radius * (0.8 + 0.4 * self.pentagram_pulse)
-                    
-                    # Draw the circle with glowing effect
-                    pygame.draw.circle(
-                        surface,
-                        self.pentagram_circle_color,
-                        (int(point[0]), int(point[1])),
-                        int(circle_radius)
-                    )
-                    
-                    # Inner brighter circle
-                    pygame.draw.circle(
-                        surface,
-                        (min(255, self.pentagram_circle_color[0] + 50),
-                         min(255, self.pentagram_circle_color[1] + 50),
-                         min(255, self.pentagram_circle_color[2] + 50)),
-                        (int(point[0]), int(point[1])),
-                        int(circle_radius * 0.6)
-                    )
+        # Draw center glow
+        center_color = (255, 0, 0, int(150 * self.pentagram_pulse))
+        center_radius = inner_circle_radius * 0.3
+        pygame.draw.circle(
+            surface,
+            center_color,
+            self.pentagram_center,
+            center_radius
+        )
+        
+        # Draw death zone if enabled
+        if self.death_zone_enabled:
+            # Draw filled circle with very low opacity
+            death_circle = pygame.Surface((self.outer_circle_radius * 2, self.outer_circle_radius * 2), pygame.SRCALPHA)
+            death_color = (255, 0, 0, 40)  # Very transparent red
+            pygame.draw.circle(
+                death_circle,
+                death_color,
+                (self.outer_circle_radius, self.outer_circle_radius),
+                self.outer_circle_radius
+            )
+            
+            # Position and draw the death zone
+            death_x = self.pentagram_center[0] - self.outer_circle_radius
+            death_y = self.pentagram_center[1] - self.outer_circle_radius
+            surface.blit(death_circle, (death_x, death_y))
+            
+        # DEBUG DRAWING
+        # Draw debug messages if enabled
+        if self.debug_enabled:
+            self.draw_debug_messages(surface, None)
     
     def add_debug_message(self, message):
         """Add a debug message to be displayed"""

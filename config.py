@@ -92,5 +92,5 @@ CONTROLS = {
 }
 
 # Debug Settings
-DEBUG_MODE = True  # Set to False for production
-DEBUG_HITBOXES = True  # Set to True to show hitboxes 
+DEBUG_MODE = False  # Set to False for production
+DEBUG_HITBOXES = False  # Set to True to show hitboxes 
