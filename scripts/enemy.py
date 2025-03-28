@@ -2263,7 +2263,7 @@ class Boss(Enemy):
         self.rope_duration = 1500  # 1.5 seconds to shoot rope
         self.rope_target = None
         self.rope_length = 0
-        self.rope_max_length = TILE_SIZE * 8  # Maximum rope length
+        self.rope_max_length = TILE_SIZE * 20  # Maximum rope length (increased from 8 to 20 tiles)
         self.rope_speed = 10  # Pixels per frame
         self.rope_reached_player = False
         self.rope_pull_speed = 6  # How fast to pull player
@@ -2291,6 +2291,10 @@ class Boss(Enemy):
             self.shield_damage_cooldown = 500  # Damage player every 0.5 seconds
             self.last_shield_damage_time = 0
             self.cursed_shield_dropped = False  # Track if a cursed shield has been dropped this cycle
+            
+            # Death ray attributes for level 7 boss
+            self.death_ray = None
+            self.has_death_ray = False
             
             # Initialize projectile capabilities for level 7 boss
             self.projectiles = pygame.sprite.Group()
@@ -3393,7 +3397,7 @@ class Boss(Enemy):
                         # Enhance the trail effect
                         projectile.trail_enabled = True
                         projectile.max_trail_length = 12  # Longer trail for dramatic effect
-                        projectile.trail_update_rate = 1   # Update every frame for smoother trail
+                        projectile.trail_update_rate = 1  # Update every frame for smoother trail
                         
                         # Make it hunt the player more aggressively
                         projectile.homing_strength = 0.04  # More aggressive turning
@@ -3781,6 +3785,13 @@ class Boss(Enemy):
                 # Check if it's time to activate shield mode
                 time_since_last_defensive = current_time - self.last_defensive_mode_time
                 if time_since_last_defensive >= self.defensive_mode_cooldown:
+                    # Remove death ray when entering shield mode
+                    if self.has_death_ray and self.death_ray:
+                        self.death_ray.kill()
+                        self.death_ray = None
+                        self.has_death_ray = False
+                        print(f"Level 7 boss destroyed death ray when entering shield mode")
+                        
                     # Activate shield mode
                     self.defensive_mode_engaged = True
                     self.defensive_mode = True
@@ -3834,6 +3845,25 @@ class Boss(Enemy):
                         print(f"Level 7 boss dropped a cursed shield at ({self.rect.centerx}, {self.rect.centery})")
                         self.cursed_shield_dropped = True  # Mark that shield has been dropped
                     
+                    # Create death ray after dropping shield
+                    if not self.has_death_ray:
+                        # Create a death ray that will spin around the boss
+                        self.death_ray = DeathRay(
+                            self,             # The boss is the origin
+                            4,                # 4 tiles length
+                            self.damage * 0.3 # 30% of boss damage per hit
+                        )
+                        self.has_death_ray = True
+                        
+                        # Add to level if it has sprite groups for tracking
+                        if hasattr(player, 'level'):
+                            # Initialize death_rays group if it doesn't exist
+                            if not hasattr(player.level, 'death_rays'):
+                                player.level.death_rays = pygame.sprite.Group()
+                            player.level.death_rays.add(self.death_ray)
+                        
+                        print(f"Level 7 boss created a death ray")
+                    
                     # Deactivate shield mode and resume chasing immediately
                     self.defensive_mode_engaged = False
                     self.defensive_mode = False
@@ -3847,7 +3877,11 @@ class Boss(Enemy):
                     
                     # Play the boss voice when leaving shield mode
                     voice_file = f"effects/boss_4_voice"  # Fallback to level 4 voice
-                    if os.path.exists(os.path.join(SOUND_PATH, f"effects/boss_7_voice.mp3")):
+                    # Check if boss 7 voice file exists
+                    from config import SOUNDS_PATH
+                    import os
+                    if os.path.exists(os.path.join(SOUNDS_PATH, f"effects/boss_7_voice.mp3")) or \
+                       os.path.exists(os.path.join(SOUNDS_PATH, f"effects/boss_7_voice.wav")):
                         voice_file = f"effects/boss_7_voice"
                     self.sound_manager.play_sound(voice_file)
                     self.last_voice_time = current_time
@@ -3896,6 +3930,36 @@ class Boss(Enemy):
                             # Display feedback to player
                             if hasattr(player.level, 'game') and hasattr(player.level.game, 'display_message'):
                                 player.level.game.display_message("Shield damage!", (150, 50, 255))
+            
+            # Update death ray for level 7 boss
+            if self.level == 7 and self.has_death_ray and self.death_ray:
+                self.death_ray.update()
+                
+                # Check for player collision with death ray
+                if self.death_ray.check_collision(player.hitbox) and self.death_ray.can_damage():
+                    # Apply damage to player
+                    player.take_damage(self.death_ray.damage)
+                    
+                    # Create visual effect at collision point
+                    if hasattr(player.level, 'particle_system'):
+                        for _ in range(10):  # Create several particles
+                            angle = random.uniform(0, math.pi * 2)
+                            speed = random.uniform(1.5, 3.0)
+                            dx = math.cos(angle) * speed
+                            dy = math.sin(angle) * speed
+                            
+                            player.level.particle_system.create_particle(
+                                player.rect.centerx,
+                                player.rect.centery,
+                                color=(255, 100, 0),  # Orange-red for ray
+                                velocity=(dx, dy),
+                                size=random.randint(4, 8),
+                                lifetime=random.randint(15, 25)
+                            )
+                    
+                    # Display feedback to player
+                    if hasattr(player.level, 'game') and hasattr(player.level.game, 'display_message'):
+                        player.level.game.display_message("Death ray hit!", (255, 100, 0))
         
         # Rest of boss update code
         # ... existing code ...
@@ -4226,6 +4290,10 @@ class Boss(Enemy):
             if self.level == 7 and self.projectiles:
                 for projectile in self.projectiles:
                     projectile.draw(surface)
+            
+            # Draw death ray for level 7 boss
+            if self.level == 7 and self.has_death_ray and self.death_ray:
+                self.death_ray.draw(surface)
         
         # Draw eggs for Boss 9
         if self.level == 9 and self.eggs:
@@ -5392,3 +5460,203 @@ class BloodZone(pygame.sprite.Sprite):
             self.last_damage_time = current_time
             return True
         return False
+
+class DeathRay(pygame.sprite.Sprite):
+    """Death ray that spins around the boss 7 and damages the player"""
+    def __init__(self, boss, length, damage):
+        super().__init__()
+        self.boss = boss
+        self.length = length * TILE_SIZE  # Convert tiles to pixels
+        self.damage = damage
+        self.angle = 0  # Starting angle (in radians)
+        self.rotation_speed = 0.02  # Radians per frame
+        self.damage_cooldown = 500  # Milliseconds between damage ticks
+        self.last_damage_time = 0
+        
+        # Create ray hitbox (will be updated in update method)
+        self.ray_width = 16  # Width of the ray in pixels
+        self.rect = pygame.Rect(0, 0, self.length, self.ray_width)
+        
+        # Create visual properties
+        self.ray_color = (255, 60, 0)  # Red-orange color
+        self.glow_color = (255, 150, 50, 100)  # Orange glow with transparency
+        self.pulse_timer = 0
+        self.creation_time = pygame.time.get_ticks()
+        
+        # Initialize endpoints
+        self.start_point = (self.boss.rect.centerx, self.boss.rect.centery)
+        self.end_point = (self.boss.rect.centerx + self.length, self.boss.rect.centery)
+        
+        # Sound effects
+        self.sound_manager = get_sound_manager()
+        self.sound_played = False
+    
+    def update(self):
+        """Update the death ray position and rotation"""
+        current_time = pygame.time.get_ticks()
+        
+        # Update angle for rotation
+        self.angle += self.rotation_speed
+        
+        # Update the ray endpoints
+        start_x = self.boss.rect.centerx
+        start_y = self.boss.rect.centery
+        end_x = start_x + math.cos(self.angle) * self.length
+        end_y = start_y + math.sin(self.angle) * self.length
+        
+        # Update rectangle for collision detection
+        # The rect needs to follow the line from start to end
+        min_x = min(start_x, end_x)
+        min_y = min(start_y, end_y)
+        width = abs(end_x - start_x)
+        height = abs(end_y - start_y)
+        
+        # Ensure the rect has at least a minimum size
+        if width < self.ray_width:
+            width = self.ray_width
+        if height < self.ray_width:
+            height = self.ray_width
+            
+        self.rect = pygame.Rect(min_x, min_y, width, height)
+        
+        # Store endpoints for drawing
+        self.start_point = (start_x, start_y)
+        self.end_point = (end_x, end_y)
+        
+        # Visual pulse effect
+        self.pulse_timer += 0.1
+        
+        # Play sound effect periodically
+        if not self.sound_played or current_time - self.sound_played > 3000:  # Every 3 seconds
+            try:
+                self.sound_manager.play_sound("effects/boss_ray")
+            except Exception as e:
+                # Sound file might not exist, handle gracefully
+                print(f"Note: Could not play death ray sound - {e}")
+            self.sound_played = current_time
+    
+    def check_collision(self, player_rect):
+        """Check if the ray line intersects with the player rectangle"""
+        # First, quick broad-phase check using rects
+        if not self.rect.colliderect(player_rect):
+            return False
+            
+        # Then, more precise check using line-rectangle intersection
+        # Calculate the four sides of the player rect
+        rect_sides = [
+            (player_rect.left, player_rect.top, player_rect.left, player_rect.bottom),  # Left
+            (player_rect.left, player_rect.bottom, player_rect.right, player_rect.bottom),  # Bottom
+            (player_rect.right, player_rect.bottom, player_rect.right, player_rect.top),  # Right
+            (player_rect.right, player_rect.top, player_rect.left, player_rect.top)  # Top
+        ]
+        
+        # Check if the ray line intersects any of the rect sides
+        for side in rect_sides:
+            if self._line_intersection(self.start_point, self.end_point, (side[0], side[1]), (side[2], side[3])):
+                return True
+                
+        # Also check if the player is very close to the line itself
+        return self._point_line_distance(player_rect.center, self.start_point, self.end_point) < self.ray_width
+    
+    def _line_intersection(self, line1_start, line1_end, line2_start, line2_end):
+        """Detect if two line segments intersect"""
+        x1, y1 = line1_start
+        x2, y2 = line1_end
+        x3, y3 = line2_start
+        x4, y4 = line2_end
+        
+        # Calculate determinants
+        den = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1)
+        if den == 0:
+            return False  # Lines are parallel
+            
+        ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / den
+        ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / den
+        
+        # Check if intersection is within line segments
+        return 0 <= ua <= 1 and 0 <= ub <= 1
+    
+    def _point_line_distance(self, point, line_start, line_end):
+        """Calculate distance from a point to a line segment"""
+        x, y = point
+        x1, y1 = line_start
+        x2, y2 = line_end
+        
+        # Line length squared
+        line_length_sq = (x2 - x1)**2 + (y2 - y1)**2
+        if line_length_sq == 0:
+            return math.sqrt((x - x1)**2 + (y - y1)**2)  # Point to point distance
+            
+        # Calculate projection ratio
+        t = max(0, min(1, ((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / line_length_sq))
+        
+        # Calculate closest point on line
+        proj_x = x1 + t * (x2 - x1)
+        proj_y = y1 + t * (y2 - y1)
+        
+        # Distance from point to closest point on line
+        return math.sqrt((x - proj_x)**2 + (y - proj_y)**2)
+    
+    def can_damage(self):
+        """Check if the ray can cause damage (based on cooldown)"""
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_damage_time >= self.damage_cooldown:
+            self.last_damage_time = current_time
+            return True
+        return False
+    
+    def draw(self, surface):
+        """Draw the death ray with visual effects"""
+        current_time = pygame.time.get_ticks()
+        
+        # Create glow effect around the ray
+        # Draw multiple lines with decreasing width and opacity for glow effect
+        for i in range(5, 0, -1):
+            # Pulsing effect
+            pulse = math.sin(self.pulse_timer) * 0.5 + 0.5
+            width = int(i * 2 * (0.7 + 0.3 * pulse))
+            alpha = int(150 * (i / 5) * pulse)
+            
+            glow_color = (255, 150, 50, alpha)
+            
+            # Draw the glowing line
+            pygame.draw.line(
+                surface, 
+                glow_color, 
+                self.start_point, 
+                self.end_point, 
+                width
+            )
+        
+        # Draw the main ray with core color
+        pygame.draw.line(
+            surface, 
+            self.ray_color, 
+            self.start_point, 
+            self.end_point, 
+            4
+        )
+        
+        # Draw energy particles along the ray
+        ray_length = math.sqrt((self.end_point[0] - self.start_point[0])**2 + 
+                             (self.end_point[1] - self.start_point[1])**2)
+        num_particles = int(ray_length / 20)  # One particle every 20 pixels
+        
+        for i in range(num_particles):
+            if random.random() < 0.3:  # 30% chance for each potential particle
+                # Position along ray
+                t = random.random()
+                particle_x = self.start_point[0] + t * (self.end_point[0] - self.start_point[0])
+                particle_y = self.start_point[1] + t * (self.end_point[1] - self.start_point[1])
+                
+                # Particle size and color
+                size = random.randint(2, 4)
+                brightness = random.randint(200, 255)
+                color = (brightness, brightness // 2, 0)
+                
+                pygame.draw.circle(
+                    surface, 
+                    color, 
+                    (int(particle_x), int(particle_y)), 
+                    size
+                )

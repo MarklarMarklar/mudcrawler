@@ -2437,6 +2437,10 @@ class Level:
         # Update cursed shields
         self.cursed_shields.update()
         
+        # Update death rays if they exist
+        if hasattr(self, 'death_rays'):
+            self.death_rays.update()
+        
         # Check player collision with cursed shields
         for shield in self.cursed_shields:
             if shield.check_collision(player.hitbox) and shield.can_damage():
@@ -2507,6 +2511,11 @@ class Level:
             # Draw cursed shields
             for shield in self.cursed_shields:
                 shield.draw(surface)
+            
+            # Draw death rays if they exist
+            if hasattr(self, 'death_rays'):
+                for ray in self.death_rays:
+                    ray.draw(surface)
             
             # Draw notification if active
             if self.notification_text:
