@@ -64,6 +64,7 @@ class DarkLord(Boss):
         self.death_ray_spin_active = False  # Only start spinning after growth
         self.rays_fully_grown_time = 0  # When rays reached full length
         self.rays_fully_grown_delay = 3000  # 3 seconds delay before summoning boss
+        self.active_death_rays = [True, True, True, True, True]  # Track which death rays are active (separate from pentagram points)
         
         # Pentagram points and visualization
         self.pentagram_points = []
@@ -159,6 +160,33 @@ class DarkLord(Boss):
         self.thunder_flashes = []  # Sequence of flashes with timing and intensity
         self.current_flash_index = 0
         
+        # Tracking for defeated copies/bosses
+        self.defeated_copies_count = 0
+        
+        # Mini death zones
+        self.mini_death_zones = []  # List of (x, y, end_time) tuples
+        self.mini_death_zone_radius = TILE_SIZE // 2  # 1 tile diameter
+        self.mini_death_zone_duration = 6000  # 6 seconds
+        self.mini_death_zone_damage = 50  # Damage per hit
+        self.last_mini_zone_hit_time = 0
+        self.mini_zone_hit_cooldown = 500  # ms between hits
+        self.mini_zone_lightning_blinks = {}  # Tracking lightning visibility for each zone
+        
+        # Load lightning image
+        self.lightning_image = None
+        try:
+            lightning_path = os.path.join("assets", "characters", "bosses", "lightning.png")
+            if os.path.exists(lightning_path):
+                self.lightning_image = pygame.image.load(lightning_path).convert_alpha()
+                # Scale to appropriate size (approx 1.5 tiles)
+                lightning_size = int(TILE_SIZE * 1.5)
+                self.lightning_image = pygame.transform.scale(self.lightning_image, (lightning_size, lightning_size))
+                self.add_debug_message("Lightning image loaded successfully")
+            else:
+                self.add_debug_message(f"Lightning image not found at: {lightning_path}")
+        except Exception as e:
+            self.add_debug_message(f"Error loading lightning image: {str(e)}")
+    
     def load_dark_lord_images(self):
         """Load specialized images for the Dark Lord"""
         try:
@@ -321,7 +349,7 @@ class DarkLord(Boss):
             self.summon_level2_boss()
     
     def summon_level2_boss(self):
-        """Summon the boss from the blinking copy - either level 2 or level 4 based on the phase"""
+        """Summon the boss from the blinking copy - either level 2, 4, or 6 based on the phase"""
         if self.summoned_boss:
             return
             
@@ -337,19 +365,28 @@ class DarkLord(Boss):
         spawn_x = self.pentagram_center[0]
         spawn_y = self.pentagram_center[1]
         
-        # For phase 1, summon level 2 boss
-        # For phase 2, summon level 4 boss (Goblin King)
-        boss_level = 2 if self.phase == 1 else 4
+        # Select boss level based on current phase
+        if self.phase == 3:
+            boss_level = 6  # Phase 3 summons level 6 boss
+        elif self.phase == 2:
+            boss_level = 4  # Phase 2 summons level 4 boss (Goblin King)
+        else:
+            boss_level = 2  # Phase 1 summons level 2 boss
         
         # Create the boss with the appropriate level
         self.summoned_boss = Boss(spawn_x, spawn_y, boss_level, self.level_instance)
         
         # Add debug message about which boss was summoned
-        boss_name = "Level 2 Boss" if boss_level == 2 else "Goblin King (Level 4)"
+        boss_name = "Level 2 Boss" if boss_level == 2 else "Goblin King (Level 4)" if boss_level == 4 else "Level 6 Boss"
         self.add_debug_message(f"Summoned {boss_name}")
         
         # Set stats based on the boss level
-        if boss_level == 4:
+        if boss_level == 6:
+            # Level 6 boss modifications
+            self.summoned_boss.health = self.summoned_boss.health * 0.7  # 70% health
+            self.summoned_boss.max_health = self.summoned_boss.health
+            self.summoned_boss.damage = self.summoned_boss.damage * 0.5  # 50% damage
+        elif boss_level == 4:
             # Goblin King stats modifications
             self.summoned_boss.health = self.summoned_boss.health * 0.8  # 80% health 
             self.summoned_boss.max_health = self.summoned_boss.health
@@ -669,6 +706,11 @@ class DarkLord(Boss):
         # Mark this pentagram point as inactive (no circle)
         if 0 <= self.blinking_copy_index < len(self.active_pentagram_points):
             self.active_pentagram_points[self.blinking_copy_index] = False
+            # Important: Do NOT deactivate the death ray - keep it active even when copy is destroyed
+            # self.active_death_rays[self.blinking_copy_index] = False  -- Removed this line
+        
+        # Add debug message to confirm rays are maintained
+        self.add_debug_message(f"Keeping all 5 death rays active even after copy {self.blinking_copy_index} destroyed")
         
         # Remove the blinking copy but keep its pentagram point
         self.copies.pop(self.blinking_copy_index)
@@ -682,8 +724,11 @@ class DarkLord(Boss):
             if hasattr(self.level_instance.current_room, 'bosses') and self.summoned_boss in self.level_instance.current_room.bosses:
                 self.level_instance.current_room.bosses.remove(self.summoned_boss)
         
+        # Increment defeated copies counter
+        self.defeated_copies_count += 1
+        
         # Progress to phase 2 if this was the first defeated boss
-        if not self.death_rays_active and self.phase == 1:
+        if self.defeated_copies_count == 1:
             self.phase = 2
             
             # Start the death ray growth phase
@@ -705,6 +750,25 @@ class DarkLord(Boss):
                     
                     # Don't start summoning immediately - this will be triggered after rays grow
                     self.add_debug_message(f"Phase 2: Copy {self.blinking_copy_index} selected for next summoning")
+                    
+        # Progress to phase 3 if this was the second defeated boss
+        elif self.defeated_copies_count == 2:
+            self.phase = 3
+            self.add_debug_message("Phase 3: Spawning mini death zones and preparing Level 6 boss")
+            
+            # Create initial mini death zones for phase 3
+            self.create_mini_death_zones()
+            
+            # Select another copy to blink for the next phase
+            if len(self.copies) > 0:
+                # Find a valid index that's not already been used
+                valid_indices = [i for i in range(len(self.copies))]
+                if valid_indices:
+                    self.blinking_copy_index = random.choice(valid_indices)
+                    self.copies[self.blinking_copy_index].is_blinking = True
+                    self.copies[self.blinking_copy_index].will_summon_boss = True
+                    self.start_summoning()  # Start summoning immediately for the third boss
+                    self.add_debug_message(f"Phase 3: Copy {self.blinking_copy_index} will summon Level 6 boss")
             
         # Reset blinking copy index if not entering a new phase
         else:
@@ -757,6 +821,7 @@ class DarkLord(Boss):
         # This ensures all 5 rays are active, regardless of current active_pentagram_points state
         for i in range(5):
             self.active_pentagram_points[i] = True
+            self.active_death_rays[i] = True  # Initialize all death rays as active
         
         # Play death ray activation sound
         self.sound_manager.play_sound("effects/boss_10_rays")
@@ -832,8 +897,8 @@ class DarkLord(Boss):
             
         # Test each ray individually by calculating its exact path
         for i in range(5):  # 5 rays, one at each pentagram point
-            # Skip ray if the pentagram point is inactive (copy was removed)
-            if not self.active_pentagram_points[i]:
+            # Skip ray if the death ray is inactive
+            if i >= len(self.active_death_rays) or not self.active_death_rays[i]:
                 continue
                 
             # Use the EXACT SAME MATH as in draw_death_rays to ensure consistency
@@ -1130,6 +1195,9 @@ class DarkLord(Boss):
             if self.is_player_in_death_zone(player):
                 self.apply_death_zone_effect(player)
             
+            # Check if player is in any mini death zones
+            self.check_mini_death_zones(player)
+            
             # Update death rays if active and pass the player for collision detection
             if self.death_rays_active:
                 self.update_death_rays(current_time, player)
@@ -1141,6 +1209,9 @@ class DarkLord(Boss):
             # Update summoned bosses
             for boss in self.summoned_bosses:
                 boss.update(player)
+                
+            # Clean up expired mini death zones
+            self.update_mini_death_zones(current_time)
                 
             return
         
@@ -1390,6 +1461,9 @@ class DarkLord(Boss):
             death_y = self.pentagram_center[1] - self.current_outer_circle_radius
             surface.blit(death_circle, (death_x, death_y))
             
+        # Draw mini death zones
+        self.draw_mini_death_zones(surface)
+        
         # DEBUG DRAWING
         # Draw debug messages if enabled
         if self.debug_enabled:
@@ -1407,8 +1481,8 @@ class DarkLord(Boss):
         
         # Draw all five death rays, one at each pentagram point
         for i in range(5):
-            # Skip ray if the pentagram point is inactive (copy was removed)
-            if i >= len(self.active_pentagram_points) or not self.active_pentagram_points[i]:
+            # Skip ray if the death ray is inactive
+            if i >= len(self.active_death_rays) or not self.active_death_rays[i]:
                 continue
                 
             # Get the pentagram point as the ray's start position
@@ -1524,7 +1598,7 @@ class DarkLord(Boss):
                     
             # Add debug message
             self.add_debug_message(f"Cleared {len(enemies_to_remove)} normal enemies from boss room")
-
+    
     def take_damage(self, amount, knockback=None, damage_type=None):
         """Override take_damage to implement invulnerability during certain phases"""
         # Phase check: Only take damage when in the final phase with one copy left
@@ -1577,6 +1651,10 @@ class DarkLord(Boss):
         self.current_flash_index = 0
         self.thunder_flash_alpha = self.thunder_flashes[0]['intensity']
         
+        # Only create mini death zones if we're in phase 3 or higher (after second boss is defeated)
+        if self.phase >= 3:
+            self.create_mini_death_zones()
+        
         # Play thunder sound
         self.sound_manager.play_sound("effects/thunder")
         
@@ -1627,6 +1705,240 @@ class DarkLord(Boss):
         
         # Blit the flash overlay onto the screen
         surface.blit(flash_surface, (0, 0))
+    
+    def create_mini_death_zones(self):
+        """Create 3-4 mini death zones that last for 6 seconds"""
+        # Determine how many mini zones to create (3-4)
+        num_zones = random.randint(3, 4)
+        
+        # Get current time for end time calculation
+        current_time = pygame.time.get_ticks()
+        end_time = current_time + self.mini_death_zone_duration
+        creation_time = current_time  # Store the creation time for grace period
+        
+        # Get room dimensions if available
+        room_width = 0
+        room_height = 0
+        if hasattr(self, 'level_instance') and self.level_instance and hasattr(self.level_instance, 'current_room'):
+            room = self.level_instance.current_room
+            room_width = room.width * TILE_SIZE
+            room_height = room.height * TILE_SIZE
+        else:
+            # Fallback dimensions
+            room_width = 20 * TILE_SIZE
+            room_height = 15 * TILE_SIZE
+        
+        # Create the specified number of mini death zones
+        for _ in range(num_zones):
+            # Keep trying until we find a valid position
+            for attempt in range(20):  # Limit attempts to prevent infinite loop
+                # Generate random position
+                x = random.randint(TILE_SIZE, room_width - TILE_SIZE)
+                y = random.randint(TILE_SIZE, room_height - TILE_SIZE)
+                
+                # Check if position is within the main death zone
+                dx = x - self.pentagram_center[0]
+                dy = y - self.pentagram_center[1]
+                distance = math.sqrt(dx*dx + dy*dy)
+                
+                # Also check if it overlaps with any existing mini zones
+                overlaps_existing = False
+                for zone_x, zone_y, _, _ in self.mini_death_zones:
+                    zone_dx = x - zone_x
+                    zone_dy = y - zone_y
+                    zone_distance = math.sqrt(zone_dx*zone_dx + zone_dy*zone_dy)
+                    if zone_distance < TILE_SIZE * 2:  # Keep them at least 2 tiles apart
+                        overlaps_existing = True
+                        break
+                
+                # If position is outside the main death zone and doesn't overlap, use it
+                if distance > self.outer_circle_radius and not overlaps_existing:
+                    new_zone = (x, y, end_time, creation_time)  # Include creation time
+                    self.mini_death_zones.append(new_zone)
+                    # Initialize lightning blink state for this zone
+                    self.mini_zone_lightning_blinks[new_zone] = {
+                        'visible': random.choice([True, False]),
+                        'next_blink': current_time + random.randint(100, 300)
+                    }
+                    break
+        
+        # Add debug message
+        self.add_debug_message(f"Created {len(self.mini_death_zones)} blue lightning zones")
+    
+    def update_mini_death_zones(self, current_time):
+        """Update mini death zones and remove expired ones"""
+        if not self.mini_death_zones:
+            return
+        
+        # Update lightning blink states
+        for zone in list(self.mini_zone_lightning_blinks.keys()):
+            if zone not in self.mini_death_zones:
+                # Remove blink data for expired zones
+                self.mini_zone_lightning_blinks.pop(zone, None)
+                continue
+                
+            # Check if it's time to change visibility
+            blink_data = self.mini_zone_lightning_blinks[zone]
+            if current_time >= blink_data['next_blink']:
+                # Toggle visibility
+                blink_data['visible'] = not blink_data['visible']
+                # Set next blink time
+                blink_data['next_blink'] = current_time + random.randint(100, 300)
+            
+        # Remove expired zones
+        self.mini_death_zones = [(x, y, end_time, creation_time) for x, y, end_time, creation_time in self.mini_death_zones 
+                               if current_time < end_time]
+    
+    def check_mini_death_zones(self, player):
+        """Check if player is in any mini death zones and apply damage"""
+        if not player or not self.mini_death_zones:
+            return
+            
+        current_time = pygame.time.get_ticks()
+            
+        # Check each mini zone
+        for zone_x, zone_y, _, creation_time in self.mini_death_zones:
+            # Calculate distance from player to zone center
+            dx = player.rect.centerx - zone_x
+            dy = player.rect.centery - zone_y
+            distance = math.sqrt(dx*dx + dy*dy)
+            
+            # Skip damage if we're in the 1-second grace period
+            grace_period_active = (current_time - creation_time) < 1000  # 1 second grace period
+            
+            # If player is in the zone and grace period is over, apply damage (with cooldown)
+            if distance <= self.mini_death_zone_radius + player.rect.width / 4 and not grace_period_active:
+                if current_time - self.last_mini_zone_hit_time > self.mini_zone_hit_cooldown:
+                    self.last_mini_zone_hit_time = current_time
+                    player.take_damage(self.mini_death_zone_damage)
+                    
+                    # Create hit effect
+                    if hasattr(self, 'particle_manager') and self.particle_manager:
+                        for _ in range(10):
+                            angle = random.uniform(0, math.pi * 2)
+                            speed = random.uniform(0.5, 2)
+                            size = random.randint(2, 5)
+                            lifetime = random.randint(15, 30)
+                            
+                            # Calculate velocity
+                            vx = math.cos(angle) * speed
+                            vy = math.sin(angle) * speed
+                            
+                            # Add particles with blue color instead of red
+                            self.particle_manager.add_particle(
+                                particle_type='fade',
+                                pos=(player.rect.centerx, player.rect.centery),
+                                velocity=(vx, vy),
+                                direction=angle,
+                                color=(0, 100, 255),  # Blue color
+                                size=size,
+                                lifetime=lifetime
+                            )
+                    
+                    # Add debug message
+                    self.add_debug_message("Player hit by lightning zone!")
+                    
+                    # One hit is enough per frame
+                    break
+    
+    def draw_mini_death_zones(self, surface):
+        """Draw mini death zones with blue coloring and lightning effects"""
+        if not self.mini_death_zones:
+            return
+            
+        current_time = pygame.time.get_ticks()
+            
+        # Draw each mini zone
+        for zone in self.mini_death_zones:
+            zone_x, zone_y, end_time, creation_time = zone
+            
+            # Calculate fade out as they approach expiration
+            time_left = end_time - current_time
+            alpha = min(150, int(time_left / self.mini_death_zone_duration * 150))
+            
+            # Skip if nearly invisible
+            if alpha < 10:
+                continue
+                
+            # Create surface for the zone
+            zone_surface = pygame.Surface((self.mini_death_zone_radius * 2, self.mini_death_zone_radius * 2), pygame.SRCALPHA)
+            
+            # Fill with blue color (instead of red)
+            zone_color = (0, 100, 255, alpha)  # Blue color
+            pygame.draw.circle(
+                zone_surface,
+                zone_color,
+                (self.mini_death_zone_radius, self.mini_death_zone_radius),
+                self.mini_death_zone_radius
+            )
+            
+            # Draw a slight glow/border
+            pygame.draw.circle(
+                zone_surface,
+                (50, 150, 255, alpha // 2),  # Lighter blue
+                (self.mini_death_zone_radius, self.mini_death_zone_radius),
+                self.mini_death_zone_radius,
+                2
+            )
+            
+            # Position and draw
+            pos_x = zone_x - self.mini_death_zone_radius
+            pos_y = zone_y - self.mini_death_zone_radius
+            surface.blit(zone_surface, (pos_x, pos_y))
+            
+            # Highlight zones in grace period with subtle pulsing effect
+            grace_period_active = (current_time - creation_time) < 1000  # 1 second grace period
+            if grace_period_active:
+                # Calculate pulse effect (subtle pulsing outline)
+                pulse = (math.sin(current_time / 100) + 1) / 2  # Value between 0 and 1
+                pulse_width = int(2 + pulse * 2)  # Width between 2-4 pixels
+                
+                # Draw pulsing outline to indicate grace period
+                pygame.draw.circle(
+                    surface,
+                    (100, 200, 255, int(200 * pulse)),  # Brighter blue with pulse alpha
+                    (zone_x, zone_y),
+                    self.mini_death_zone_radius + 2,
+                    pulse_width
+                )
+            
+            # Draw lightning image if it's in the visible state
+            if self.lightning_image and zone in self.mini_zone_lightning_blinks:
+                blink_data = self.mini_zone_lightning_blinks[zone]
+                if blink_data['visible']:
+                    # Position lightning image with bottom at the center of the zone
+                    lightning_x = zone_x - self.lightning_image.get_width() // 2
+                    
+                    # Offset to north so bottom of image is at the center of the zone
+                    lightning_y = zone_y - self.lightning_image.get_height()
+                    
+                    # Apply some fade effect based on zone's remaining time
+                    lightning_alpha = min(255, int(time_left / self.mini_death_zone_duration * 255))
+                    
+                    # Create a copy of the image with adjusted alpha
+                    if lightning_alpha < 255:
+                        temp_img = self.lightning_image.copy()
+                        temp_img.fill((255, 255, 255, lightning_alpha), None, pygame.BLEND_RGBA_MULT)
+                        surface.blit(temp_img, (lightning_x, lightning_y))
+                    else:
+                        surface.blit(self.lightning_image, (lightning_x, lightning_y))
+            
+            # Occasionally add particles
+            if hasattr(self, 'particle_manager') and self.particle_manager and random.random() < 0.1:
+                angle = random.uniform(0, math.pi * 2)
+                distance = random.uniform(0, self.mini_death_zone_radius * 0.8)
+                particle_x = zone_x + math.cos(angle) * distance
+                particle_y = zone_y + math.sin(angle) * distance
+                
+                self.particle_manager.add_particle(
+                    particle_type='fade',
+                    pos=(particle_x, particle_y),
+                    velocity=(0, 0),
+                    direction=0,
+                    color=(50, 150, 255),  # Blue color
+                    size=random.randint(1, 3),
+                    lifetime=random.randint(10, 20)
+                )
 
 class DarkLordCopy(pygame.sprite.Sprite):
     """A copy/clone of the Dark Lord that participates in the ritual"""
