@@ -191,6 +191,14 @@ class DarkLord(Boss):
         except Exception as e:
             self.add_debug_message(f"Error loading lightning image: {str(e)}")
     
+        # Final phase transition
+        self.final_phase_active = False
+        self.final_phase_start_time = 0
+        self.pentagram_fade_active = False
+        self.pentagram_fade_start_time = 0
+        self.pentagram_fade_duration = 3000  # 3 seconds to fade out (same as growth)
+        self.chase_delay = 2000  # 2 second delay before chasing in final phase
+    
     def load_dark_lord_images(self):
         """Load specialized images for the Dark Lord"""
         try:
@@ -836,7 +844,18 @@ class DarkLord(Boss):
                     # This parallels how we use this timer for previous bosses
                     self.rays_fully_grown_time = pygame.time.get_ticks()
                     self.add_debug_message(f"Phase 4: Copy {self.blinking_copy_index} will summon Level 7 boss after delay")
-                    
+                
+        # Final phase transition after the fourth boss is defeated
+        elif self.defeated_copies_count == 4:
+            self.phase = 5
+            self.add_debug_message("Phase 5: Final form - Dark Lord reveals himself!")
+            
+            # Reset any pending summoning state
+            self.summoning_active = False
+            
+            # Start the final phase transition
+            self.start_final_phase_transition()
+            
         # Reset blinking copy index if not entering a new phase
         else:
             self.blinking_copy_index = None
@@ -1233,6 +1252,34 @@ class DarkLord(Boss):
         if self.thunder_flash_active:
             self.update_thunder_flash(current_time)
         
+        # Handle final phase transition
+        if self.final_phase_active:
+            self.update_final_phase_transition(current_time)
+            
+            # If in final phase (pentagram is gone), revert to normal boss behavior
+            if not self.pentagram_active and self.visible:
+                # Run regular boss update, but only if we're ready to chase
+                chase_elapsed = current_time - self.chase_start_time
+                if chase_elapsed >= self.chase_delay:
+                    super().update(player)
+                
+                # Update projectiles if any
+                if hasattr(self, 'projectiles') and self.projectiles:
+                    self.projectiles.update()
+                    
+                    # Check collisions with player
+                    for projectile in self.projectiles:
+                        if hasattr(projectile, 'check_collision') and projectile.check_collision(player.rect):
+                            player.take_damage(projectile.damage)
+                
+                # Check mini death zones
+                self.check_mini_death_zones(player)
+                
+                # Clean up expired mini death zones
+                self.update_mini_death_zones(current_time)
+                
+                return
+            
         # Handle introduction phase
         if not self.introduction_complete:
             if not self.introduction_timer:
@@ -1271,11 +1318,11 @@ class DarkLord(Boss):
             self.update_pentagram()
             
             # Check if only one copy remains to transition to final phase
-            if len(self.copies) == 1:
-                # Make boss vulnerable in final phase
+            if len(self.copies) == 1 and self.defeated_copies_count < 4:
+                # Make boss vulnerable in intermediate final phase
                 self.invulnerable = False
                 # Add debug message
-                self.add_debug_message("Final phase - Dark Lord is now vulnerable!")
+                self.add_debug_message("Intermediate phase - Dark Lord is temporarily vulnerable!")
             else:
                 # Ensure boss is invulnerable while multiple copies remain
                 self.invulnerable = True
@@ -1342,7 +1389,8 @@ class DarkLord(Boss):
     def draw(self, surface):
         """Override draw method to handle special visual effects"""
         # Draw the circle (if growing or active) before anything else
-        if self.circle_growth_active or self.current_outer_circle_radius > 0:
+        if (self.circle_growth_active or self.current_outer_circle_radius > 0 or 
+            self.pentagram_fade_active):
             self.draw_circle(surface)
             
         if not self.visible:
@@ -1379,38 +1427,40 @@ class DarkLord(Boss):
             # Draw health bar for summoned boss
             if boss == self.summoned_boss and boss.health > 0:
                 # Position the health bar above the boss
-                health_bar_width = boss.rect.width
-                health_bar_height = 6
-                health_percent = boss.health / boss.max_health
+                health_bar_width = 50
+                health_bar_height = 5
+                health_ratio = boss.health / boss.max_health
                 
-                # Background (dark red)
-                health_bar_bg = pygame.Rect(
-                    boss.rect.x, 
-                    boss.rect.y - 15, 
-                    health_bar_width, 
-                    health_bar_height
+                # Draw health bar background (red)
+                pygame.draw.rect(
+                    surface,
+                    (255, 0, 0),
+                    (boss.rect.centerx - health_bar_width // 2,
+                     boss.rect.top - 15,
+                     health_bar_width,
+                     health_bar_height)
                 )
-                pygame.draw.rect(surface, (80, 0, 0), health_bar_bg)
                 
-                # Foreground (bright red)
-                health_bar_fg = pygame.Rect(
-                    boss.rect.x, 
-                    boss.rect.y - 15, 
-                    health_bar_width * health_percent, 
-                    health_bar_height
+                # Draw current health (green)
+                pygame.draw.rect(
+                    surface,
+                    (0, 255, 0),
+                    (boss.rect.centerx - health_bar_width // 2,
+                     boss.rect.top - 15,
+                     int(health_bar_width * health_ratio),
+                     health_bar_height)
                 )
-                pygame.draw.rect(surface, (255, 50, 50), health_bar_fg)
-                
-                # Border
-                pygame.draw.rect(surface, (0, 0, 0), health_bar_bg, 1)
         
-        # Draw debug messages
-        if DEBUG_MODE:
-            self.draw_debug_messages(surface, None)
+        # Draw mini death zones (mini lightning zones)
+        self.draw_mini_death_zones(surface)
         
-        # Draw thunder flash overlay if active
-        if self.thunder_flash_active and self.thunder_flash_alpha > 0:
+        # Draw thunder flash over everything else
+        if self.thunder_flash_active:
             self.draw_thunder_flash(surface)
+        
+        # Draw debug messages if enabled
+        if self.debug_enabled:
+            self.draw_debug_messages(surface, None)
     
     def draw_aura(self, surface, camera=None):
         """Draw an aura around the boss"""
@@ -1797,15 +1847,32 @@ class DarkLord(Boss):
     
     def take_damage(self, amount, knockback=None, damage_type=None):
         """Override take_damage to implement invulnerability during certain phases"""
+        # If we're in the final phase (after the transition is complete),
+        # we should be vulnerable regardless of copies
+        if self.phase == 5 and not self.pentagram_active and self.visible:
+            # In the final phase, we're always vulnerable
+            # But we need to call the parent with only the expected arguments
+            return super().take_damage(amount)
+            
+        # Make boss invulnerable during introduction phase
+        if not self.introduction_complete:
+            # Completely invulnerable during introduction
+            return False
+            
+        # Make boss invulnerable during pentagram creation phase
+        if self.pentagram_creation_pending or self.circle_growth_active:
+            # Invulnerable while circle is growing
+            return False
+            
         # Phase check: Only take damage when in the final phase with one copy left
         if self.pentagram_active and len(self.copies) > 1:
             # Return early if we're in the pentagram phase and have more than one copy
             # This prevents damage during the pentagram ritual
             return False
             
-        # Allow damage during introduction (player can hit boss before pentagram forms)
-        # and in the final phase (when only one copy remains)
-        return super().take_damage(amount, knockback, damage_type)
+        # Allow damage during transition phases (when only one copy remains)
+        # Modified to only pass the arguments expected by the parent class
+        return super().take_damage(amount)
 
     def trigger_thunder_effect(self):
         """Trigger the thunder effect with multiple flashes and sound"""
@@ -2176,6 +2243,122 @@ class DarkLord(Boss):
                             size=random.randint(2, 6),
                             lifetime=random.randint(15, 30)
                         )
+
+    def start_final_phase_transition(self):
+        """Start the transition to the final phase after all copies are defeated"""
+        self.final_phase_active = True
+        self.final_phase_start_time = pygame.time.get_ticks()
+        
+        # We'll animate the last copy to the center
+        if len(self.copies) > 0:
+            # The last copy will move to the center
+            self.blinking_copy_index = 0  # Use the first (and only) remaining copy
+            self.copies[self.blinking_copy_index].is_blinking = True
+            
+            # Start the copy moving to the center
+            self.copies[self.blinking_copy_index].target_x = self.pentagram_center[0]
+            self.copies[self.blinking_copy_index].target_y = self.pentagram_center[1]
+            self.copies[self.blinking_copy_index].is_moving = True
+            self.copies[self.blinking_copy_index].move_speed = 1.0  # Slow movement to center
+            
+            # Start the pentagram fade out
+            self.pentagram_fade_active = True
+            self.pentagram_fade_start_time = pygame.time.get_ticks()
+            
+            # Play a sound effect for the transition
+            self.sound_manager.play_sound("effects/boss_transition")
+            
+            self.add_debug_message("Final copy moving to center, pentagram fading out")
+        else:
+            # If no copies remain, just proceed directly to the final phase
+            self.complete_final_phase_transition()
+
+    def complete_final_phase_transition(self):
+        """Complete the transition to the final phase"""
+        # Deactivate pentagram elements
+        self.pentagram_active = False
+        self.death_rays_active = False
+        self.death_zone_enabled = False  # Disable the main death zone (keep mini zones)
+        
+        # Remove any remaining copies
+        self.copies = []
+        
+        # Make the real boss visible and vulnerable
+        self.visible = True
+        self.invulnerable = False
+        
+        # Force the correct phase
+        self.phase = 5
+        
+        # Debug message to confirm vulnerability
+        self.add_debug_message("Dark Lord is now VULNERABLE!")
+        
+        # If we have a final form image, use it
+        if hasattr(self, 'final_form_image') and self.final_form_image:
+            self.image = self.final_form_image
+            self.rect = self.image.get_rect(center=(self.rect.centerx, self.rect.centery))
+        
+        # Reset chase timer for the delay
+        self.chase_start_time = pygame.time.get_ticks()
+        
+        # Play a reveal sound effect
+        self.sound_manager.play_sound("effects/boss_reveal")
+        
+        self.add_debug_message("Dark Lord revealed in final form! Will chase in 2 seconds")
+
+    def update_final_phase_transition(self, current_time):
+        """Update the final phase transition animation"""
+        if not self.final_phase_active:
+            return
+            
+        # First, check if the pentagram fade is active
+        if self.pentagram_fade_active:
+            elapsed = current_time - self.pentagram_fade_start_time
+            fade_progress = min(1.0, elapsed / self.pentagram_fade_duration)
+            
+            # Update the fade - reverse of the growth animation
+            self.current_outer_circle_radius = self.outer_circle_radius * (1.0 - fade_progress)
+            
+            # When fade is complete, complete the transition
+            if fade_progress >= 1.0:
+                self.pentagram_fade_active = False
+                self.current_outer_circle_radius = 0
+                self.complete_final_phase_transition()
+                return
+                
+        # Check if the last copy has reached the center
+        if len(self.copies) > 0 and self.blinking_copy_index is not None:
+            # Update the copy's blinking state
+            if current_time % 200 < 100:  # Fast blinking (every 200ms)
+                if self.copies[self.blinking_copy_index].alpha > 50:
+                    self.copies[self.blinking_copy_index].alpha = 50
+                else:
+                    self.copies[self.blinking_copy_index].alpha = 200
+                self.copies[self.blinking_copy_index].image.set_alpha(self.copies[self.blinking_copy_index].alpha)
+            
+            # Check if the copy has reached the center
+            if (abs(self.copies[self.blinking_copy_index].rect.centerx - self.pentagram_center[0]) < 5 and
+                abs(self.copies[self.blinking_copy_index].rect.centery - self.pentagram_center[1]) < 5):
+                # If the copy has reached the center, make it fade out
+                self.copies[self.blinking_copy_index].alpha -= 5
+                self.copies[self.blinking_copy_index].image.set_alpha(self.copies[self.blinking_copy_index].alpha)
+                
+                # When fully transparent, remove it
+                if self.copies[self.blinking_copy_index].alpha <= 0:
+                    self.copies.pop(self.blinking_copy_index)
+                    self.blinking_copy_index = None
+        
+        # After the final phase is activated and the chase delay has passed, the dark lord starts chasing
+        if not self.pentagram_fade_active and hasattr(self, 'chase_start_time'):
+            chase_elapsed = current_time - self.chase_start_time
+            if chase_elapsed >= self.chase_delay:
+                # Start chasing
+                if not hasattr(self, 'chase_active') or not self.chase_active:
+                    self.chase_active = True
+                    self.add_debug_message("Dark Lord begins chasing!")
+                    
+                    # Play angry sound
+                    self.sound_manager.play_sound("effects/boss_angry")
 
 class DarkLordCopy(pygame.sprite.Sprite):
     """A copy/clone of the Dark Lord that participates in the ritual"""
