@@ -1852,14 +1852,15 @@ class DarkLord(Boss):
         for zone in self.mini_death_zones:
             zone_x, zone_y, end_time, creation_time = zone
             
-            # Calculate fade out as they approach expiration
-            time_left = end_time - current_time
-            alpha = min(150, int(time_left / self.mini_death_zone_duration * 150))
+            # Calculate time since creation
+            time_since_creation = current_time - creation_time
             
-            # Skip if nearly invisible
-            if alpha < 10:
-                continue
-                
+            # Calculate remaining lifetime (for effects, not for alpha anymore)
+            time_left = end_time - current_time
+            
+            # Use a constant alpha instead of fading out
+            alpha = 150  # Constant alpha value for visibility
+            
             # Create surface for the zone
             zone_surface = pygame.Surface((self.mini_death_zone_radius * 2, self.mini_death_zone_radius * 2), pygame.SRCALPHA)
             
@@ -1905,23 +1906,43 @@ class DarkLord(Boss):
             # Draw lightning image if it's in the visible state
             if self.lightning_image and zone in self.mini_zone_lightning_blinks:
                 blink_data = self.mini_zone_lightning_blinks[zone]
-                if blink_data['visible']:
-                    # Position lightning image with bottom at the center of the zone
-                    lightning_x = zone_x - self.lightning_image.get_width() // 2
+                
+                # Special handling for first 500ms - blink with 300% scale
+                initial_effect = time_since_creation < 500
+                
+                if blink_data['visible'] or initial_effect:
+                    # Store original dimensions for scaling calculations
+                    orig_width = self.lightning_image.get_width()
+                    orig_height = self.lightning_image.get_height()
                     
-                    # Offset to north so bottom of image is at the center of the zone
-                    lightning_y = zone_y - self.lightning_image.get_height()
+                    # Apply 300% scaling during the first 500ms
+                    scale = 3.0 if initial_effect else 1.0
                     
-                    # Apply some fade effect based on zone's remaining time
-                    lightning_alpha = min(255, int(time_left / self.mini_death_zone_duration * 255))
-                    
-                    # Create a copy of the image with adjusted alpha
-                    if lightning_alpha < 255:
-                        temp_img = self.lightning_image.copy()
-                        temp_img.fill((255, 255, 255, lightning_alpha), None, pygame.BLEND_RGBA_MULT)
-                        surface.blit(temp_img, (lightning_x, lightning_y))
+                    # Create scaled image
+                    if scale != 1.0:
+                        scaled_width = int(orig_width * scale)
+                        scaled_height = int(orig_height * scale)
+                        scaled_img = pygame.transform.scale(self.lightning_image, (scaled_width, scaled_height))
                     else:
-                        surface.blit(self.lightning_image, (lightning_x, lightning_y))
+                        scaled_img = self.lightning_image
+                    
+                    # Position lightning image with bottom at the center of the zone
+                    # Adjust for the new scaled size
+                    lightning_x = zone_x - scaled_img.get_width() // 2
+                    lightning_y = zone_y - scaled_img.get_height()
+                    
+                    # Blink effect during initial 500ms (rapid flashing)
+                    if initial_effect:
+                        # Faster blinking for dramatic effect (4 flashes in 500ms)
+                        flash_period = 125  # ms per flash
+                        flash_visible = (time_since_creation // flash_period) % 2 == 0
+                        
+                        if flash_visible:
+                            # Full brightness for the initial strike
+                            surface.blit(scaled_img, (lightning_x, lightning_y))
+                    else:
+                        # Normal display after initial effect
+                        surface.blit(scaled_img, (lightning_x, lightning_y))
             
             # Occasionally add particles
             if hasattr(self, 'particle_manager') and self.particle_manager and random.random() < 0.1:
@@ -1939,6 +1960,26 @@ class DarkLord(Boss):
                     size=random.randint(1, 3),
                     lifetime=random.randint(10, 20)
                 )
+                
+                # Add extra particles during initial strike
+                if time_since_creation < 500 and random.random() < 0.5:
+                    # More frequent and larger particles for initial strike
+                    for _ in range(3):
+                        spread_angle = random.uniform(0, math.pi * 2)
+                        spread_distance = random.uniform(0, self.mini_death_zone_radius * 1.2)
+                        strike_x = zone_x + math.cos(spread_angle) * spread_distance
+                        strike_y = zone_y + math.sin(spread_angle) * spread_distance
+                        
+                        # Brighter particles for the strike effect
+                        self.particle_manager.add_particle(
+                            particle_type='fade',
+                            pos=(strike_x, strike_y),
+                            velocity=(random.uniform(-1, 1), random.uniform(-1, 1)),
+                            direction=0,
+                            color=(150, 200, 255),  # Brighter blue
+                            size=random.randint(2, 6),
+                            lifetime=random.randint(15, 30)
+                        )
 
 class DarkLordCopy(pygame.sprite.Sprite):
     """A copy/clone of the Dark Lord that participates in the ritual"""
