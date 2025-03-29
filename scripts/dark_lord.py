@@ -619,7 +619,7 @@ class DarkLord(Boss):
             result = original_update(player)
             
             # Apply a speed reduction factor to prevent erratic movement
-            speed_factor = 0.4  # Reduces speed by half
+            speed_factor = 0.1  # Reduced by 20% from 0.4
             
             # Move with reduced velocity
             self.summoned_boss.rect.x += self.summoned_boss.velocity_x * speed_factor
