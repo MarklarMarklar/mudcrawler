@@ -145,6 +145,20 @@ class DarkLord(Boss):
         if level_instance and hasattr(level_instance, 'current_room'):
             self.clear_boss_room()
         
+        # Thunder effect attributes
+        self.thunder_enabled = True
+        self.thunder_interval_min = 5000  # 5 seconds minimum between thunder
+        self.thunder_interval_max = 8000  # 8 seconds maximum between thunder
+        self.next_thunder_time = pygame.time.get_ticks() + random.randint(self.thunder_interval_min, self.thunder_interval_max)
+        self.thunder_flash_active = False
+        self.thunder_flash_start_time = 0
+        self.thunder_flash_duration = 150  # Flash lasts 150ms
+        self.thunder_flash_alpha = 0  # Current opacity of the flash
+        
+        # Multiple flashes for thunder effect
+        self.thunder_flashes = []  # Sequence of flashes with timing and intensity
+        self.current_flash_index = 0
+        
     def load_dark_lord_images(self):
         """Load specialized images for the Dark Lord"""
         try:
@@ -1056,6 +1070,15 @@ class DarkLord(Boss):
         # Get current time
         current_time = pygame.time.get_ticks()
         
+        # Check if it's time for thunder effect
+        if self.thunder_enabled and current_time >= self.next_thunder_time:
+            self.trigger_thunder_effect()
+            self.next_thunder_time = current_time + random.randint(self.thunder_interval_min, self.thunder_interval_max)
+        
+        # Update thunder flash effect if active
+        if self.thunder_flash_active:
+            self.update_thunder_flash(current_time)
+        
         # Handle introduction phase
         if not self.introduction_complete:
             if not self.introduction_timer:
@@ -1224,6 +1247,10 @@ class DarkLord(Boss):
         # Draw debug messages
         if DEBUG_MODE:
             self.draw_debug_messages(surface, None)
+        
+        # Draw thunder flash overlay if active
+        if self.thunder_flash_active and self.thunder_flash_alpha > 0:
+            self.draw_thunder_flash(surface)
     
     def draw_aura(self, surface, camera=None):
         """Draw an aura around the boss"""
@@ -1509,6 +1536,97 @@ class DarkLord(Boss):
         # Allow damage during introduction (player can hit boss before pentagram forms)
         # and in the final phase (when only one copy remains)
         return super().take_damage(amount, knockback, damage_type)
+
+    def trigger_thunder_effect(self):
+        """Trigger the thunder effect with multiple flashes and sound"""
+        # Start the flash effect
+        self.thunder_flash_active = True
+        self.thunder_flash_start_time = pygame.time.get_ticks()
+        
+        # Generate random sequence of 3-5 flashes with varying intensity and timing
+        num_flashes = random.randint(3, 5)
+        self.thunder_flashes = []
+        
+        # First flash is always the brightest
+        self.thunder_flashes.append({
+            'delay': 0,  # Immediate
+            'duration': 150,
+            'intensity': random.randint(160, 200)  # Main flash (bright)
+        })
+        
+        # Add secondary flashes with varying delays and intensities
+        total_duration = 150  # Keep track of cumulative duration
+        for i in range(1, num_flashes):
+            delay = total_duration + random.randint(50, 150)  # Random delay after previous flash
+            duration = random.randint(50, 120)  # Random duration
+            
+            # Intensity decreases with each subsequent flash
+            max_intensity = 180 - (i * 30)
+            min_intensity = max(80, max_intensity - 40)
+            intensity = random.randint(min_intensity, max_intensity)
+            
+            self.thunder_flashes.append({
+                'delay': delay,
+                'duration': duration,
+                'intensity': intensity
+            })
+            
+            total_duration = delay + duration
+        
+        # Reset flash tracking
+        self.current_flash_index = 0
+        self.thunder_flash_alpha = self.thunder_flashes[0]['intensity']
+        
+        # Play thunder sound
+        self.sound_manager.play_sound("effects/thunder")
+        
+        # Add debug message
+        self.add_debug_message(f"Thunder effect triggered with {num_flashes} flashes")
+    
+    def update_thunder_flash(self, current_time):
+        """Update the thunder flash effect with multiple flashes"""
+        if not self.thunder_flash_active:
+            return
+            
+        # Calculate time since thunder effect started
+        elapsed = current_time - self.thunder_flash_start_time
+        
+        # Exit if we've gone through all flashes
+        if self.current_flash_index >= len(self.thunder_flashes):
+            self.thunder_flash_active = False
+            self.thunder_flash_alpha = 0
+            return
+            
+        # Get current flash info
+        current_flash = self.thunder_flashes[self.current_flash_index]
+        flash_start = current_flash['delay']
+        flash_end = flash_start + current_flash['duration']
+        
+        # Check if we're in the current flash's time window
+        if flash_start <= elapsed < flash_end:
+            # Calculate the fade within this flash (start bright, fade out)
+            flash_progress = (elapsed - flash_start) / current_flash['duration']
+            self.thunder_flash_alpha = int(current_flash['intensity'] * (1 - flash_progress))
+        elif elapsed >= flash_end:
+            # Move to the next flash
+            self.current_flash_index += 1
+            
+            # Set initial alpha for the next flash if there is one
+            if self.current_flash_index < len(self.thunder_flashes):
+                self.thunder_flash_alpha = self.thunder_flashes[self.current_flash_index]['intensity']
+            else:
+                # End the effect if we've used all flashes
+                self.thunder_flash_active = False
+                self.thunder_flash_alpha = 0
+    
+    def draw_thunder_flash(self, surface):
+        """Draw a white flash overlay for the thunder effect"""
+        # Create a full-screen white overlay with current alpha
+        flash_surface = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+        flash_surface.fill((255, 255, 255, self.thunder_flash_alpha))
+        
+        # Blit the flash overlay onto the screen
+        surface.blit(flash_surface, (0, 0))
 
 class DarkLordCopy(pygame.sprite.Sprite):
     """A copy/clone of the Dark Lord that participates in the ritual"""
