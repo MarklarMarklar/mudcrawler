@@ -315,9 +315,11 @@ class DarkLord(Boss):
         """Start the boss summoning process from the blinking copy"""
         self.summoning_active = True
         self.last_blink_time = pygame.time.get_ticks()
+        self.ritual_timer = pygame.time.get_ticks()  # Set the ritual timer at the start of summoning
         
         # Add debug message
-        self.add_debug_message("Started summoning from blinking copy")
+        phase_text = f"phase {self.phase}" if self.phase > 0 else "initial phase"
+        self.add_debug_message(f"Started summoning from blinking copy in {phase_text}")
         
         # Play summoning sound
         self.sound_manager.play_sound("effects/boss_summon")
@@ -346,6 +348,7 @@ class DarkLord(Boss):
         
         # Check if it's time to summon the boss
         if self.summoning_active and not self.summoned_boss and current_time - self.ritual_timer > 5000:
+            self.add_debug_message(f"Summoning boss after {(current_time - self.ritual_timer)/1000:.1f} seconds of blinking")
             self.summon_level2_boss()
     
     def summon_level2_boss(self):
@@ -396,6 +399,23 @@ class DarkLord(Boss):
             self.summoned_boss.health = self.summoned_boss.health * 1.0  
             self.summoned_boss.max_health = self.summoned_boss.health
             self.summoned_boss.damage = self.summoned_boss.damage * 0.7  # 70% damage
+        
+        # Make sure the boss immediately starts chasing the player
+        if hasattr(self.summoned_boss, 'has_spotted_player'):
+            self.summoned_boss.has_spotted_player = True
+            
+        # If the boss has a state machine, set it to chase mode immediately
+        if hasattr(self.summoned_boss, 'state') and hasattr(self.summoned_boss, 'STATE_CHASE'):
+            self.summoned_boss.state = self.summoned_boss.STATE_CHASE
+            self.add_debug_message(f"{boss_name} starting in chase mode")
+            
+        # Make sure chase timer is set
+        if hasattr(self.summoned_boss, 'chase_start_time'):
+            self.summoned_boss.chase_start_time = pygame.time.get_ticks()
+            
+        # If the boss has a first_spotted flag, mark as already spotted
+        if hasattr(self.summoned_boss, 'first_spotted'):
+            self.summoned_boss.first_spotted = True
         
         # Store the original shoot_projectile method
         original_shoot_projectile = self.summoned_boss.shoot_projectile
@@ -759,6 +779,9 @@ class DarkLord(Boss):
             # Create initial mini death zones for phase 3
             self.create_mini_death_zones()
             
+            # Reset any pending summoning state
+            self.summoning_active = False
+            
             # Select another copy to blink for the next phase
             if len(self.copies) > 0:
                 # Find a valid index that's not already been used
@@ -767,9 +790,12 @@ class DarkLord(Boss):
                     self.blinking_copy_index = random.choice(valid_indices)
                     self.copies[self.blinking_copy_index].is_blinking = True
                     self.copies[self.blinking_copy_index].will_summon_boss = True
-                    self.start_summoning()  # Start summoning immediately for the third boss
-                    self.add_debug_message(f"Phase 3: Copy {self.blinking_copy_index} will summon Level 6 boss")
-            
+                    
+                    # Reset the rays_fully_grown_time to use for the third boss delay timer
+                    # This parallels how we use this timer for the second boss
+                    self.rays_fully_grown_time = pygame.time.get_ticks()
+                    self.add_debug_message(f"Phase 3: Copy {self.blinking_copy_index} will summon Level 6 boss after delay")
+                    
         # Reset blinking copy index if not entering a new phase
         else:
             self.blinking_copy_index = None
@@ -841,6 +867,11 @@ class DarkLord(Boss):
             growth_factor = min(1.0, elapsed / 5000)  # 5 seconds to grow to full size
             self.death_ray_current_length = self.death_ray_length * growth_factor
             
+            # Calculate blinking effect during growth phase (fast blink rate)
+            # Blinks faster as the ray grows (starting with slower blinks)
+            blink_rate = 200 - int(150 * growth_factor)  # 200ms to 50ms blink rate as ray grows
+            self.ray_visible = (elapsed // blink_rate) % 2 == 0  # Alternates between true/false
+            
             # Check if growth is complete
             if growth_factor >= 1.0:
                 self.death_ray_growth_active = False
@@ -849,20 +880,32 @@ class DarkLord(Boss):
                 self.death_ray_angle = 0  # Start spinning from the current position (no angle offset)
                 self.rays_fully_grown_time = current_time
                 self.last_ray_spin_time = current_time  # Reset spin time counter
+                self.ray_visible = True  # Make sure rays are visible after growth
                 self.add_debug_message("Death rays fully grown, spinning active")
                 
                 # Important: Do NOT start summoning here! Wait for the delay to pass
+        else:
+            # Always visible when not in growth phase
+            self.ray_visible = True
         
-        # Handle delay after rays are fully grown before summoning boss
-        if not self.death_ray_growth_active and self.rays_fully_grown_time > 0 and not self.summoning_active:
+        # Handle delay after rays are fully grown before summoning boss in phase 2
+        # OR handle delay after second boss defeated before summoning third boss in phase 3
+        if self.rays_fully_grown_time > 0 and not self.summoning_active:
             elapsed_since_growth = current_time - self.rays_fully_grown_time
             
             # Only start summoning after the delay has passed
             if elapsed_since_growth >= self.rays_fully_grown_delay:
                 if self.blinking_copy_index is not None:
+                    # For any phase where we're waiting to summon
                     self.start_summoning()
-                    # Do NOT reset rays_fully_grown_time here to prevent repeated summoning
-                    self.add_debug_message("Starting Level 4 boss summoning after delay")
+                    
+                    # Debug message based on phase
+                    if self.phase == 2:
+                        self.add_debug_message("Starting Level 4 boss summoning after delay")
+                    elif self.phase == 3:
+                        self.add_debug_message("Starting Level 6 boss summoning after delay")
+                    else:
+                        self.add_debug_message(f"Starting boss summoning after delay in phase {self.phase}")
         
         # Calculate time delta for spin (only if spinning is active)
         if self.death_ray_spin_active:
@@ -1474,6 +1517,10 @@ class DarkLord(Boss):
         if not self.death_rays_active:
             return
             
+        # Skip drawing during growth phase when the ray should be invisible (blinking effect)
+        if self.death_ray_growth_active and not self.ray_visible:
+            return
+            
         center_x, center_y = self.pentagram_center
         
         # Use the pulsing color for death rays too
@@ -1503,14 +1550,142 @@ class DarkLord(Boss):
                 end_x = start_x + math.cos(ray_angle) * ray_length
                 end_y = start_y + math.sin(ray_angle) * ray_length
                 
-                # Draw the ray as a thin line (matching pentagram line width)
-                pygame.draw.line(
-                    surface,
-                    ray_color,
-                    (start_x, start_y),
-                    (end_x, end_y),
-                    self.death_ray_width
-                )
+                # Create zig-zag ray effect instead of straight line
+                if ray_length > 0:
+                    # Get current time for animation
+                    current_time = pygame.time.get_ticks()
+                    
+                    # Create list of points for the zig-zag path
+                    zig_zag_points = [
+                        (start_x, start_y),  # Start point
+                    ]
+                    
+                    # Parameters for zig-zag effect
+                    segment_length = 30  # Length of each segment in the zig-zag
+                    
+                    # Calculate number of segments based on ray length
+                    num_segments = max(1, int(ray_length / segment_length))
+                    remaining_length = ray_length
+                    
+                    # Calculate current direction vector
+                    dir_x = math.cos(ray_angle)
+                    dir_y = math.sin(ray_angle)
+                    
+                    # Create perpendicular vector for zig-zag displacement
+                    perp_x = -dir_y
+                    perp_y = dir_x
+                    
+                    # Current position
+                    current_x, current_y = start_x, start_y
+                    
+                    # Animation modifier - makes the zig-zag points move/shift over time
+                    animation_speed = 0.02
+                    animation_offset = current_time * animation_speed % (math.pi * 2)
+                    
+                    # Amplitude increases with ray length for more dramatic effect
+                    # But capped to avoid excessive zigzag
+                    base_amplitude = 3
+                    amplitude_factor = min(1.0, ray_length / (TILE_SIZE * 3))
+                    max_amplitude = base_amplitude + (5 * amplitude_factor)
+                    
+                    # Create each segment of the zig-zag
+                    for j in range(num_segments):
+                        # Calculate segment length (last one might be shorter)
+                        seg_length = min(segment_length, remaining_length)
+                        if seg_length <= 0:
+                            break
+                            
+                        # Calculate position along ray for this segment
+                        segment_progress = (j * segment_length) / ray_length
+                        
+                        # Alternating zig-zag with sine wave modulation for smoother look
+                        # Amplitude increases toward the middle of the ray and decreases toward the end
+                        # This creates a pulsing/flowing effect along the ray
+                        wave_position = segment_progress * 10 + animation_offset
+                        
+                        # Amplitude is stronger in the middle, weaker at start/end
+                        # This creates a pulsing shape where the middle has more zigzag
+                        amplitude_modifier = math.sin(segment_progress * math.pi)
+                        amplitude = max_amplitude * amplitude_modifier
+                        
+                        # Calculate displacement using sine wave
+                        displacement = amplitude * math.sin(wave_position)
+                        
+                        # Apply displacement perpendicular to ray direction
+                        offset_x = perp_x * displacement
+                        offset_y = perp_y * displacement
+                        
+                        # Calculate next point position
+                        next_x = current_x + (dir_x * seg_length) + offset_x
+                        next_y = current_y + (dir_y * seg_length) + offset_y
+                        
+                        # Add point to path
+                        zig_zag_points.append((next_x, next_y))
+                        
+                        # Update current position (without the perpendicular displacement)
+                        # This keeps the ray following the overall correct direction
+                        current_x += dir_x * seg_length
+                        current_y += dir_y * seg_length
+                        
+                        # Reduce remaining length
+                        remaining_length -= seg_length
+                    
+                    # Make sure the last point is exactly at the end of the ray
+                    # This ensures the ray has the correct total length regardless of zig-zags
+                    zig_zag_points.append((end_x, end_y))
+                    
+                    # Draw the zig-zag ray
+                    if len(zig_zag_points) > 1:
+                        pygame.draw.lines(
+                            surface,
+                            ray_color,
+                            False,  # Don't connect last point to first
+                            zig_zag_points,
+                            self.death_ray_width
+                        )
+                    
+                    # Draw additional glow effect
+                    if hasattr(self, 'particle_manager') and self.particle_manager:
+                        # Generate particles along the ray path
+                        for j in range(1, len(zig_zag_points)):
+                            # Only spawn particles occasionally
+                            if random.random() < 0.3:
+                                # Get the segment
+                                seg_start = zig_zag_points[j-1]
+                                seg_end = zig_zag_points[j]
+                                
+                                # Calculate a random position along this segment
+                                t = random.random()
+                                particle_x = seg_start[0] + (seg_end[0] - seg_start[0]) * t
+                                particle_y = seg_start[1] + (seg_end[1] - seg_start[1]) * t
+                                
+                                # Create a particle at this position
+                                # Brighter color for better visibility
+                                particle_color = (
+                                    min(255, self.current_color[0]),
+                                    min(255, self.current_color[1]),
+                                    min(255, self.current_color[2])
+                                )
+                                
+                                # Add a particle at this position
+                                self.particle_manager.add_particle(
+                                    particle_type='fade',
+                                    pos=(particle_x, particle_y),
+                                    velocity=(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5)),
+                                    direction=0,
+                                    color=particle_color,
+                                    size=random.randint(1, 3),
+                                    lifetime=random.randint(5, 15)
+                                )
+                else:
+                    # Fallback to simple line if ray_length is zero
+                    pygame.draw.line(
+                        surface,
+                        ray_color,
+                        (start_x, start_y),
+                        (start_x, start_y),  # Same point
+                        self.death_ray_width
+                    )
                 
                 # Draw a small glow at the start of the ray
                 glow_radius = self.death_ray_width * 1.5
@@ -1520,32 +1695,7 @@ class DarkLord(Boss):
                     (int(start_x), int(start_y)),
                     int(glow_radius)
                 )
-                
-                # Create particle effects along the ray with the current color
-                if hasattr(self, 'particle_manager') and self.particle_manager and random.random() < 0.2:
-                    # Calculate a random position along the ray
-                    t = random.random()  # Random position factor along the ray (0 to 1)
-                    particle_x = start_x + (end_x - start_x) * t
-                    particle_y = start_y + (end_y - start_y) * t
-                    
-                    # Use a brighter version of the current color for particles
-                    particle_color = (
-                        min(255, self.current_color[0]),
-                        min(255, self.current_color[1] - 50),  # Less green for better contrast
-                        min(255, self.current_color[2] - 50)   # Less blue for better contrast
-                    )
-                    
-                    # Add a particle at this position
-                    self.particle_manager.add_particle(
-                        particle_type='fade',
-                        pos=(particle_x, particle_y),
-                        velocity=(0, 0),
-                        direction=0,
-                        color=particle_color,
-                        size=random.randint(1, 3),  # Smaller particles for thinner ray
-                        lifetime=random.randint(5, 15)
-                    )
-
+    
     def add_debug_message(self, message):
         """Add a debug message to be displayed"""
         if not DEBUG_MODE:
