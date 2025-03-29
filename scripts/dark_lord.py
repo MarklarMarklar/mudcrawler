@@ -57,6 +57,7 @@ class DarkLord(Boss):
         self.death_ray_width = 2  # Reduced from 10 to 2 pixels to match pentagram line width
         self.death_ray_angle = 0  # Starting angle (will be rotated)
         self.death_ray_rotation_speed = 0.0002  # Radians per millisecond
+        self.base_ray_rotation_speed = 0.0002  # Store the base rotation speed for reference
         self.death_ray_damage = 30  # Damage per hit
         self.death_ray_hit_cooldown = 500  # ms between hits
         self.death_ray_last_hit_time = 0
@@ -82,6 +83,9 @@ class DarkLord(Boss):
         self.circle_growth_duration = 3000  # 3 seconds for growth
         self.outer_circle_color = (150, 0, 150, 80)  # Semi-transparent purple
         self.outer_circle_width = 3
+        # Base rotation speed for pentagram effects
+        self.base_pentagram_rotation_speed = 0.0002  # Radians per millisecond
+        self.pentagram_rotation_speed = 0.0002  # Current rotation speed (can be adjusted)
         
         # New timing for sequence of events
         self.post_intro_delay = 1000  # 1 second delay after introduction before circle starts growing
@@ -352,7 +356,7 @@ class DarkLord(Boss):
             self.summon_level2_boss()
     
     def summon_level2_boss(self):
-        """Summon the boss from the blinking copy - either level 2, 4, or 6 based on the phase"""
+        """Summon the boss from the blinking copy - based on the current phase"""
         if self.summoned_boss:
             return
             
@@ -369,7 +373,9 @@ class DarkLord(Boss):
         spawn_y = self.pentagram_center[1]
         
         # Select boss level based on current phase
-        if self.phase == 3:
+        if self.phase == 4:
+            boss_level = 7  # Phase 4 summons level 7 boss
+        elif self.phase == 3:
             boss_level = 6  # Phase 3 summons level 6 boss
         elif self.phase == 2:
             boss_level = 4  # Phase 2 summons level 4 boss (Goblin King)
@@ -380,11 +386,16 @@ class DarkLord(Boss):
         self.summoned_boss = Boss(spawn_x, spawn_y, boss_level, self.level_instance)
         
         # Add debug message about which boss was summoned
-        boss_name = "Level 2 Boss" if boss_level == 2 else "Goblin King (Level 4)" if boss_level == 4 else "Level 6 Boss"
+        boss_name = "Level 2 Boss" if boss_level == 2 else "Goblin King (Level 4)" if boss_level == 4 else "Level 6 Boss" if boss_level == 6 else "Level 7 Boss"
         self.add_debug_message(f"Summoned {boss_name}")
         
         # Set stats based on the boss level
-        if boss_level == 6:
+        if boss_level == 7:
+            # Level 7 boss modifications - keep the same pattern
+            self.summoned_boss.health = self.summoned_boss.health * 0.7  # 70% health
+            self.summoned_boss.max_health = self.summoned_boss.health
+            self.summoned_boss.damage = self.summoned_boss.damage * 0.5  # 50% damage
+        elif boss_level == 6:
             # Level 6 boss modifications
             self.summoned_boss.health = self.summoned_boss.health * 0.7  # 70% health
             self.summoned_boss.max_health = self.summoned_boss.health
@@ -795,6 +806,36 @@ class DarkLord(Boss):
                     # This parallels how we use this timer for the second boss
                     self.rays_fully_grown_time = pygame.time.get_ticks()
                     self.add_debug_message(f"Phase 3: Copy {self.blinking_copy_index} will summon Level 6 boss after delay")
+                
+        # Progress to phase 4 if this was the third defeated boss
+        elif self.defeated_copies_count == 3:
+            self.phase = 4
+            self.add_debug_message("Phase 4: Increasing rotation speeds and preparing Level 7 boss")
+            
+            # Increase death ray rotation speed by 20%
+            self.death_ray_rotation_speed = self.base_ray_rotation_speed * 1.2
+            # Increase pentagram rotation speed by 20%
+            self.pentagram_rotation_speed = self.base_pentagram_rotation_speed * 1.2
+            
+            # Add debug message about the increased speeds
+            self.add_debug_message(f"Rotation speeds increased by 20% for phase 4")
+            
+            # Reset any pending summoning state
+            self.summoning_active = False
+            
+            # Select another copy to blink for the next phase
+            if len(self.copies) > 0:
+                # Find a valid index that's not already been used
+                valid_indices = [i for i in range(len(self.copies))]
+                if valid_indices:
+                    self.blinking_copy_index = random.choice(valid_indices)
+                    self.copies[self.blinking_copy_index].is_blinking = True
+                    self.copies[self.blinking_copy_index].will_summon_boss = True
+                    
+                    # Reset the rays_fully_grown_time to use for the fourth boss delay timer
+                    # This parallels how we use this timer for previous bosses
+                    self.rays_fully_grown_time = pygame.time.get_ticks()
+                    self.add_debug_message(f"Phase 4: Copy {self.blinking_copy_index} will summon Level 7 boss after delay")
                     
         # Reset blinking copy index if not entering a new phase
         else:
@@ -904,6 +945,8 @@ class DarkLord(Boss):
                         self.add_debug_message("Starting Level 4 boss summoning after delay")
                     elif self.phase == 3:
                         self.add_debug_message("Starting Level 6 boss summoning after delay")
+                    elif self.phase == 4:
+                        self.add_debug_message("Starting Level 7 boss summoning after delay")
                     else:
                         self.add_debug_message(f"Starting boss summoning after delay in phase {self.phase}")
         
@@ -1049,14 +1092,17 @@ class DarkLord(Boss):
         if self.circle_growth_active:
             elapsed = current_time - self.circle_growth_start_time
             growth_progress = min(1.0, elapsed / self.circle_growth_duration)  # 0.0 to 1.0 over duration
-            
-            # Update current radius with easing
             self.current_outer_circle_radius = self.outer_circle_radius * growth_progress
             
-            # Check if growth is complete
+            # When circle has grown completely, it stays at full size
             if growth_progress >= 1.0:
                 self.circle_growth_active = False
                 self.current_outer_circle_radius = self.outer_circle_radius
+        
+        # Use pentagram rotation speed in phase 4 for floating circles or other effects
+        # This is commented out since we don't currently have floating effects
+        # but could be used for additional visual embellishments
+        # rotation_amount = current_time * self.pentagram_rotation_speed
         
         # Check if all copies have reached their positions
         if not self.copies_positioned:
