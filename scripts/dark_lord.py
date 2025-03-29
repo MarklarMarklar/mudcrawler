@@ -23,6 +23,9 @@ class DarkLord(Boss):
         self.speed = 1
         self.name = "Dark Lord"
         
+        # Make the boss invulnerable at the start
+        self.invulnerable = True
+        
         # Dark Lord specific attributes
         self.copies = []
         self.pentagram_active = False
@@ -43,6 +46,25 @@ class DarkLord(Boss):
         self.last_blink_time = 0
         self.blink_state = True  # True = visible, False = invisible
         
+        # Death ray attributes
+        self.phase = 1  # Start with phase 1
+        self.death_rays_active = False
+        self.death_ray_length = 5 * TILE_SIZE  # 5 tiles
+        self.death_ray_current_length = 0  # Current length during growth
+        self.death_ray_growth_active = False
+        self.death_ray_growth_speed = 0.1  # Tiles per update
+        self.death_ray_growth_start_time = 0
+        self.death_ray_width = 2  # Reduced from 10 to 2 pixels to match pentagram line width
+        self.death_ray_angle = 0  # Starting angle (will be rotated)
+        self.death_ray_rotation_speed = 0.0002  # Radians per millisecond
+        self.death_ray_damage = 30  # Damage per hit
+        self.death_ray_hit_cooldown = 500  # ms between hits
+        self.death_ray_last_hit_time = 0
+        self.death_ray_color = (255, 0, 0, 200)  # Red with some transparency
+        self.death_ray_spin_active = False  # Only start spinning after growth
+        self.rays_fully_grown_time = 0  # When rays reached full length
+        self.rays_fully_grown_delay = 3000  # 3 seconds delay before summoning boss
+        
         # Pentagram points and visualization
         self.pentagram_points = []
         self.active_pentagram_points = [True, True, True, True, True]  # Track which points have circles
@@ -52,9 +74,19 @@ class DarkLord(Boss):
         self.pentagram_circle_color = (200, 0, 100)  # Magenta-ish circles
         self.pentagram_line_color = (180, 0, 80, 120)  # Semi-transparent magenta lines
         self.pentagram_line_width = 2
-        self.outer_circle_radius = 0  # Will be calculated based on pentagram size
+        self.outer_circle_radius = 4 * TILE_SIZE  # Fixed radius of 4 tiles
+        self.current_outer_circle_radius = 0  # Current radius during growth animation
+        self.circle_growth_active = False  # Whether circle is growing
+        self.circle_growth_start_time = 0  # When the growth animation started
+        self.circle_growth_duration = 3000  # 3 seconds for growth
         self.outer_circle_color = (150, 0, 150, 80)  # Semi-transparent purple
         self.outer_circle_width = 3
+        
+        # New timing for sequence of events
+        self.post_intro_delay = 1000  # 1 second delay after introduction before circle starts growing
+        self.post_intro_timer = 0
+        self.pentagram_creation_pending = False  # Flag to track when to create pentagram after circle grows
+        self.pentagram_creation_progress = 0  # Track progress of creation sequence
         
         # Death zone properties
         self.death_zone_enabled = True 
@@ -91,6 +123,13 @@ class DarkLord(Boss):
         self.aura_size = 0
         self.aura_pulse_direction = 1
         self.aura_color = (120, 0, 120)  # Purple aura
+        
+        # Pentagram color pulsing
+        self.color_pulse_timer = 0
+        self.color_pulse_duration = 1500  # 1.5 seconds for a full red-orange-red cycle (twice as fast)
+        self.color_red = (255, 0, 0)
+        self.color_orange = (255, 140, 0)  # Orange instead of yellow
+        self.current_color = self.color_red
         
         # Load specialized images for Dark Lord
         self.load_dark_lord_images()
@@ -154,24 +193,11 @@ class DarkLord(Boss):
         self.add_debug_message("Dark Lord introduction sequence started")
     
     def complete_introduction(self):
-        """Complete the introduction and start the pentagram ritual"""
+        """Complete the introduction and prepare for pentagram ritual"""
         self.introduction_complete = True
-        self.visible = False  # Main boss disappears
-        self.create_pentagram_copies()
+        self.visible = True  # Keep the boss visible during the delay period
         
-        # Play ritual begin sound
-        self.sound_manager.play_sound("effects/boss_10_ritual")
-        
-        # Add debug message
-        self.add_debug_message("Introduction complete, pentagram ritual started")
-    
-    def create_pentagram_copies(self):
-        """Create 5 copies in pentagram formation"""
-        self.copies = []
-        self.pentagram_points = []
-        self.active_pentagram_points = [True, True, True, True, True]
-        
-        # Find the center of the room
+        # Find the center of the room for the pentagram
         if hasattr(self, 'level_instance') and self.level_instance and hasattr(self.level_instance, 'current_room'):
             room = self.level_instance.current_room
             center_x = (room.width // 2) * TILE_SIZE
@@ -184,9 +210,21 @@ class DarkLord(Boss):
         # Store the center of the pentagram
         self.pentagram_center = (center_x, center_y)
         
-        radius = 4 * TILE_SIZE  # 4 tiles away from center
-        # Set outer circle to match exactly with the pentagram points
-        self.outer_circle_radius = radius
+        # Start post-introduction delay timer
+        self.post_intro_timer = pygame.time.get_ticks()
+        self.pentagram_creation_pending = True
+        
+        # Add debug message
+        self.add_debug_message("Introduction complete, preparing for pentagram ritual")
+    
+    def create_pentagram_copies(self):
+        """Create 5 copies in pentagram formation"""
+        self.copies = []
+        self.pentagram_points = []
+        # Make sure all 5 points are active at creation
+        self.active_pentagram_points = [True, True, True, True, True]
+        
+        # The center was already set in complete_introduction
         
         # Create 5 copies in a pentagram pattern
         # Start angle at -π/2 (90 degrees) so the first copy is at the north position
@@ -194,8 +232,8 @@ class DarkLord(Boss):
         
         for i in range(5):
             angle = start_angle + (2 * math.pi * i) / 5  # Divide the circle into 5 points, starting from north
-            target_x = center_x + radius * math.cos(angle)
-            target_y = center_y + radius * math.sin(angle)
+            target_x = self.pentagram_center[0] + self.outer_circle_radius * math.cos(angle)
+            target_y = self.pentagram_center[1] + self.outer_circle_radius * math.sin(angle)
             
             # Store pentagram point positions
             self.pentagram_points.append((target_x, target_y))
@@ -212,6 +250,7 @@ class DarkLord(Boss):
         self.pentagram_active = True
         self.ritual_timer = pygame.time.get_ticks()
         self.ritual_active = True
+        self.visible = False  # Main boss disappears now that copies are created
         
         # Rotation properties
         self.rotation_active = False  # Will be set to True when copies are positioned
@@ -223,6 +262,9 @@ class DarkLord(Boss):
         # We'll set this in the update method after all copies have reached their positions
         self.blinking_copy_index = None
         self.copies_positioned = False
+        
+        # Play ritual begin sound
+        self.sound_manager.play_sound("effects/boss_10_ritual")
         
         # Add debug message
         self.add_debug_message(f"Created {len(self.copies)} copies for pentagram ritual")
@@ -265,7 +307,7 @@ class DarkLord(Boss):
             self.summon_level2_boss()
     
     def summon_level2_boss(self):
-        """Summon the level 2 boss from the blinking copy"""
+        """Summon the boss from the blinking copy - either level 2 or level 4 based on the phase"""
         if self.summoned_boss:
             return
             
@@ -281,13 +323,28 @@ class DarkLord(Boss):
         spawn_x = self.pentagram_center[0]
         spawn_y = self.pentagram_center[1]
         
-        # Create a level 2 boss with reduced stats
-        self.summoned_boss = Boss(spawn_x, spawn_y, 2, self.level_instance)
+        # For phase 1, summon level 2 boss
+        # For phase 2, summon level 4 boss (Goblin King)
+        boss_level = 2 if self.phase == 1 else 4
         
-        # Increase health significantly (500% of original health)
-        self.summoned_boss.health = self.summoned_boss.health * 1.0  
-        self.summoned_boss.max_health = self.summoned_boss.health
-        self.summoned_boss.damage = self.summoned_boss.damage * 0.7  # 70% damage
+        # Create the boss with the appropriate level
+        self.summoned_boss = Boss(spawn_x, spawn_y, boss_level, self.level_instance)
+        
+        # Add debug message about which boss was summoned
+        boss_name = "Level 2 Boss" if boss_level == 2 else "Goblin King (Level 4)"
+        self.add_debug_message(f"Summoned {boss_name}")
+        
+        # Set stats based on the boss level
+        if boss_level == 4:
+            # Goblin King stats modifications
+            self.summoned_boss.health = self.summoned_boss.health * 0.8  # 80% health 
+            self.summoned_boss.max_health = self.summoned_boss.health
+            self.summoned_boss.damage = self.summoned_boss.damage * 0.6  # 60% damage
+        else:
+            # Level 2 boss stats
+            self.summoned_boss.health = self.summoned_boss.health * 1.0  
+            self.summoned_boss.max_health = self.summoned_boss.health
+            self.summoned_boss.damage = self.summoned_boss.damage * 0.7  # 70% damage
         
         # Store the original shoot_projectile method
         original_shoot_projectile = self.summoned_boss.shoot_projectile
@@ -326,7 +383,7 @@ class DarkLord(Boss):
                 self.summoned_boss.rect.centerx, 
                 self.summoned_boss.rect.centery, 
                 (dx, dy), 
-                speed=2,  # Increased from default 1.4 to 3.0
+                speed=3.0,  # Increased from default 1.4 to 3.0
                 damage=self.summoned_boss.projectile_damage, 
                 color=self.summoned_boss.projectile_color,
                 is_homing=True,  # Make the projectile homing
@@ -362,8 +419,8 @@ class DarkLord(Boss):
             if current_time - self.summoned_boss.last_special_attack_time >= self.summoned_boss.special_attack_cooldown:
                 self.summoned_boss.last_special_attack_time = current_time
                 
-                # Level 2 boss special attack with faster projectiles
-                if self.summoned_boss.level == 2:
+                # Create different special attacks based on boss level
+                if self.summoned_boss.level == 2 or self.summoned_boss.level == 4:
                     # Calculate direction to player
                     dx = player.rect.centerx - self.summoned_boss.rect.centerx
                     dy = player.rect.centery - self.summoned_boss.rect.centery
@@ -408,7 +465,7 @@ class DarkLord(Boss):
                         self.summoned_boss.rect.centerx + center_dx * 10,
                         self.summoned_boss.rect.centery + center_dy * 10,
                         (center_dx, center_dy),
-                        speed=2,  # Increased from default 1.4 to 3.0
+                        speed=3.0,  # Increased from default 1.4 to 3.0
                         damage=self.summoned_boss.damage * 1.5,
                         color=(20, 150, 255),  # Brighter blue
                         boss_level=self.summoned_boss.level,
@@ -422,7 +479,7 @@ class DarkLord(Boss):
                         self.summoned_boss.rect.centerx,
                         self.summoned_boss.rect.centery,
                         (left_dx, left_dy),
-                        speed=2,  # Increased from default 1.4 to 3.0
+                        speed=3.0,  # Increased from default 1.4 to 3.0
                         damage=self.summoned_boss.damage * 1.5,
                         color=(255, 0, 255),  # Magenta
                         boss_level=self.summoned_boss.level,
@@ -436,7 +493,7 @@ class DarkLord(Boss):
                         self.summoned_boss.rect.centerx,
                         self.summoned_boss.rect.centery,
                         (right_dx, right_dy),
-                        speed=2,  # Increased from default 1.4 to 3.0
+                        speed=3.0,  # Increased from default 1.4 to 3.0
                         damage=self.summoned_boss.damage * 1.5,
                         color=(255, 165, 0),  # Orange
                         boss_level=self.summoned_boss.level,
@@ -611,9 +668,34 @@ class DarkLord(Boss):
             if hasattr(self.level_instance.current_room, 'bosses') and self.summoned_boss in self.level_instance.current_room.bosses:
                 self.level_instance.current_room.bosses.remove(self.summoned_boss)
         
-        # Reset blinking copy index
-        self.blinking_copy_index = None
-        self.summoning_active = False
+        # Progress to phase 2 if this was the first defeated boss
+        if not self.death_rays_active and self.phase == 1:
+            self.phase = 2
+            
+            # Start the death ray growth phase
+            self.activate_death_rays()
+            
+            # Reset any pending summoning state
+            self.summoning_active = False
+            self.rays_fully_grown_time = 0
+            
+            # Select another copy to blink for the next phase, but don't start summoning yet
+            # We'll start the summoning after the death rays have grown to full size
+            if len(self.copies) > 0:
+                # Find a valid index that's not already been used
+                valid_indices = [i for i in range(len(self.copies))]
+                if valid_indices:
+                    self.blinking_copy_index = random.choice(valid_indices)
+                    self.copies[self.blinking_copy_index].is_blinking = True
+                    self.copies[self.blinking_copy_index].will_summon_boss = True
+                    
+                    # Don't start summoning immediately - this will be triggered after rays grow
+                    self.add_debug_message(f"Phase 2: Copy {self.blinking_copy_index} selected for next summoning")
+            
+        # Reset blinking copy index if not entering a new phase
+        else:
+            self.blinking_copy_index = None
+            self.summoning_active = False
         
         # Add debug message
         self.add_debug_message("Summoned boss defeated, removed copy from pentagram")
@@ -646,6 +728,180 @@ class DarkLord(Boss):
                     lifetime=lifetime
                 )
     
+    def activate_death_rays(self):
+        """Activate the death rays for phase 2"""
+        self.death_rays_active = True
+        self.death_ray_angle = 0
+        self.death_ray_growth_active = True
+        self.death_ray_current_length = 0
+        self.death_ray_spin_active = False  # Don't start spinning yet
+        self.death_ray_growth_start_time = pygame.time.get_ticks()
+        self.death_ray_last_hit_time = pygame.time.get_ticks()
+        self.last_ray_spin_time = pygame.time.get_ticks()
+        
+        # Make sure all pentagram points have rays at activation
+        # This ensures all 5 rays are active, regardless of current active_pentagram_points state
+        for i in range(5):
+            self.active_pentagram_points[i] = True
+        
+        # Play death ray activation sound
+        self.sound_manager.play_sound("effects/boss_10_rays")
+        
+        # Add debug message
+        self.add_debug_message("Phase 2: Death rays growth started!")
+    
+    def update_death_rays(self, current_time, player):
+        """Update the death rays rotation and check for collisions"""
+        if not self.death_rays_active:
+            return
+        
+        # Handle growth phase
+        if self.death_ray_growth_active:
+            # Calculate growth based on time
+            elapsed = current_time - self.death_ray_growth_start_time
+            growth_factor = min(1.0, elapsed / 5000)  # 5 seconds to grow to full size
+            self.death_ray_current_length = self.death_ray_length * growth_factor
+            
+            # Check if growth is complete
+            if growth_factor >= 1.0:
+                self.death_ray_growth_active = False
+                self.death_ray_current_length = self.death_ray_length
+                self.death_ray_spin_active = True
+                self.death_ray_angle = 0  # Start spinning from the current position (no angle offset)
+                self.rays_fully_grown_time = current_time
+                self.last_ray_spin_time = current_time  # Reset spin time counter
+                self.add_debug_message("Death rays fully grown, spinning active")
+                
+                # Important: Do NOT start summoning here! Wait for the delay to pass
+        
+        # Handle delay after rays are fully grown before summoning boss
+        if not self.death_ray_growth_active and self.rays_fully_grown_time > 0 and not self.summoning_active:
+            elapsed_since_growth = current_time - self.rays_fully_grown_time
+            
+            # Only start summoning after the delay has passed
+            if elapsed_since_growth >= self.rays_fully_grown_delay:
+                if self.blinking_copy_index is not None:
+                    self.start_summoning()
+                    # Do NOT reset rays_fully_grown_time here to prevent repeated summoning
+                    self.add_debug_message("Starting Level 4 boss summoning after delay")
+        
+        # Calculate time delta for spin (only if spinning is active)
+        if self.death_ray_spin_active:
+            spin_delta = current_time - self.last_ray_spin_time
+            self.last_ray_spin_time = current_time
+            
+            # Update ray base spin (this is separate from the orbital rotation)
+            self.death_ray_angle += self.death_ray_rotation_speed * spin_delta
+        
+        # Check if player is hit by any of the five death rays
+        if player and current_time - self.death_ray_last_hit_time > self.death_ray_hit_cooldown:
+            if self.is_player_hit_by_ray(player):
+                # Apply damage
+                player.take_damage(self.death_ray_damage)
+                self.death_ray_last_hit_time = current_time
+                
+                # Create hit effect
+                self.create_ray_hit_effect(player.rect.centerx, player.rect.centery)
+                
+                # Add debug message
+                self.add_debug_message("Player hit by death ray!")
+    
+    def is_player_hit_by_ray(self, player):
+        """Check if the player is hit by any of the death rays"""
+        # Get player position
+        player_x = player.rect.centerx
+        player_y = player.rect.centery
+        
+        # Skip collision check if rays are still growing
+        if self.death_ray_growth_active or self.death_ray_current_length <= 0:
+            return False
+            
+        # Test each ray individually by calculating its exact path
+        for i in range(5):  # 5 rays, one at each pentagram point
+            # Skip ray if the pentagram point is inactive (copy was removed)
+            if not self.active_pentagram_points[i]:
+                continue
+                
+            # Use the EXACT SAME MATH as in draw_death_rays to ensure consistency
+            # Get the pentagram point as the ray's start position
+            if i < len(self.pentagram_points):
+                start_x, start_y = self.pentagram_points[i]
+                
+                # Calculate the angle for this ray based on the ray's base spin
+                # and the angle to the pentagram center
+                center_x, center_y = self.pentagram_center
+                base_angle = math.atan2(start_y - center_y, start_x - center_x)
+                
+                # Add the spin angle if spinning is active
+                ray_angle = base_angle
+                if self.death_ray_spin_active:
+                    ray_angle += self.death_ray_angle
+                
+                # Calculate the end point of the ray
+                ray_length = self.death_ray_current_length
+                end_x = start_x + math.cos(ray_angle) * ray_length
+                end_y = start_y + math.sin(ray_angle) * ray_length
+                
+                # Now check if player is close to the line segment from start to end
+                # Using line-point distance formula
+                line_length = math.sqrt((end_x - start_x)**2 + (end_y - start_y)**2)
+                
+                # Avoid division by zero
+                if line_length == 0:
+                    continue
+                    
+                # Calculate normalized direction vector
+                dir_x = (end_x - start_x) / line_length
+                dir_y = (end_y - start_y) / line_length
+                
+                # Calculate vector from start to player
+                to_player_x = player_x - start_x
+                to_player_y = player_y - start_y
+                
+                # Project player position onto the ray
+                projection = to_player_x * dir_x + to_player_y * dir_y
+                
+                # Player is behind the start point or beyond end point
+                if projection < 0 or projection > line_length:
+                    continue
+                    
+                # Calculate closest point on line to player
+                closest_x = start_x + dir_x * projection
+                closest_y = start_y + dir_y * projection
+                
+                # Calculate distance from player to closest point
+                distance = math.sqrt((player_x - closest_x)**2 + (player_y - closest_y)**2)
+                
+                # If distance is less than half the ray width, player is hit
+                if distance <= self.death_ray_width / 2 + player.rect.width / 4:
+                    return True
+                    
+        return False
+        
+    def create_ray_hit_effect(self, x, y):
+        """Create visual effect for player being hit by death ray"""
+        if hasattr(self, 'particle_manager') and self.particle_manager:
+            for _ in range(20):
+                angle = random.uniform(0, math.pi * 2)
+                speed = random.uniform(0.5, 2.5)
+                size = random.randint(3, 7)
+                lifetime = random.randint(20, 40)
+                
+                # Calculate velocity
+                vx = math.cos(angle) * speed
+                vy = math.sin(angle) * speed
+                
+                # Add red particles
+                self.particle_manager.add_particle(
+                    particle_type='fade',
+                    pos=(x, y),
+                    velocity=(vx, vy),
+                    direction=angle,
+                    color=(255, 0, 0),
+                    size=size,
+                    lifetime=lifetime
+                )
+                
     def update_pentagram(self):
         """Update the pentagram ritual progress"""
         if not self.pentagram_active:
@@ -655,6 +911,30 @@ class DarkLord(Boss):
         
         # Update pentagram pulse effect
         self.pentagram_pulse = (math.sin(current_time / 300) + 1) / 2  # Value between 0 and 1
+        
+        # Update color pulsing from red to orange and back
+        self.color_pulse_timer = (current_time % self.color_pulse_duration) / self.color_pulse_duration
+        pulse_factor = (math.sin(self.color_pulse_timer * 2 * math.pi) + 1) / 2  # 0 to 1 value
+        
+        # Interpolate between red and orange based on pulse factor
+        self.current_color = (
+            self.color_red[0],  # Red channel stays 255
+            int(self.color_red[1] + (self.color_orange[1] - self.color_red[1]) * pulse_factor),  # Green channel pulses
+            int(self.color_red[2] + (self.color_orange[2] - self.color_red[2]) * pulse_factor)   # Blue channel pulses
+        )
+        
+        # Handle outer circle growth animation
+        if self.circle_growth_active:
+            elapsed = current_time - self.circle_growth_start_time
+            growth_progress = min(1.0, elapsed / self.circle_growth_duration)  # 0.0 to 1.0 over duration
+            
+            # Update current radius with easing
+            self.current_outer_circle_radius = self.outer_circle_radius * growth_progress
+            
+            # Check if growth is complete
+            if growth_progress >= 1.0:
+                self.circle_growth_active = False
+                self.current_outer_circle_radius = self.outer_circle_radius
         
         # Check if all copies have reached their positions
         if not self.copies_positioned:
@@ -704,6 +984,10 @@ class DarkLord(Boss):
                 if i < len(self.copies) and self.copies[i] is not None:
                     self.copies[i].rect.centerx = new_x
                     self.copies[i].rect.centery = new_y
+                    
+            # Update death rays if they're active
+            if self.death_rays_active:
+                self.update_death_rays(current_time, None)  # We'll pass the player in the main update method
         
         # Update blinking copy if in summoning state
         if self.summoning_active and self.blinking_copy_index is not None:
@@ -782,14 +1066,51 @@ class DarkLord(Boss):
                 self.complete_introduction()
             return
         
+        # Handle post-introduction transition to pentagram phase
+        if self.pentagram_creation_pending:
+            # Wait for the post-intro delay before starting circle growth
+            if not self.circle_growth_active and current_time - self.post_intro_timer >= self.post_intro_delay:
+                # Start circle growth
+                self.circle_growth_active = True
+                self.circle_growth_start_time = current_time
+                self.add_debug_message("Starting circle growth animation")
+            
+            # Update circle growth if active
+            if self.circle_growth_active:
+                elapsed = current_time - self.circle_growth_start_time
+                growth_progress = min(1.0, elapsed / self.circle_growth_duration)
+                self.current_outer_circle_radius = self.outer_circle_radius * growth_progress
+                
+                # When circle has grown completely, start the pentagram creation
+                if growth_progress >= 1.0:
+                    self.circle_growth_active = False
+                    self.current_outer_circle_radius = self.outer_circle_radius
+                    self.pentagram_creation_pending = False
+                    self.create_pentagram_copies()
+            return
+        
         # Handle pentagram phase
         if self.pentagram_active:
             self.update_pentagram()
             
+            # Check if only one copy remains to transition to final phase
+            if len(self.copies) == 1:
+                # Make boss vulnerable in final phase
+                self.invulnerable = False
+                # Add debug message
+                self.add_debug_message("Final phase - Dark Lord is now vulnerable!")
+            else:
+                # Ensure boss is invulnerable while multiple copies remain
+                self.invulnerable = True
+                
             # Check if player is in the death zone and apply effects if they are
             if self.is_player_in_death_zone(player):
                 self.apply_death_zone_effect(player)
             
+            # Update death rays if active and pass the player for collision detection
+            if self.death_rays_active:
+                self.update_death_rays(current_time, player)
+                
             # Update copies
             for copy in self.copies:
                 copy.update(player)
@@ -837,6 +1158,10 @@ class DarkLord(Boss):
     
     def draw(self, surface):
         """Override draw method to handle special visual effects"""
+        # Draw the circle (if growing or active) before anything else
+        if self.circle_growth_active or self.current_outer_circle_radius > 0:
+            self.draw_circle(surface)
+            
         if not self.visible:
             # Don't draw the main boss if not visible
             pass
@@ -847,7 +1172,7 @@ class DarkLord(Boss):
             # Draw the main boss
             super().draw(surface)
         
-        # Draw the pentagram if active (draw this first so it appears behind everything else)
+        # Draw the pentagram if active
         if self.pentagram_active:
             self.draw_pentagram(surface)
         
@@ -936,23 +1261,26 @@ class DarkLord(Boss):
         # Draw the aura
         surface.blit(aura_surface, aura_pos)
     
-    def draw_pentagram(self, surface):
-        """Draw the pentagram and effects"""
-        if not self.pentagram_active or not self.pentagram_points:
+    def draw_circle(self, surface):
+        """Draw just the growing outer circle (separate from pentagram)"""
+        if self.current_outer_circle_radius <= 0:
             return
             
-        # Draw outer circle
-        circle_color = (255, 0, 0, int(100 * self.pentagram_pulse))
+        # Use the pulsing color
+        alpha_value = int(100 * self.pentagram_pulse)
+        circle_color = (*self.current_color, alpha_value)
+        
+        # Draw outer circle with current radius from growth animation
         pygame.draw.circle(
             surface, 
             circle_color, 
             self.pentagram_center, 
-            self.outer_circle_radius,
+            self.current_outer_circle_radius,
             2  # Width of the circle
         )
         
-        # Draw inner circle
-        inner_circle_radius = self.outer_circle_radius * 0.5
+        # Draw inner circle - scale with outer circle
+        inner_circle_radius = self.current_outer_circle_radius * 0.5
         pygame.draw.circle(
             surface, 
             circle_color, 
@@ -961,9 +1289,32 @@ class DarkLord(Boss):
             2  # Width of the circle
         )
         
-        # Draw pentagram lines connecting the points
-        # We connect: 0->2, 2->4, 4->1, 1->3, 3->0 to form a pentagram
+        # Draw center glow - slightly brighter version of the current pulsing color
+        glow_color = (
+            min(255, self.current_color[0] + 30),
+            min(255, self.current_color[1] + 30),
+            min(255, self.current_color[2] + 30),
+            int(150 * self.pentagram_pulse)
+        )
+        center_radius = self.current_outer_circle_radius * 0.15
+        pygame.draw.circle(
+            surface,
+            glow_color,
+            self.pentagram_center,
+            center_radius
+        )
+    
+    def draw_pentagram(self, surface):
+        """Draw the pentagram and effects (except the circles)"""
+        if not self.pentagram_active or not self.pentagram_points:
+            return
+        
+        # Draw pentagram lines connecting the points with pulsing color
         sequence = [0, 2, 4, 1, 3, 0]  # Repeat 0 at the end to close the shape
+        
+        # Use the pulsing color with alpha
+        alpha_value = int(150 + 100 * self.pentagram_pulse)
+        line_color = (*self.current_color, alpha_value)
         
         for i in range(len(sequence) - 1):
             start_idx = sequence[i]
@@ -979,8 +1330,7 @@ class DarkLord(Boss):
                 start_pos = self.pentagram_points[start_idx]
                 end_pos = self.pentagram_points[end_idx]
                 
-                # Draw line with pulsing intensity
-                line_color = (255, 0, 0, int(150 + 100 * self.pentagram_pulse))
+                # Draw line with pulsing color
                 pygame.draw.line(
                     surface,
                     line_color,
@@ -989,31 +1339,28 @@ class DarkLord(Boss):
                     2  # Line width
                 )
         
-        # Draw center glow
-        center_color = (255, 0, 0, int(150 * self.pentagram_pulse))
-        center_radius = inner_circle_radius * 0.3
-        pygame.draw.circle(
-            surface,
-            center_color,
-            self.pentagram_center,
-            center_radius
-        )
+        # Draw death rays if active
+        if self.death_rays_active:
+            self.draw_death_rays(surface)
         
         # Draw death zone if enabled
         if self.death_zone_enabled:
             # Draw filled circle with very low opacity
-            death_circle = pygame.Surface((self.outer_circle_radius * 2, self.outer_circle_radius * 2), pygame.SRCALPHA)
-            death_color = (255, 0, 0, 40)  # Very transparent red
+            death_circle = pygame.Surface((self.current_outer_circle_radius * 2, self.current_outer_circle_radius * 2), pygame.SRCALPHA)
+            
+            # Use a tint of the current pulsing color for death zone
+            death_color = (*self.current_color, 40)  # Very transparent
+            
             pygame.draw.circle(
                 death_circle,
                 death_color,
-                (self.outer_circle_radius, self.outer_circle_radius),
-                self.outer_circle_radius
+                (self.current_outer_circle_radius, self.current_outer_circle_radius),
+                self.current_outer_circle_radius
             )
             
             # Position and draw the death zone
-            death_x = self.pentagram_center[0] - self.outer_circle_radius
-            death_y = self.pentagram_center[1] - self.outer_circle_radius
+            death_x = self.pentagram_center[0] - self.current_outer_circle_radius
+            death_y = self.pentagram_center[1] - self.current_outer_circle_radius
             surface.blit(death_circle, (death_x, death_y))
             
         # DEBUG DRAWING
@@ -1021,6 +1368,83 @@ class DarkLord(Boss):
         if self.debug_enabled:
             self.draw_debug_messages(surface, None)
     
+    def draw_death_rays(self, surface):
+        """Draw the rotating death rays"""
+        if not self.death_rays_active:
+            return
+            
+        center_x, center_y = self.pentagram_center
+        
+        # Use the pulsing color for death rays too
+        ray_color = (*self.current_color, 200)
+        
+        # Draw all five death rays, one at each pentagram point
+        for i in range(5):
+            # Skip ray if the pentagram point is inactive (copy was removed)
+            if i >= len(self.active_pentagram_points) or not self.active_pentagram_points[i]:
+                continue
+                
+            # Get the pentagram point as the ray's start position
+            if i < len(self.pentagram_points):
+                start_x, start_y = self.pentagram_points[i]
+                
+                # Calculate the base angle from the pentagram center to this point
+                base_angle = math.atan2(start_y - center_y, start_x - center_x)
+                
+                # For non-spinning rays during growth, use the base angle directly
+                # For spinning rays, add the spin offset
+                ray_angle = base_angle
+                if self.death_ray_spin_active:
+                    ray_angle += self.death_ray_angle
+                
+                # Calculate the end point of the ray
+                ray_length = self.death_ray_current_length
+                end_x = start_x + math.cos(ray_angle) * ray_length
+                end_y = start_y + math.sin(ray_angle) * ray_length
+                
+                # Draw the ray as a thin line (matching pentagram line width)
+                pygame.draw.line(
+                    surface,
+                    ray_color,
+                    (start_x, start_y),
+                    (end_x, end_y),
+                    self.death_ray_width
+                )
+                
+                # Draw a small glow at the start of the ray
+                glow_radius = self.death_ray_width * 1.5
+                pygame.draw.circle(
+                    surface,
+                    ray_color,
+                    (int(start_x), int(start_y)),
+                    int(glow_radius)
+                )
+                
+                # Create particle effects along the ray with the current color
+                if hasattr(self, 'particle_manager') and self.particle_manager and random.random() < 0.2:
+                    # Calculate a random position along the ray
+                    t = random.random()  # Random position factor along the ray (0 to 1)
+                    particle_x = start_x + (end_x - start_x) * t
+                    particle_y = start_y + (end_y - start_y) * t
+                    
+                    # Use a brighter version of the current color for particles
+                    particle_color = (
+                        min(255, self.current_color[0]),
+                        min(255, self.current_color[1] - 50),  # Less green for better contrast
+                        min(255, self.current_color[2] - 50)   # Less blue for better contrast
+                    )
+                    
+                    # Add a particle at this position
+                    self.particle_manager.add_particle(
+                        particle_type='fade',
+                        pos=(particle_x, particle_y),
+                        velocity=(0, 0),
+                        direction=0,
+                        color=particle_color,
+                        size=random.randint(1, 3),  # Smaller particles for thinner ray
+                        lifetime=random.randint(5, 15)
+                    )
+
     def add_debug_message(self, message):
         """Add a debug message to be displayed"""
         if not DEBUG_MODE:
@@ -1073,6 +1497,18 @@ class DarkLord(Boss):
                     
             # Add debug message
             self.add_debug_message(f"Cleared {len(enemies_to_remove)} normal enemies from boss room")
+
+    def take_damage(self, amount, knockback=None, damage_type=None):
+        """Override take_damage to implement invulnerability during certain phases"""
+        # Phase check: Only take damage when in the final phase with one copy left
+        if self.pentagram_active and len(self.copies) > 1:
+            # Return early if we're in the pentagram phase and have more than one copy
+            # This prevents damage during the pentagram ritual
+            return False
+            
+        # Allow damage during introduction (player can hit boss before pentagram forms)
+        # and in the final phase (when only one copy remains)
+        return super().take_damage(amount, knockback, damage_type)
 
 class DarkLordCopy(pygame.sprite.Sprite):
     """A copy/clone of the Dark Lord that participates in the ritual"""

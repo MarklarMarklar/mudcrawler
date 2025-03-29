@@ -37,7 +37,7 @@ SOUNDS_PATH = os.path.join(ASSET_PATH, "sounds")
 # Player Settings
 PLAYER_START_HEALTH = 100
 PLAYER_SPEED = 3.5  # Reduced from 5 to make player movement slower
-SWORD_DAMAGE = 25
+SWORD_DAMAGE = 400
 BOW_DAMAGE = 15
 BOW_COOLDOWN = 1000  # milliseconds
 SWORD_COOLDOWN = 500  # milliseconds
