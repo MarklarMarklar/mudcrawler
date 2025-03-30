@@ -618,6 +618,13 @@ class Player(pygame.sprite.Sprite):
             )
         
         if self.health <= 0:
+            # If player is about to die, make sure any speed debuffs get cleared
+            if hasattr(self, '_original_speed'):
+                self.speed = self._original_speed
+                if hasattr(self, '_speed_debuff_end_time'):
+                    delattr(self, '_speed_debuff_end_time')
+                print("Speed debuff removed on player death")
+                
             self.health = 0
             self._die()
             return True  # Player died
@@ -672,6 +679,24 @@ class Player(pygame.sprite.Sprite):
         self.health = min(self.health + amount, self.max_health)
         
     def update(self):
+        # Get current time at the beginning for consistent timing
+        current_time = pygame.time.get_ticks()
+        
+        # Handle the slow effect timer - ensure it's always checked
+        # This is now based on the game's timer, independent of boss state
+        if hasattr(self, '_speed_debuff_end_time'):
+            if current_time >= self._speed_debuff_end_time:
+                # Only restore speed if we have the original value
+                if hasattr(self, '_original_speed'):
+                    self.speed = self._original_speed
+                    print(f"Player speed restored to {self._original_speed}")
+                
+                # Clean up debuff tracking attributes
+                if hasattr(self, '_speed_debuff_end_time'):
+                    delattr(self, '_speed_debuff_end_time')
+                if hasattr(self, '_original_speed'):
+                    delattr(self, '_original_speed')
+        
         # Update position if not dead
         if not self.is_dead:
             self.rect.x += self.velocity_x
@@ -686,7 +711,6 @@ class Player(pygame.sprite.Sprite):
         elif not self.death_animation_complete:
             # Check if death animation should be complete (after 4 seconds)
             # This is longer to allow for the zoom effect to complete
-            current_time = pygame.time.get_ticks()
             if current_time - self.death_time > 4000:  # 4 seconds
                 self.death_animation_complete = True
                 # Ensure walking sound is stopped
@@ -696,7 +720,6 @@ class Player(pygame.sprite.Sprite):
                     self.was_walking = False
         
         # Update trailing effect (for dodge)
-        current_time = pygame.time.get_ticks()
         if self.trailing_enabled:
             # Check if trail effect has expired
             if current_time - self.trail_start_time > self.trail_duration:

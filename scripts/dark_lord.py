@@ -742,6 +742,16 @@ class DarkLord(Boss):
         # Create explosion effect
         self.create_explosion_effect(explosion_x, explosion_y)
         
+        # Check if player has a speed debuff from poison puddle (particularly from level 6 boss)
+        # and remove it if present
+        if self.level_instance and hasattr(self.level_instance, 'player'):
+            player = self.level_instance.player
+            if player and hasattr(player, '_original_speed'):
+                player.speed = player._original_speed
+                if hasattr(player, '_speed_debuff_end_time'):
+                    delattr(player, '_speed_debuff_end_time')
+                print("Speed debuff removed because summoned boss died")
+        
         # Mark this pentagram point as inactive (no circle)
         if 0 <= self.blinking_copy_index < len(self.active_pentagram_points):
             self.active_pentagram_points[self.blinking_copy_index] = False
@@ -1242,6 +1252,24 @@ class DarkLord(Boss):
         """Override update method to handle specialized behavior"""
         # Get current time
         current_time = pygame.time.get_ticks()
+        
+        # Check summoned boss status - this runs every frame
+        if self.summoned_boss:
+            # Check if the boss has been defeated
+            if self.summoned_boss.health <= 0:
+                # Before removing the boss, check if player has a speed debuff and remove it
+                # This catches the case when the level 6 boss dies while player is slowed
+                if hasattr(player, '_original_speed'):
+                    player.speed = player._original_speed
+                    if hasattr(player, '_speed_debuff_end_time'):
+                        delattr(player, '_speed_debuff_end_time')
+                    print("Speed debuff removed because summoned boss died (direct check)")
+                    
+                # Now handle normal boss defeat
+                self.check_summoned_boss_status()
+            else:
+                # Just check status normally if boss is still alive
+                self.check_summoned_boss_status()
         
         # Check if it's time for thunder effect
         if self.thunder_enabled and current_time >= self.next_thunder_time:

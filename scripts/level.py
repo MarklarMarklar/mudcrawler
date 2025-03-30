@@ -1123,6 +1123,13 @@ class Room:
                 self.boss_corpse = BossCorpse(self.boss, self.level_number)
                 self.boss_blood_created = True
                 
+                # When boss dies, check if player has speed debuff and remove it
+                if hasattr(player, '_original_speed'):
+                    player.speed = player._original_speed
+                    if hasattr(player, '_speed_debuff_end_time'):
+                        delattr(player, '_speed_debuff_end_time')
+                    print("Speed debuff removed because boss died")
+                
             # Boss is defeated, drop the key
             self.drop_key()
             
