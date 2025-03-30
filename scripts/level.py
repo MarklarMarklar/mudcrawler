@@ -1130,6 +1130,20 @@ class Room:
                         delattr(player, '_speed_debuff_end_time')
                     print("Speed debuff removed because boss died")
                 
+                # For level 7 boss specifically, handle the death ray cleanup
+                if self.level_number == 7:
+                    # Clean up death ray if it exists
+                    if hasattr(self.boss, 'death_ray') and self.boss.death_ray:
+                        self.boss.death_ray.kill()
+                        self.boss.death_ray = None
+                        self.boss.has_death_ray = False
+                        print("Level 7 boss death ray removed")
+                    
+                    # Also clean up from level's death_rays group if it exists
+                    if hasattr(player, 'level') and hasattr(player.level, 'death_rays'):
+                        player.level.death_rays.empty()
+                        print("Cleared all death rays from level group")
+            
             # Boss is defeated, drop the key
             self.drop_key()
             

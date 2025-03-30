@@ -742,6 +742,20 @@ class DarkLord(Boss):
         # Create explosion effect
         self.create_explosion_effect(explosion_x, explosion_y)
         
+        # Clean up level 7 boss death ray if present
+        if self.summoned_boss and self.summoned_boss.level == 7:
+            # Clean up death ray if it exists
+            if hasattr(self.summoned_boss, 'death_ray') and self.summoned_boss.death_ray:
+                self.summoned_boss.death_ray.kill()
+                self.summoned_boss.death_ray = None
+                self.summoned_boss.has_death_ray = False
+                self.add_debug_message("Level 7 boss death ray removed")
+                
+            # Also clean up from level's death_rays group if it exists
+            if self.level_instance and hasattr(self.level_instance, 'death_rays'):
+                self.level_instance.death_rays.empty()
+                self.add_debug_message("Cleared all death rays from level group")
+        
         # Check if player has a speed debuff from poison puddle (particularly from level 6 boss)
         # and remove it if present
         if self.level_instance and hasattr(self.level_instance, 'player'):

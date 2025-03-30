@@ -637,9 +637,9 @@ class Menu:
         self.buttons['artworks'].draw(self.screen)
         self.buttons['quit'].draw(self.screen)
         
-        # Draw instructions with pixelated font
+        # Draw instructions with pixelated font at the bottom of the screen
         inst_text = self.instruction_font.render("Click START GAME or press ENTER to play", True, (255, 255, 0))
-        inst_rect = inst_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 100))
+        inst_rect = inst_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 20))
         self.screen.blit(inst_text, inst_rect)
         
     def draw_pause_menu(self):
