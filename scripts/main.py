@@ -694,6 +694,12 @@ class Game:
         
         # Handle boss introduction sequence
         if self.boss_intro_active:
+            # Ensure player walking sound is stopped during boss intro
+            if self.player.walk_sound_channel is not None:
+                self.sound_manager.stop_sound_channel(self.player.walk_sound_channel)
+                self.player.walk_sound_channel = None
+                self.player.was_walking = False
+                
             current_time = pygame.time.get_ticks()
             elapsed = current_time - self.boss_intro_start_time
             
@@ -883,6 +889,12 @@ class Game:
                 # Check if entering a boss room
                 current_room = self.level.rooms[self.level.current_room_coords]
                 if current_room.room_type == 'boss' and current_room.boss and current_room.boss.health > 0:
+                    # Stop any walking sound before starting the boss intro
+                    if self.player.walk_sound_channel is not None:
+                        self.sound_manager.stop_sound_channel(self.player.walk_sound_channel)
+                        self.player.walk_sound_channel = None
+                        self.player.was_walking = False
+                        
                     # Start boss introduction sequence
                     self.boss_intro_active = True
                     self.boss_intro_start_time = pygame.time.get_ticks()

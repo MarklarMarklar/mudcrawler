@@ -274,16 +274,21 @@ class Player(pygame.sprite.Sprite):
             
         # Handle walk sound state transitions - only play sounds if player is alive
         if self.health > 0:
+            # Don't play walking sounds during boss intro animation
+            boss_intro_active = False
+            if self.game and hasattr(self.game, 'boss_intro_active'):
+                boss_intro_active = self.game.boss_intro_active
+                
             # Check for actual state changes to avoid sound issues
-            if not self.was_walking and is_moving:
+            if not self.was_walking and is_moving and not boss_intro_active:
                 # Player started walking - play the new shorter walking sound and loop it
                 # Stop any existing sound first to avoid overlaps
                 if self.walk_sound_channel is not None:
                     self.sound_manager.stop_sound_channel(self.walk_sound_channel)
                 self.walk_sound_channel = self.sound_manager.play_sound("effects/walk", loop=-1)
                 self.was_walking = True
-            elif self.was_walking and not is_moving:
-                # Player stopped walking - stop sound
+            elif self.was_walking and (not is_moving or boss_intro_active):
+                # Player stopped walking or boss intro started - stop sound
                 if self.walk_sound_channel is not None:
                     self.sound_manager.stop_sound_channel(self.walk_sound_channel)
                     self.walk_sound_channel = None
@@ -682,6 +687,13 @@ class Player(pygame.sprite.Sprite):
         # Get current time at the beginning for consistent timing
         current_time = pygame.time.get_ticks()
         
+        # Check if boss intro is active and stop walking sound if needed
+        if self.game and hasattr(self.game, 'boss_intro_active') and self.game.boss_intro_active:
+            if self.walk_sound_channel is not None:
+                self.sound_manager.stop_sound_channel(self.walk_sound_channel)
+                self.walk_sound_channel = None
+                self.was_walking = False
+
         # Handle the slow effect timer - ensure it's always checked
         # This is now based on the game's timer, independent of boss state
         if hasattr(self, '_speed_debuff_end_time'):
