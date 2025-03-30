@@ -1835,6 +1835,18 @@ class Level:
         if level_number == 6:
             self.selected_wizard_texture = self.get_random_enemy_texture('wizard')
             
+        # Add demon texture selection for level 7
+        self.selected_demon_texture = None
+        if level_number == 7:
+            self.selected_demon_texture = self.get_random_enemy_texture('demon')
+            print(f"Selected demon texture for level 7: {self.selected_demon_texture}")
+            
+        # Add dragon texture selection for level 8
+        self.selected_dragon_texture = None
+        if level_number == 8:
+            self.selected_dragon_texture = self.get_random_enemy_texture('dragon')
+            print(f"Selected dragon texture for level 8: {self.selected_dragon_texture}")
+            
         # Add shadow texture selection for level 9
         self.selected_shadow_texture = None
         if level_number == 9:

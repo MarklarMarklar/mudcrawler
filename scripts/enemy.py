@@ -154,14 +154,24 @@ class BossProjectile(pygame.sprite.Sprite):
         """Choose the appropriate image for non-boss 8 projectiles"""
         # For orbiting projectiles, use the ghost sprite instead of a colored ball
         if is_orbiting:
-            ghost_path = os.path.join(ENEMY_SPRITES_PATH, "ghost", "ghost.png")
+            # Use new path for boss 5 orbiting projectiles
+            ghost_path = os.path.join(BOSS_SPRITES_PATH, "orbiting_projectile.png")
+            
             if os.path.exists(ghost_path):
                 # Load and scale the ghost image
                 self.image = self.asset_manager.load_image(ghost_path, scale=(TILE_SIZE//1.5, TILE_SIZE//1.5))
                 self.original_image = self.image.copy()
             else:
-                print(f"Ghost image not found at {ghost_path}, using fallback")
-                self.create_projectile_image(color)
+                print(f"Orbiting projectile image not found at {ghost_path}, using fallback")
+                # Try old path as fallback
+                old_ghost_path = os.path.join(ENEMY_SPRITES_PATH, "ghost", "ghost.png")
+                if os.path.exists(old_ghost_path):
+                    self.image = self.asset_manager.load_image(old_ghost_path, scale=(TILE_SIZE//1.5, TILE_SIZE//1.5))
+                    self.original_image = self.image.copy()
+                    print(f"Using fallback ghost texture from {old_ghost_path}")
+                else:
+                    print(f"Fallback ghost image not found, creating a basic projectile")
+                    self.create_projectile_image(color)
         else:
             # For non-orbiting projectiles, use the energy ball texture
             energy_ball_path = os.path.join(BOSS_SPRITES_PATH, "energy_ball.png")
@@ -677,6 +687,10 @@ class Enemy(pygame.sprite.Sprite):
                         selected_texture = self.level_instance.selected_knight_texture
                     elif enemy_name == 'wizard' and self.level == 6:
                         selected_texture = self.level_instance.selected_wizard_texture
+                    elif enemy_name == 'demon' and self.level == 7:
+                        selected_texture = self.level_instance.selected_demon_texture
+                    elif enemy_name == 'dragon_spawn' and self.level == 8:
+                        selected_texture = self.level_instance.selected_dragon_texture
                     elif enemy_name == 'shadow' and self.level == 9:
                         selected_texture = self.level_instance.selected_shadow_texture
                     elif enemy_name == 'dark_elf' and self.level == 10:
