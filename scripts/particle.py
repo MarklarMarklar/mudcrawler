@@ -827,4 +827,99 @@ class ParticleSystem:
                 'gravity': 0,
                 'fade_speed': random.uniform(10, 15)
             }
+            self.particles.append(particle)
+    
+    def create_directional_fire(self, x, y, angle, amount=10):
+        """Create a fire effect that goes in a specific direction from the source point
+        
+        Args:
+            x, y: Starting position of the fire
+            angle: Direction in radians (0 = right, π = left, π/2 = down, -π/2 = up)
+            amount: Number of particles to create
+        """
+        # Fire colors: yellow, orange, red
+        fire_colors = [
+            (255, 255, 0),    # Yellow
+            (255, 165, 0),    # Orange
+            (255, 100, 0),    # Dark orange
+            (255, 50, 0)      # Reddish orange
+        ]
+        
+        # Use a fixed length for the fire trail
+        from config import TILE_SIZE
+        fire_length = TILE_SIZE * 1.2
+        
+        # Create a cone of fire particles in the specified direction
+        for _ in range(amount):
+            # Random variation in the angle, but maintain general direction
+            final_angle = angle + random.uniform(-math.pi/6, math.pi/6)  # ±30 degree cone
+            
+            # Random speed and distance for different particles
+            speed = random.uniform(1.5, 3.5)
+            distance = random.uniform(0.4, 1.0) * fire_length
+            
+            # Calculate end position
+            end_x = x + math.cos(final_angle) * distance
+            end_y = y + math.sin(final_angle) * distance
+            
+            # Direction vector
+            dx = math.cos(final_angle)
+            dy = math.sin(final_angle)
+            
+            # Random starting position with small variation
+            start_x = x + random.randint(-4, 4)
+            start_y = y + random.randint(-4, 4)
+            
+            # Create a moving fire particle
+            velocity_x = dx * speed
+            velocity_y = dy * speed
+            lifetime = random.randint(10, 25)
+            size = random.randint(3, 8)
+            
+            # Create the fire particle
+            particle = {
+                'x': start_x,
+                'y': start_y,
+                'velocity_x': velocity_x,
+                'velocity_y': velocity_y,
+                'color': random.choice(fire_colors),
+                'size': size,
+                'lifetime': lifetime,
+                'alpha': 255,
+                'gravity': -0.05,  # Fire rises slightly
+                'fade_speed': random.uniform(5, 10)
+            }
+            self.particles.append(particle)
+            
+        # Add a few small ember particles that follow the main direction
+        for _ in range(amount // 3):
+            # Ember particles move faster and live shorter
+            speed = random.uniform(2.0, 4.0)
+            spark_angle = angle + random.uniform(-math.pi/4, math.pi/4)  # ±45° variation
+            velocity_x = math.cos(spark_angle) * speed
+            velocity_y = math.sin(spark_angle) * speed
+            
+            lifetime = random.randint(5, 12)
+            size = random.randint(1, 3)
+            
+            # Ember colors - brighter than fire
+            ember_colors = [
+                (255, 255, 150),  # Bright yellow
+                (255, 220, 0),    # Golden yellow
+                (255, 200, 0)     # Orange-yellow
+            ]
+            
+            # Create an ember particle
+            particle = {
+                'x': x + random.randint(-3, 3),
+                'y': y + random.randint(-3, 3),
+                'velocity_x': velocity_x,
+                'velocity_y': velocity_y,
+                'color': random.choice(ember_colors),
+                'size': size,
+                'lifetime': lifetime,
+                'alpha': 255,
+                'gravity': -0.02,  # Embers rise slightly
+                'fade_speed': random.uniform(8, 12)
+            }
             self.particles.append(particle) 

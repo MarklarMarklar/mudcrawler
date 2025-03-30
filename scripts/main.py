@@ -1106,6 +1106,40 @@ class Game:
                         angle=angle,
                         amount=10  # Reduced amount
                     )
+                
+                # Create fire effect on sword swing if using fire sword
+                elif self.weapon_manager.has_fire_sword:
+                    # Get the position at the end of the sword in the attack direction
+                    if self.player.facing == 'right':
+                        effect_x = self.player.rect.right + TILE_SIZE // 4
+                        effect_y = self.player.rect.centery
+                    elif self.player.facing == 'left':
+                        effect_x = self.player.rect.left - TILE_SIZE // 4
+                        effect_y = self.player.rect.centery
+                    elif self.player.facing == 'up':
+                        effect_x = self.player.rect.centerx
+                        effect_y = self.player.rect.top - TILE_SIZE // 4
+                    else:  # down
+                        effect_x = self.player.rect.centerx
+                        effect_y = self.player.rect.bottom + TILE_SIZE // 4
+                    
+                    # Convert facing direction to angle
+                    if self.player.facing == 'right':
+                        angle = 0  # 0 radians = right
+                    elif self.player.facing == 'left':
+                        angle = math.pi  # π radians = left
+                    elif self.player.facing == 'up':
+                        angle = -math.pi/2  # -π/2 radians = up
+                    else:  # down
+                        angle = math.pi/2  # π/2 radians = down
+                    
+                    # Create fire effect with specific angle
+                    self.particle_system.create_directional_fire(
+                        effect_x,
+                        effect_y,
+                        angle=angle,
+                        amount=12
+                    )
 
             # Process sword collisions with enemies first
             for enemy in current_room.enemies:
@@ -1133,6 +1167,8 @@ class Game:
                                 enemy.rect.centery,
                                 amount=5
                             )
+                            # Play fire sword sound effect
+                            self.sound_manager.play_sound("effects/fire_sword")
                         elif self.weapon_manager.has_lightning_sword:
                             damage = int(SWORD_DAMAGE * 1.8)  # 80% damage bonus
                             # Create additional lightning particles at enemy position on hit
@@ -1141,6 +1177,8 @@ class Game:
                                 enemy.rect.centery,
                                 amount=8
                             )
+                            # Play lightning sword sound effect
+                            self.sound_manager.play_sound("effects/lightning_sword")
                         
                         # Apply damage and check if enemy was killed
                         if enemy.take_damage(damage):
@@ -1215,6 +1253,8 @@ class Game:
                                 current_room.boss.rect.centery,
                                 amount=10
                             )
+                            # Play fire sword sound effect
+                            self.sound_manager.play_sound("effects/fire_sword")
                         elif self.weapon_manager.has_lightning_sword:
                             damage = int(SWORD_DAMAGE * 1.8)  # 80% damage bonus
                             # Create lightning particles on hit
@@ -1223,6 +1263,8 @@ class Game:
                                 current_room.boss.rect.centery,
                                 amount=12
                             )
+                            # Play lightning sword sound effect
+                            self.sound_manager.play_sound("effects/lightning_sword")
                         current_room.boss.take_damage(damage)
                         current_room.boss.has_been_hit_this_swing = True  # Mark as hit for this swing
                         
@@ -1296,6 +1338,8 @@ class Game:
                                         summoned_boss.rect.centery,
                                         amount=10
                                     )
+                                    # Play fire sword sound effect
+                                    self.sound_manager.play_sound("effects/fire_sword")
                                 elif self.weapon_manager.has_lightning_sword:
                                     damage = int(SWORD_DAMAGE * 1.8)  # 80% damage bonus
                                     # Create lightning particles on hit
@@ -1304,6 +1348,8 @@ class Game:
                                         summoned_boss.rect.centery,
                                         amount=12
                                     )
+                                    # Play lightning sword sound effect
+                                    self.sound_manager.play_sound("effects/lightning_sword")
                                 
                                 # Apply damage
                                 summoned_boss.take_damage(damage)

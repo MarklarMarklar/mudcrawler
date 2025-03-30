@@ -119,6 +119,14 @@ class Room:
         # Asset manager for loading images
         self.asset_manager = get_asset_manager()
         
+        # Sound manager for playing sounds
+        try:
+            from scripts.sound_manager import get_sound_manager
+            self.sound_manager = get_sound_manager()
+        except Exception as e:
+            print(f"Error initializing sound manager in Room: {e}")
+            self.sound_manager = None
+        
         # Enemy and item spawns
         self.enemies = pygame.sprite.Group()
         self.resurrectible_minions = pygame.sprite.Group()  # Special group for level 3 boss minions
@@ -1263,8 +1271,21 @@ class Room:
                 else:
                     # Regular death - create a blood puddle and remove the enemy
                     self.blood_puddles.append(BloodPuddle(enemy.rect.centerx, enemy.rect.centery))
+                    
+                    # Play enemy death sound for regular enemy deaths
+                    if hasattr(self, 'sound_manager') and self.sound_manager:
+                        self.sound_manager.play_sound("effects/enemy_death")
+                    else:
+                        # If sound manager not directly available, try to get it
+                        try:
+                            from scripts.sound_manager import get_sound_manager
+                            sound_manager = get_sound_manager()
+                            sound_manager.play_sound("effects/enemy_death")
+                        except Exception as e:
+                            print(f"Error playing enemy death sound: {e}")
+                    
                     enemy.kill()
-                
+        
         # Update pickups
         for pickup in self.health_pickups:
             pickup.update()
