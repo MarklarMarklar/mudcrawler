@@ -1355,6 +1355,35 @@ class Game:
                                 summoned_boss.take_damage(damage)
                                 summoned_boss.has_been_hit_this_swing = True
                                 print(f"Applied {damage} damage. Health after: {summoned_boss.health}")
+                                
+                                # Check if damage was reflected by the summoned boss in defensive mode
+                                if hasattr(summoned_boss, 'reflected_damage') and summoned_boss.reflected_damage > 0:
+                                    reflected = summoned_boss.reflected_damage
+                                    print(f"Summoned boss reflected sword damage: {reflected}")
+                                    
+                                    # Apply reflected damage to player
+                                    self.player.take_damage(reflected)
+                                    
+                                    # Different reflection effects based on boss level
+                                    if hasattr(summoned_boss, 'level') and summoned_boss.level == 7:
+                                        particle_color = (150, 50, 255)  # Purple for level 7
+                                        self.display_message(f"Shield reflected {int(reflected)} damage!", particle_color)
+                                    else:
+                                        particle_color = (0, 100, 255)  # Blue for level 4
+                                        self.display_message(f"Boss reflected {int(reflected)} damage!", particle_color)
+                                    
+                                    # Create visual effect to show damage reflection
+                                    self.particle_system.create_particle(
+                                        summoned_boss.rect.centerx, 
+                                        summoned_boss.rect.centery,
+                                        color=particle_color,
+                                        size=random.randint(4, 8),
+                                        velocity=(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5)),
+                                        lifetime=random.randint(20, 30)
+                                    )
+                                    
+                                    # Reset reflected damage
+                                    summoned_boss.reflected_damage = 0
             
             # Check for arrow collisions with boss (completely separate logic)
             if current_room.boss and current_room.boss.health > 0:
@@ -1413,6 +1442,36 @@ class Game:
                                     print(f"ARROW HIT SUMMONED BOSS! Health before: {summoned_boss.health}")
                                     summoned_boss.take_damage(BOW_DAMAGE)
                                     print(f"Applied {BOW_DAMAGE} damage. Health after: {summoned_boss.health}")
+                                    
+                                    # Check if damage was reflected by the summoned boss in defensive mode
+                                    if hasattr(summoned_boss, 'reflected_damage') and summoned_boss.reflected_damage > 0:
+                                        reflected = summoned_boss.reflected_damage
+                                        print(f"Summoned boss reflected arrow damage: {reflected}")
+                                        
+                                        # Apply reflected damage to player
+                                        self.player.take_damage(reflected)
+                                        
+                                        # Different reflection effects based on boss level
+                                        if hasattr(summoned_boss, 'level') and summoned_boss.level == 7:
+                                            particle_color = (150, 50, 255)  # Purple for level 7
+                                            self.display_message(f"Shield reflected {int(reflected)} damage!", particle_color)
+                                        else:
+                                            particle_color = (0, 100, 255)  # Blue for level 4
+                                            self.display_message(f"Boss reflected {int(reflected)} damage!", particle_color)
+                                        
+                                        # Create visual effect
+                                        self.particle_system.create_particle(
+                                            summoned_boss.rect.centerx, 
+                                            summoned_boss.rect.centery,
+                                            color=particle_color,
+                                            size=random.randint(4, 8),
+                                            velocity=(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5)),
+                                            lifetime=random.randint(20, 30)
+                                        )
+                                        
+                                        # Reset reflected damage
+                                        summoned_boss.reflected_damage = 0
+                                    
                                     arrows_to_remove.append(arrow)
                 
                 # Remove arrows that hit the boss

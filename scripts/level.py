@@ -1157,11 +1157,11 @@ class Room:
             
             # For level 2 boss, drop the fire sword
             if self.level_number == 2:
-                self.drop_fire_sword()
+                self.drop_fire_sword(player)
             
             # For level 4 boss, drop the lightning sword
             if self.level_number == 4:
-                self.drop_lightning_sword()
+                self.drop_lightning_sword(player)
             
             # For level 3 boss - resurrection mechanic is now implemented in the Boss class
             if self.level_number == 3:
@@ -1692,15 +1692,57 @@ class Room:
             self.key_drop_time = pygame.time.get_ticks()  # Record when the key was dropped
             print(f"Boss defeated! A key has been dropped at {self.key_position}")
             
-    def drop_fire_sword(self):
-        """Drop a fire sword when the level 2 boss is defeated"""
+    def drop_fire_sword(self, player=None):
+        """Drop a fire sword when the level 2 boss is defeated
+        
+        Args:
+            player: Optional Player object to check collision with the chest spawn location
+        """
         # Make sure this ONLY happens in level 2
         if self.room_type == 'boss' and self.boss and self.boss.health <= 0 and self.level_number == 2 and not self.fire_sword_dropped:
-            # Instead of dropping the fire sword directly, create a treasure chest in the middle of the room
-            
             # Calculate the center of the room in tile coordinates
             center_x = self.width // 2
             center_y = self.height // 2
+            
+            # Check if player is standing at the center tile
+            if player:
+                player_tile_x = player.rect.centerx // TILE_SIZE
+                player_tile_y = player.rect.centery // TILE_SIZE
+                
+                # If player is at the center, find an alternative nearby tile
+                if player_tile_x == center_x and player_tile_y == center_y:
+                    print("Player is at chest spawn location, finding alternative")
+                    # Possible alternative locations in priority order (adjacent tiles)
+                    alternatives = [
+                        (center_x + 1, center_y),  # Right
+                        (center_x - 1, center_y),  # Left
+                        (center_x, center_y + 1),  # Down
+                        (center_x, center_y - 1),  # Up
+                        (center_x + 1, center_y + 1),  # Down-Right
+                        (center_x - 1, center_y - 1),  # Up-Left
+                        (center_x + 1, center_y - 1),  # Up-Right
+                        (center_x - 1, center_y + 1),  # Down-Left
+                    ]
+                    
+                    # Find first alternative where player isn't standing and it's not a wall
+                    for alt_x, alt_y in alternatives:
+                        # Skip if out of bounds
+                        if alt_x < 0 or alt_y < 0 or alt_x >= self.width or alt_y >= self.height:
+                            continue
+                            
+                        # Skip if it's already a wall
+                        if self.tiles[alt_y][alt_x] == 1:
+                            continue
+                            
+                        # Skip if player is standing here
+                        alt_rect = pygame.Rect(alt_x * TILE_SIZE, alt_y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                        if alt_rect.colliderect(player.hitbox):
+                            continue
+                            
+                        # Found a good alternative
+                        center_x, center_y = alt_x, alt_y
+                        print(f"Chosen alternative chest location: ({center_x}, {center_y})")
+                        break
             
             # Mark this position as a destroyable wall (treasure chest)
             self.tiles[center_y][center_x] = 1  # Wall tile
@@ -1717,15 +1759,57 @@ class Room:
             # Initialize sparkle timer and particles for visual effect
             self.sparkle_timer = 0
             
-    def drop_lightning_sword(self):
-        """Drop a lightning sword when the level 4 boss is defeated"""
+    def drop_lightning_sword(self, player=None):
+        """Drop a lightning sword when the level 4 boss is defeated
+        
+        Args:
+            player: Optional Player object to check collision with the chest spawn location
+        """
         # Make sure this ONLY happens in level 4
         if self.room_type == 'boss' and self.boss and self.boss.health <= 0 and self.level_number == 4 and not self.lightning_sword_dropped:
-            # Instead of dropping the lightning sword directly, create a treasure chest in the middle of the room
-            
             # Calculate the center of the room in tile coordinates
             center_x = self.width // 2
             center_y = self.height // 2
+            
+            # Check if player is standing at the center tile
+            if player:
+                player_tile_x = player.rect.centerx // TILE_SIZE
+                player_tile_y = player.rect.centery // TILE_SIZE
+                
+                # If player is at the center, find an alternative nearby tile
+                if player_tile_x == center_x and player_tile_y == center_y:
+                    print("Player is at chest spawn location, finding alternative")
+                    # Possible alternative locations in priority order (adjacent tiles)
+                    alternatives = [
+                        (center_x + 1, center_y),  # Right
+                        (center_x - 1, center_y),  # Left
+                        (center_x, center_y + 1),  # Down
+                        (center_x, center_y - 1),  # Up
+                        (center_x + 1, center_y + 1),  # Down-Right
+                        (center_x - 1, center_y - 1),  # Up-Left
+                        (center_x + 1, center_y - 1),  # Up-Right
+                        (center_x - 1, center_y + 1),  # Down-Left
+                    ]
+                    
+                    # Find first alternative where player isn't standing and it's not a wall
+                    for alt_x, alt_y in alternatives:
+                        # Skip if out of bounds
+                        if alt_x < 0 or alt_y < 0 or alt_x >= self.width or alt_y >= self.height:
+                            continue
+                            
+                        # Skip if it's already a wall
+                        if self.tiles[alt_y][alt_x] == 1:
+                            continue
+                            
+                        # Skip if player is standing here
+                        alt_rect = pygame.Rect(alt_x * TILE_SIZE, alt_y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                        if alt_rect.colliderect(player.hitbox):
+                            continue
+                            
+                        # Found a good alternative
+                        center_x, center_y = alt_x, alt_y
+                        print(f"Chosen alternative chest location: ({center_x}, {center_y})")
+                        break
             
             # Mark this position as a destroyable wall (treasure chest)
             self.tiles[center_y][center_x] = 1  # Wall tile
