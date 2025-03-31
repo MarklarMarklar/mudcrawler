@@ -3015,6 +3015,11 @@ class Boss(Enemy):
                         if self.sound_manager:
                             self.sound_manager.play_sound('boss_special')
                             
+                        # Play stealth mode voice
+                        if self.level == 9:
+                            self.sound_manager.play_sound("effects/boss_9_voice")
+                            self.last_voice_time = current_time
+                        
                     elif self.stealth_mode and current_time - self.last_phase_change_time >= self.stealth_phase_duration:
                         # Switch back to normal mode
                         self.stealth_mode = False
@@ -3700,15 +3705,24 @@ class Boss(Enemy):
                 self.has_seen_player = True
                 self.last_voice_time = current_time
                 print(f"Level {self.level} boss spotted player - playing initial voice")
-            # Only play the voice on cooldown for bosses other than level 3, 4, 5, and 6
+            # Only play the voice on cooldown for bosses other than level 3, 4, 5, 6, 7, 8, and 9
             # For level 4 boss, we'll play it when exiting defensive mode instead
             # For level 3 boss, we play it when entering defensive mode (handled elsewhere)
             # For level 5 boss, we play boss_5_try.wav every 10 seconds
             # For level 6 boss, we play boss_6_voice_tele after teleport (handled elsewhere)
+            # For level 7 boss, we play boss_7_voice every 10 seconds
+            # For level 8 boss, we play boss_8_voice every 10 seconds
+            # For level 9 boss, we play voice when entering stealth mode (handled elsewhere)
             elif self.level == 5 and current_time - self.last_voice_time >= 10000:  # 10 seconds
                 self.sound_manager.play_sound("effects/boss_5_try")
                 self.last_voice_time = current_time
-            elif self.level != 3 and self.level != 4 and self.level != 5 and self.level != 6 and current_time - self.last_voice_time >= self.voice_cooldown:
+            elif self.level == 7 and current_time - self.last_voice_time >= 10000:  # 10 seconds
+                self.sound_manager.play_sound("effects/boss_7_voice")
+                self.last_voice_time = current_time
+            elif self.level == 8 and current_time - self.last_voice_time >= 10000:  # 10 seconds
+                self.sound_manager.play_sound("effects/boss_8_voice")
+                self.last_voice_time = current_time
+            elif self.level != 3 and self.level != 4 and self.level != 5 and self.level != 6 and self.level != 7 and self.level != 8 and self.level != 9 and current_time - self.last_voice_time >= self.voice_cooldown:
                 voice_file = f"effects/boss_{self.level}_voice"
                 self.sound_manager.play_sound(voice_file)
                 self.last_voice_time = current_time
@@ -3841,8 +3855,12 @@ class Boss(Enemy):
                         print(f"Switching to defensive image for level 7 boss: {id(self.defensive_image)}")
                     
                     # Play defensive sound
-                    self.sound_manager.play_sound("effects/boss_4_def")  # Reuse level 4 sound
-                    print(f"Level 7 boss entering shield mode at time {current_time}!")
+                    if self.level == 7:
+                        # Don't play level 4's sound for level 7 boss
+                        print(f"Level 7 boss entering shield mode at time {current_time}!")
+                    else:
+                        self.sound_manager.play_sound("effects/boss_4_def")  # Only for level 4
+                    print(f"Level {self.level} boss entering shield mode at time {current_time}!")
                     
                     # Summon homing projectiles at the start of shield mode
                     self.summon_homing_projectiles(player)
