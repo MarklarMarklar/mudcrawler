@@ -334,7 +334,7 @@ class DarkLord(Boss):
         self.add_debug_message(f"Started summoning from blinking copy in {phase_text}")
         
         # Play summoning sound
-        self.sound_manager.play_sound("effects/boss_summon")
+        self.sound_manager.play_sound("effects/boss_10_summon")
     
     def update_blinking_copy(self):
         """Update the blinking copy during summoning"""

@@ -2938,6 +2938,11 @@ class Boss(Enemy):
                     print("Level 3 boss dropped defensive mode - all minions defeated!")
                 elif not was_defensive and self.defensive_mode:
                     print("Level 3 boss entered defensive mode - minions protecting the boss!")
+                    # Play voice when boss enters defensive mode (shield activates)
+                    if self.level == 3:
+                        voice_file = f"effects/boss_{self.level}_voice"
+                        self.sound_manager.play_sound(voice_file)
+                        self.last_voice_time = current_time
             else:
                 # Failed to find room or enemies - default to no defensive mode
                 if self.defensive_mode:
@@ -3384,6 +3389,11 @@ class Boss(Enemy):
                     if hasattr(self, 'normal_image') and self.normal_image:
                         self.image = self.normal_image
                     
+                    # Play teleport completion voice
+                    if self.level == 6:
+                        self.sound_manager.play_sound("effects/boss_6_voice_tele")
+                        self.last_voice_time = current_time
+                    
                                         # Shoot a projectile at the player when teleportation is complete
                     # Calculate normalized direction vector to player
                     dx = player.rect.centerx - self.rect.centerx
@@ -3690,9 +3700,15 @@ class Boss(Enemy):
                 self.has_seen_player = True
                 self.last_voice_time = current_time
                 print(f"Level {self.level} boss spotted player - playing initial voice")
-            # Only play the voice on cooldown for bosses other than level 4
+            # Only play the voice on cooldown for bosses other than level 3, 4, 5, and 6
             # For level 4 boss, we'll play it when exiting defensive mode instead
-            elif self.level != 4 and current_time - self.last_voice_time >= self.voice_cooldown:
+            # For level 3 boss, we play it when entering defensive mode (handled elsewhere)
+            # For level 5 boss, we play boss_5_try.wav every 10 seconds
+            # For level 6 boss, we play boss_6_voice_tele after teleport (handled elsewhere)
+            elif self.level == 5 and current_time - self.last_voice_time >= 10000:  # 10 seconds
+                self.sound_manager.play_sound("effects/boss_5_try")
+                self.last_voice_time = current_time
+            elif self.level != 3 and self.level != 4 and self.level != 5 and self.level != 6 and current_time - self.last_voice_time >= self.voice_cooldown:
                 voice_file = f"effects/boss_{self.level}_voice"
                 self.sound_manager.play_sound(voice_file)
                 self.last_voice_time = current_time
