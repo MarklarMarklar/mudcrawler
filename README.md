@@ -1,25 +1,54 @@
 # Mud Crawler
 
-A dungeon crawler game created in Cursor with Python and Pygame. Explore procedurally generated dungeons, battle enemies, and collect items as you progress through increasingly challenging levels.
+A challenging dungeon crawler game created with Python and Pygame. Battle through 10 unique boss levels in procedurally generated dungeons, each with distinct mechanics and challenges. The game features a rich combat system, special abilities, and a variety of weapons and power-ups.
 
 ## Features
 
-- Procedurally generated dungeon levels
-- Multiple enemy types with random textures
-- Boss battles
-- Weapons including sword and bow
-- Special attacks with kill-counter mechanics
-- Fire and lightning sword power-ups
-- Destroyable walls that may contain health and arrow pickups
-- Random textures for floors, walls, and enemies for visual variety
-- In-game controls menu
-- Minimap system to track room exploration
+### Combat System
+- Dynamic melee combat with sword attacks
+- Ranged combat with bow and arrows
+- Dodge roll mechanic for evasion
+- Special attacks charged through combat
+- Fire and lightning sword power-ups with unique abilities
+
+### Dungeon System
+- 10 unique levels with distinct themes
+- Procedurally generated rooms and layouts
+- Destructible walls with hidden pickups
+- Interactive environment elements
+- Minimap system for navigation
+
+### Boss Battles
+1. Vorthrax, the Eldritch Sovereign - Blood zone mechanics and life drain
+2. Nyx'tara, the Venomous Weaver - Cone projectile attacks with secondary spawns
+3. Morg'roth, the Plague Harbinger - Minion resurrection mechanics
+4. Grak'tor, the Jade Warlord - Defensive shield and rope pull mechanics
+5. Kail'zar, the Void Blade - Orbiting projectiles and stationary hazards
+6. Elysia, the Toxic Enchantress - Teleportation and poison trail mechanics
+7. Azrathax, the Infernal Tyrant - Expanding shield and death ray mechanics
+8. Drakor, the Crimson Overlord - Fire-based area control mechanics
+9. Nyxalith, the Shadow - Stealth mechanics and minion spawning
+10. Dark Lord the Summoner - Final boss with multiple phases
+
+### Visual and Audio
+- Dynamic lighting and particle effects
+- Boss-specific visual effects
+- Unique sound effects and boss voice lines
+- Random texture variations for enemies and environment
+- Smooth animations and visual feedback
+
+### User Interface
+- Intuitive HUD with health, ammo, and special meters
+- Interactive menus and control configuration
+- Real-time minimap system
+- Visual combat feedback
+- Fullscreen support
 
 ## Controls
 
 - WASD or Arrow Keys: Move
 - Left Mouse Button: Shoot arrow/Attack
-- Right Mouse Button: Dodge
+- Right Mouse Button: Dodge roll
 - E: Special Attack (when charged)
 - Space: Melee/Sword attack
 - ESC: Pause game
@@ -27,9 +56,11 @@ A dungeon crawler game created in Cursor with Python and Pygame. Explore procedu
 
 ## Requirements
 
-- Python 3.x
-- Pygame
-- OpenCV (optional, for video playback)
+- Python 3.8+
+- Pygame 2.0.0+
+- NumPy 1.24.3+
+- PyTMX 3.31+
+- OpenCV-Python 4.8.0+ (for video effects)
 
 ## Installation
 
@@ -40,8 +71,7 @@ git clone https://github.com/MarklarMarklar/mudcrawler.git
 
 2. Install the required dependencies:
 ```
-pip install pygame
-pip install opencv-python # Optional, for video playback
+pip install -r requirements.txt
 ```
 
 3. Run the game:
@@ -49,22 +79,33 @@ pip install opencv-python # Optional, for video playback
 python scripts/main.py
 ```
 
-## User Interface
+## Game Progress
 
-- Main Menu: Start Game, Options, Quit
-- Options Menu: Fullscreen toggle, Controls menu
-- In-game HUD: Health bar, arrow count, special attack meter
-- Minimap: Shows explored rooms and your current position
+The game is currently at 90% completion, with all major features implemented:
+- ✅ All 10 boss battles with unique mechanics
+- ✅ Complete combat system
+- ✅ Full progression system
+- ✅ Core gameplay mechanics
+- ✅ Sound and visual effects
+- 🔄 Final balancing and polish
+- 🔄 Additional content and secrets
+
+## Development
+
+Future plans for the final 10%:
+- Fine-tune boss difficulty and mechanics
+- Add additional secret areas and rewards
+- Implement achievement system
+- Add additional visual polish
+- Optimize performance
+- Add additional sound effects and music
+- Implement save/load system
 
 ## Screenshots
 
 ![image](https://github.com/user-attachments/assets/72bb3fde-d0e8-47de-a25b-91e8fe50395b)
 ![image](https://github.com/user-attachments/assets/28e3f38c-7692-4c95-b978-ef3732e3112d)
 
-## Development
+## Contributing
 
-This game is still in development. Future plans include:
-- Additional enemy types
-- More weapon varieties
-- Enhanced visual effects
-- Additional levels and boss types
+Contributions are welcome! Please feel free to submit a Pull Request.

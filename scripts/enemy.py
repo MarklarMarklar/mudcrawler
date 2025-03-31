@@ -63,7 +63,7 @@ class BossProjectile(pygame.sprite.Sprite):
                 frame_height = sprite_sheet.get_height()
                 
                 # Determine the appropriate size - 150% of normal size
-                projectile_size = int(TILE_SIZE//1.5 * 1.5)
+                projectile_size = int(TILE_SIZE//2 * 2)
                 
                 # Adjust size for orbiting projectiles (to match others)
                 if is_orbiting:
@@ -396,49 +396,11 @@ class BossProjectile(pygame.sprite.Sprite):
         # Special rendering for Boss 8 floor projectiles
         if self.is_floor_projectile:
             if self.creation_time == 0:
-                # Warning phase - pulsing glow effect - making it much smaller
-                pulse_size = int(TILE_SIZE * (0.25 + 0.05 * abs(math.sin(self.warning_pulse))))  # Reduced from 0.4+0.1
-                pulse_alpha = int(80 + 60 * abs(math.sin(self.warning_pulse)))  # Reduced alpha
-                
-                # Create a warning circle surface with transparency
-                warning_surface = pygame.Surface((pulse_size * 2, pulse_size * 2), pygame.SRCALPHA)
-                warning_color = (255, 165, 0, pulse_alpha)  # Orange with variable alpha
-                
-                # Draw the warning circle
-                pygame.draw.circle(warning_surface, warning_color, (pulse_size, pulse_size), pulse_size)
-                
-                # Draw a darker inner circle for contrast
-                inner_size = int(pulse_size * 0.6)  # Smaller inner circle
-                inner_color = (200, 100, 0, pulse_alpha)
-                pygame.draw.circle(warning_surface, inner_color, (pulse_size, pulse_size), inner_size)
-                
-                # Position the warning circle under the projectile sprite
-                warning_x = self.rect.centerx - pulse_size
-                warning_y = self.rect.centery - pulse_size
-                surface.blit(warning_surface, (warning_x, warning_y))
-                
-                # Draw the main projectile sprite on top
+                # Just draw the main projectile sprite
                 surface.blit(self.image, self.rect.topleft)
             else:
-                # Active phase - more intense but much smaller glow
-                # Draw a bright glow around the projectile
-                glow_size = int(TILE_SIZE * 0.3)  # Reduced from 0.6
-                glow_surface = pygame.Surface((glow_size * 2, glow_size * 2), pygame.SRCALPHA)
-                
-                # Create a radial gradient glow
-                for radius in range(glow_size, 0, -2):  # Larger steps for fewer circles
-                    alpha = int(120 * (radius / glow_size))  # Reduced alpha
-                    color = (255, 100 + radius % 100, 0, alpha)  # Pulsing orange-red
-                    pygame.draw.circle(glow_surface, color, (glow_size, glow_size), radius)
-                
-                # Position the glow under the projectile sprite
-                glow_x = self.rect.centerx - glow_size
-                glow_y = self.rect.centery - glow_size
-                surface.blit(glow_surface, (glow_x, glow_y))
-                
-                # Draw the main projectile on top
+                # Just draw the main projectile sprite
                 surface.blit(self.image, self.rect.topleft)
-        
         else:
             # Normal projectile rendering
             surface.blit(self.image, self.rect.topleft)
@@ -518,12 +480,8 @@ class BossProjectile(pygame.sprite.Sprite):
         if not self.is_orbiting:
             # For Boss 8 projectiles, use a smaller core to not obscure the fire animation
             if hasattr(self, 'boss_level') and self.boss_level == 8:
-                # Create a very small white core
-                core_size = int(TILE_SIZE // 8)  # Reduced from 1/5 to 1/8
-                core_surface = pygame.Surface((core_size, core_size), pygame.SRCALPHA)
-                
-                # White core with lower alpha
-                pygame.draw.circle(core_surface, (255, 255, 255, 100), (core_size // 2, core_size // 2), core_size // 2)
+                # No core for boss 8 projectiles
+                pass
             else:
                 # Create a small white core at the center for extra brightness (original behavior)
                 core_size = int(TILE_SIZE // 3)
@@ -531,11 +489,11 @@ class BossProjectile(pygame.sprite.Sprite):
                 
                 # White core with high alpha
                 pygame.draw.circle(core_surface, (255, 255, 255, 200), (core_size // 2, core_size // 2), core_size // 2)
-            
-            # Draw the core centered in the projectile
-            core_x = self.rect.centerx - core_size // 2
-            core_y = self.rect.centery - core_size // 2
-            surface.blit(core_surface, (core_x, core_y))
+                
+                # Draw the core centered in the projectile
+                core_x = self.rect.centerx - core_size // 2
+                core_y = self.rect.centery - core_size // 2
+                surface.blit(core_surface, (core_x, core_y))
     
     def check_collision(self, player_rect):
         """Check if projectile collides with player"""

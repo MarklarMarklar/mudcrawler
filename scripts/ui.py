@@ -1517,7 +1517,7 @@ class HUD:
         # Draw the level text to the left of the minimap
         self.screen.blit(level_text, level_text_rect)
         
-    def draw_boss_health_bar(self, boss_health, boss_max_health):
+    def draw_boss_health_bar(self, boss_health, boss_max_health, level_number=None):
         """Draw the boss health bar at the top of the screen"""
         # Draw background bar
         bar_width = 300
@@ -1539,9 +1539,26 @@ class HUD:
         # Draw border
         pygame.draw.rect(self.screen, (255, 255, 255), (bar_x, bar_y, bar_width, bar_height), 2)
         
-        # Draw "BOSS" text above the health bar
-        font = pygame.font.Font(None, 24)
-        text = font.render("BOSS", True, (255, 255, 255))
+        # Boss names dictionary
+        boss_names = {
+            1: "Vorthrax, the Eldritch Sovereign",
+            2: "Nyx'tara, the Venomous Weaver",
+            3: "Morg'roth, the Plague Harbinger",
+            4: "Grak'tor, the Jade Warlord",
+            5: "Kail'zar, the Void Blade",
+            6: "Elysia, the Toxic Enchantress",
+            7: "Azrathax, the Infernal Tyrant",
+            8: "Drakor, the Crimson Overlord",
+            9: "Nyxalith, the Shadow",
+            10: "Dark Lord the Summoner"
+        }
+        
+        # Draw boss name above the health bar
+        font = pygame.font.Font(None, 20)  # Reduced from 24 to 20
+        boss_name = "BOSS"  # Default text
+        if level_number and level_number in boss_names:
+            boss_name = boss_names[level_number]
+        text = font.render(boss_name, True, (255, 255, 255))
         text_rect = text.get_rect(center=(WINDOW_WIDTH // 2, bar_y - 10))
         self.screen.blit(text, text_rect)
     
@@ -1668,7 +1685,7 @@ class HUD:
         """Draw all UI elements"""
         # Draw boss health if provided
         if boss_health is not None and boss_max_health is not None and boss_health > 0:
-            self.draw_boss_health_bar(boss_health, boss_max_health)
+            self.draw_boss_health_bar(boss_health, boss_max_health, level_number)
             
         # Draw player stats
         self.draw_player_stats(player, level_number, has_key)

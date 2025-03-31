@@ -1,4 +1,8 @@
 pygame>=2.0.0
-numpy==1.24.3
-pytmx==3.31
-opencv-python>=4.8.0 
+numpy>=1.24.3
+pytmx>=3.31
+opencv-python>=4.8.0
+pillow>=10.0.0
+pygame-menu>=4.4.3
+pathfinding>=1.0.1
+noise>=1.2.2 
