@@ -99,7 +99,6 @@ Future plans for the final 10%:
 - Add additional visual polish
 - Optimize performance
 - Add additional sound effects and music
-- Implement save/load system
 
 ## Screenshots
 
