@@ -563,6 +563,9 @@ class Enemy(pygame.sprite.Sprite):
         self.last_enemy_collision_time = 0  # Last time this enemy collided with another
         self.last_collided_with = set()  # Set of IDs of recently collided enemies
         
+        # Sprite direction flag (all sprites face right by default)
+        self.facing_right = True
+        
         # Animation properties
         self.animations = {
             'idle': {'up': [], 'down': [], 'left': [], 'right': []},
@@ -1060,6 +1063,10 @@ class Enemy(pygame.sprite.Sprite):
         dx = player.rect.centerx - self.rect.centerx
         dy = player.rect.centery - self.rect.centery
         distance = math.sqrt(dx * dx + dy * dy)
+        
+        # Update facing direction based on horizontal movement
+        if dx != 0:
+            self.facing_right = dx > 0
         
         # If we're in attack range, stop moving
         if distance <= self.attack_range:
@@ -1895,6 +1902,8 @@ class Enemy(pygame.sprite.Sprite):
         if self.is_jumping:
             # Create a faded copy of the sprite
             alpha_sprite = self.image.copy()
+            if not self.facing_right:
+                alpha_sprite = pygame.transform.flip(alpha_sprite, True, False)
             alpha_sprite.set_alpha(100)  # 100/255 transparency
             
             # Calculate position based on distance from original to current
@@ -1912,7 +1921,13 @@ class Enemy(pygame.sprite.Sprite):
                 surface.blit(alpha_sprite, pos)
         
         # Draw the enemy at its current position
-        surface.blit(self.image, self.rect)
+        if not self.facing_right and not self.is_dead:  # Don't flip if in blood puddle state
+            # Flip the sprite horizontally
+            flipped_image = pygame.transform.flip(self.image, True, False)
+            surface.blit(flipped_image, self.rect)
+        else:
+            # Draw normally
+            surface.blit(self.image, self.rect)
         
         # Optionally draw collision box for debugging
         # Uncomment this to visualize the collision boxes

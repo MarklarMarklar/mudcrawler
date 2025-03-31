@@ -414,6 +414,11 @@ class Game:
                 
             # Handle menu button clicks - ONLY when in appropriate states (not during gameplay)
             if self.state in [MENU, PAUSED, GAME_OVER, VICTORY]:
+                # Handle audio menu events if it's showing
+                if self.menu.showing_audio:
+                    if self.menu.handle_audio_menu_event(event):
+                        continue
+                
                 button_clicked = self.menu.handle_event(event)
                 if button_clicked:
                     if button_clicked == 'start':
@@ -443,6 +448,15 @@ class Game:
                         # Update button positions before showing options
                         self.menu.showing_options = True
                         self.menu._update_button_positions('options_menu')
+                    elif button_clicked == 'audio':
+                        print("Audio button clicked")
+                        # Show audio menu
+                        self.menu.showing_audio = True
+                        self.menu.showing_options = False
+                        # Initialize slider values from sound manager
+                        sound_manager = self.sound_manager
+                        self.menu.music_volume = sound_manager.music_volume
+                        self.menu.sfx_volume = sound_manager.sfx_volume
                     elif button_clicked == 'artworks':
                         print("Artworks button clicked")
                         # Show artworks menu
@@ -457,6 +471,11 @@ class Game:
                         # If we're in the controls menu, go back to options
                         if self.menu.showing_controls:
                             self.menu.showing_controls = False
+                            self.menu.showing_options = True
+                            self.menu._update_button_positions('options_menu')
+                        # If we're in the audio menu, go back to options
+                        elif self.menu.showing_audio:
+                            self.menu.showing_audio = False
                             self.menu.showing_options = True
                             self.menu._update_button_positions('options_menu')
                         # If we're in the artworks menu, go back to main menu
@@ -1554,6 +1573,8 @@ class Game:
                 self.menu.draw_controls_menu()
             elif self.menu.showing_options:
                 self.menu.draw_options_menu()
+            elif self.menu.showing_audio:
+                self.menu.draw_audio_menu()
             elif self.menu.showing_artworks:
                 self.menu.draw_artworks_menu()
             else:
@@ -1566,6 +1587,8 @@ class Game:
                 self.menu.draw_controls_menu()
             elif self.menu.showing_options:
                 self.menu.draw_options_menu()
+            elif self.menu.showing_audio:
+                self.menu.draw_audio_menu()
             else:
                 self.menu.draw_pause_menu()
         elif self.state == GAME_OVER:

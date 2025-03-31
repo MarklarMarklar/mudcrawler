@@ -4,6 +4,8 @@ from config import *
 from asset_manager import get_asset_manager
 import math
 import sys
+from sound_manager import get_sound_manager  # Add this import
+import random
 
 # Try to import OpenCV, but don't fail if not available
 try:
@@ -279,6 +281,13 @@ class Menu:
             
         self.asset_manager = get_asset_manager()
         
+        # Audio menu variables
+        self.music_volume = 0.5  # Initial music volume (0.0 to 1.0)
+        self.sfx_volume = 0.7    # Initial SFX volume (0.0 to 1.0)
+        self.slider_dragging = None  # Track which slider is being dragged
+        self.music_slider_rect = None  # Will be set when drawing audio menu
+        self.sfx_slider_rect = None   # Will be set when drawing audio menu
+        
         # Create default backgrounds
         self.menu_bg = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.menu_bg.fill((50, 50, 80))
@@ -431,12 +440,14 @@ class Menu:
             'quit': Button(self.center_x, 0, self.button_width, self.button_height, "Quit", font_size=32),
             'back': Button(self.center_x, 0, self.button_width, self.button_height, "Back", font_size=32),
             'fullscreen': Button(self.center_x, 0, self.button_width, self.button_height, "Fullscreen: Off", font_size=28),
-            'controls': Button(self.center_x, 0, self.button_width, self.button_height, "Controls", font_size=28)
+            'controls': Button(self.center_x, 0, self.button_width, self.button_height, "Controls", font_size=28),
+            'audio': Button(self.center_x, 0, self.button_width, self.button_height, "Audio", font_size=28)
         }
         
         # Track menu states
         self.showing_options = False
         self.showing_controls = False
+        self.showing_audio = False
         self.showing_artworks = False
         self.in_pause_menu = False
         self.in_game_over = False
@@ -562,8 +573,11 @@ class Menu:
             self.buttons['controls'].rect.x = self.center_x
             self.buttons['controls'].rect.y = WINDOW_HEIGHT // 2 + 70
             
+            self.buttons['audio'].rect.x = self.center_x
+            self.buttons['audio'].rect.y = WINDOW_HEIGHT // 2 + 140
+            
             self.buttons['back'].rect.x = self.center_x
-            self.buttons['back'].rect.y = WINDOW_HEIGHT // 2 + 140
+            self.buttons['back'].rect.y = WINDOW_HEIGHT // 2 + 210
             
         elif menu_type == 'controls_menu':
             # Position back button for controls menu
@@ -804,6 +818,7 @@ class Menu:
         # Draw option buttons
         self.buttons['fullscreen'].draw(self.screen)
         self.buttons['controls'].draw(self.screen)
+        self.buttons['audio'].draw(self.screen)
         self.buttons['back'].draw(self.screen)
         
     def toggle_fullscreen(self):
@@ -823,8 +838,10 @@ class Menu:
         active_buttons = []
         
         if self.showing_options:
-            active_buttons = ['fullscreen', 'controls', 'back']
+            active_buttons = ['fullscreen', 'controls', 'audio', 'back']
         elif self.showing_controls:
+            active_buttons = ['back']
+        elif self.showing_audio:
             active_buttons = ['back']
         elif self.showing_artworks:
             active_buttons = ['back']
@@ -920,27 +937,39 @@ class Menu:
         
         # Draw controls information
         y_offset = 150
-        # Further increase spacing between columns and move left column more to the left
-        left_column_x = WINDOW_WIDTH // 2 - 210
-        right_column_x = WINDOW_WIDTH // 2 + 60
+        # Increase spacing between columns and move left column more to the left
+        left_column_x = WINDOW_WIDTH // 2 - 280  # Moved further left
+        right_column_x = WINDOW_WIDTH // 2 + 20  # Moved slightly left to create more space
         
-        # Draw a semi-transparent background for controls list
-        # Make background even wider to prevent overlap
-        controls_bg = pygame.Surface((520, len(self.controls_info) * 45 + 30))
+        # Calculate total height needed for controls list
+        total_height = len(self.controls_info) * 45 + 60  # 45px per line + 60px padding
+        
+        # Calculate maximum width needed for each column
+        left_width = max(self.instruction_font.size(action + ":")[0] for action, _ in self.controls_info)
+        right_width = max(self.instruction_font.size(key)[0] for _, key in self.controls_info)
+        
+        # Create a wider background for controls list
+        bg_width = left_width + right_width + 200  # Added more padding
+        bg_height = total_height
+        controls_bg = pygame.Surface((bg_width, bg_height))
         controls_bg.fill((50, 50, 50))
         controls_bg.set_alpha(180)
-        controls_bg_rect = controls_bg.get_rect(center=(WINDOW_WIDTH // 2, y_offset + (len(self.controls_info) * 45) // 2))
+        
+        # Center the background
+        controls_bg_rect = controls_bg.get_rect(center=(WINDOW_WIDTH // 2, y_offset + (total_height // 2)))
         self.screen.blit(controls_bg, controls_bg_rect)
         
         # Draw each control with its key
         for i, (action, key) in enumerate(self.controls_info):
-            # Draw action (left column)
+            # Draw action (left column) with yellow color
             action_text = self.instruction_font.render(action + ":", True, (255, 255, 100))
-            self.screen.blit(action_text, (left_column_x, y_offset + i * 45))
+            action_rect = action_text.get_rect(right=(right_column_x - 20), y=(y_offset + i * 45))
+            self.screen.blit(action_text, action_rect)
             
-            # Draw key (right column)
+            # Draw key (right column) with white color
             key_text = self.instruction_font.render(key, True, WHITE)
-            self.screen.blit(key_text, (right_column_x, y_offset + i * 45))
+            key_rect = key_text.get_rect(left=right_column_x, y=(y_offset + i * 45))
+            self.screen.blit(key_text, key_rect)
         
         # Draw back button
         self.buttons['back'].draw(self.screen)
@@ -1190,6 +1219,104 @@ class Menu:
                 return "level_10"
         
         return None
+
+    def draw_audio_menu(self):
+        """Draw the audio settings menu with volume sliders"""
+        # Semi-transparent overlay
+        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+        overlay.fill((0, 0, 0))
+        overlay.set_alpha(128)
+        self.screen.blit(overlay, (0, 0))
+        
+        # Draw title
+        title = self.font.render("AUDIO", True, WHITE)
+        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3))
+        self.screen.blit(title, title_rect)
+        
+        # Draw sliders
+        slider_width = 300
+        slider_height = 20
+        slider_x = WINDOW_WIDTH // 2 - slider_width // 2
+        
+        # Music volume slider
+        music_y = WINDOW_HEIGHT // 2
+        pygame.draw.rect(self.screen, (50, 50, 50), (slider_x, music_y, slider_width, slider_height))
+        pygame.draw.rect(self.screen, (200, 200, 200), 
+                        (slider_x, music_y, int(slider_width * self.music_volume), slider_height))
+        
+        # Music label
+        music_label = self.instruction_font.render(f"Music Volume: {int(self.music_volume * 100)}%", True, WHITE)
+        music_label_rect = music_label.get_rect(bottomleft=(slider_x, music_y - 10))
+        self.screen.blit(music_label, music_label_rect)
+        
+        # SFX volume slider
+        sfx_y = music_y + 80
+        pygame.draw.rect(self.screen, (50, 50, 50), (slider_x, sfx_y, slider_width, slider_height))
+        pygame.draw.rect(self.screen, (200, 200, 200), 
+                        (slider_x, sfx_y, int(slider_width * self.sfx_volume), slider_height))
+        
+        # SFX label
+        sfx_label = self.instruction_font.render(f"SFX Volume: {int(self.sfx_volume * 100)}%", True, WHITE)
+        sfx_label_rect = sfx_label.get_rect(bottomleft=(slider_x, sfx_y - 10))
+        self.screen.blit(sfx_label, sfx_label_rect)
+        
+        # Store slider rects for interaction
+        self.music_slider_rect = pygame.Rect(slider_x, music_y, slider_width, slider_height)
+        self.sfx_slider_rect = pygame.Rect(slider_x, sfx_y, slider_width, slider_height)
+        
+        # Draw back button
+        self.buttons['back'].rect.y = sfx_y + 80
+        self.buttons['back'].draw(self.screen)
+
+    def handle_audio_menu_event(self, event):
+        """Handle events specific to the audio menu"""
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            mouse_pos = event.pos
+            if self.music_slider_rect.collidepoint(mouse_pos):
+                self.slider_dragging = 'music'
+                # Update volume based on click position
+                self.music_volume = (mouse_pos[0] - self.music_slider_rect.x) / self.music_slider_rect.width
+                self.music_volume = max(0.0, min(1.0, self.music_volume))
+                # Apply volume change immediately
+                get_sound_manager().set_music_volume(self.music_volume)
+                return True
+            elif self.sfx_slider_rect.collidepoint(mouse_pos):
+                self.slider_dragging = 'sfx'
+                # Update volume based on click position
+                self.sfx_volume = (mouse_pos[0] - self.sfx_slider_rect.x) / self.sfx_slider_rect.width
+                self.sfx_volume = max(0.0, min(1.0, self.sfx_volume))
+                # Apply volume change immediately
+                sound_manager = get_sound_manager()
+                sound_manager.sfx_volume = self.sfx_volume
+                # Update volume of all loaded sounds
+                for sound in sound_manager.sounds.values():
+                    sound.set_volume(self.sfx_volume)
+                return True
+        elif event.type == pygame.MOUSEBUTTONUP:
+            self.slider_dragging = None
+        elif event.type == pygame.MOUSEMOTION and self.slider_dragging:
+            mouse_pos = event.pos
+            if self.slider_dragging == 'music':
+                # Calculate new volume based on mouse position, clamped to slider bounds
+                x_pos = max(self.music_slider_rect.left, min(mouse_pos[0], self.music_slider_rect.right))
+                self.music_volume = (x_pos - self.music_slider_rect.x) / self.music_slider_rect.width
+                self.music_volume = max(0.0, min(1.0, self.music_volume))
+                # Apply volume change immediately
+                get_sound_manager().set_music_volume(self.music_volume)
+                return True
+            elif self.slider_dragging == 'sfx':
+                # Calculate new volume based on mouse position, clamped to slider bounds
+                x_pos = max(self.sfx_slider_rect.left, min(mouse_pos[0], self.sfx_slider_rect.right))
+                self.sfx_volume = (x_pos - self.sfx_slider_rect.x) / self.sfx_slider_rect.width
+                self.sfx_volume = max(0.0, min(1.0, self.sfx_volume))
+                # Apply volume change immediately
+                sound_manager = get_sound_manager()
+                sound_manager.sfx_volume = self.sfx_volume
+                # Update volume of all loaded sounds
+                for sound in sound_manager.sounds.values():
+                    sound.set_volume(self.sfx_volume)
+                return True
+        return False
 
 class HUD:
     def __init__(self, screen):
@@ -1647,20 +1774,43 @@ class HUD:
         
         # Use purple color for special attack bar
         if kill_percent == 1.0:
-            # Ready for special attack - pulsing bright purple
-            pulse = 0.5 + 0.5 * abs(math.sin(pygame.time.get_ticks() / 200))
-            # Interpolate between dark and bright purple
-            r = int(150 + (pulse * 105))  # 150-255
-            g = int(50 + (pulse * 50))    # 50-100
-            b = int(200 + (pulse * 55))   # 200-255
-            kill_bar_color = (r, g, b)
+            # Ready for special attack - enhanced pulsing effect
+            pulse = abs(math.sin(pygame.time.get_ticks() / 200))  # Faster pulsing
+            
+            # Create a glowing effect when charged
+            # Draw multiple bars with decreasing alpha for glow
+            for i in range(3):
+                glow_alpha = int(150 * (1 - i * 0.3) * pulse)  # Fade out each layer
+                glow_surface = pygame.Surface((kill_width + i*4, kill_bar_height + i*4), pygame.SRCALPHA)
+                glow_color = (200 + int(55 * pulse), 50 + int(50 * pulse), 255, glow_alpha)
+                pygame.draw.rect(glow_surface, glow_color, glow_surface.get_rect())
+                self.screen.blit(glow_surface, 
+                               (arrow_bar_x - i*2, kill_bar_y - i*2))
+            
+            # Main bar with bright purple color
+            bar_color = (200 + int(55 * pulse), 50 + int(150 * pulse), 255)  # Brighter purple pulse
+            pygame.draw.rect(self.screen, bar_color,
+                           (arrow_bar_x, kill_bar_y, kill_width, kill_bar_height))
+            
+            # Draw sparkle effects directly instead of using particles
+            for _ in range(3):
+                x = arrow_bar_x + kill_width * random.random()
+                y = kill_bar_y + random.randint(-5, 5)
+                sparkle_size = 2 + int(2 * pulse)
+                sparkle_color = (255, 255, 255, int(200 * pulse))
+                # Draw a simple sparkle using circles
+                pygame.draw.circle(self.screen, sparkle_color, (int(x), int(y)), sparkle_size)
+                # Add a cross shape for extra sparkle effect
+                pygame.draw.line(self.screen, sparkle_color, 
+                               (int(x - sparkle_size), int(y)), 
+                               (int(x + sparkle_size), int(y)), 1)
+                pygame.draw.line(self.screen, sparkle_color, 
+                               (int(x), int(y - sparkle_size)), 
+                               (int(x), int(y + sparkle_size)), 1)
         else:
             # Normal purple color while charging
-            kill_bar_color = (150, 50, 200)
-            
-        pygame.draw.rect(self.screen, kill_bar_color,
-                         (arrow_bar_x, kill_bar_y,
-                         kill_width, kill_bar_height))
+            pygame.draw.rect(self.screen, (150, 50, 200),
+                           (arrow_bar_x, kill_bar_y, kill_width, kill_bar_height))
         
         # Draw segmented markers for kill counter (1 segment per kill)
         segment_spacing = self.arrow_bar_rect.width / kill_counter_max
