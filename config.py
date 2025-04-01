@@ -37,7 +37,7 @@ SOUNDS_PATH = os.path.join(ASSET_PATH, "sounds")
 # Player Settings
 PLAYER_START_HEALTH = 100
 PLAYER_SPEED = 3.5  # Reduced from 5 to make player movement slower
-SWORD_DAMAGE = 200
+SWORD_DAMAGE = 25
 BOW_DAMAGE = 15
 BOW_COOLDOWN = 1000  # milliseconds
 SWORD_COOLDOWN = 500  # milliseconds
@@ -62,11 +62,11 @@ BOSS_TYPES = {
     'level2': {'name': 'Skeleton Lord', 'health': 700, 'damage': 25, 'speed': 2.2},
     'level3': {'name': 'Phantom King', 'health': 600, 'damage': 25, 'speed': 3},
     'level4': {'name': 'Goblin Chief', 'health': 1000, 'damage': 30, 'speed': 3},
-    'level5': {'name': 'Dark Champion', 'health': 1200, 'damage': 25, 'speed': 2.2},
-    'level6': {'name': 'Arch Wizard', 'health': 1200, 'damage': 25, 'speed': 2},
-    'level7': {'name': 'Demon Lord', 'health': 1200, 'damage': 20, 'speed': 2},
-    'level8': {'name': 'Dragon', 'health': 1300, 'damage': 15, 'speed': 2},
-    'level9': {'name': 'Shadow King', 'health': 1400, 'damage': 30, 'speed': 2},
+    'level5': {'name': 'Dark Champion', 'health': 800, 'damage': 25, 'speed': 2.2},
+    'level6': {'name': 'Arch Wizard', 'health': 800, 'damage': 25, 'speed': 2},
+    'level7': {'name': 'Demon Lord', 'health': 900, 'damage': 20, 'speed': 2},
+    'level8': {'name': 'Dragon', 'health': 1000, 'damage': 15, 'speed': 2},
+    'level9': {'name': 'Shadow King', 'health': 1100, 'damage': 30, 'speed': 2},
     'level10': {'name': 'Dark Lord', 'health': 1500, 'damage': 30, 'speed': 2.2}
 }
 

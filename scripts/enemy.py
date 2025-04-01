@@ -3913,6 +3913,11 @@ class Boss(Enemy):
                 else:
                     # Update shield growth during the shield mode (0 to 1 over the duration)
                     self.shield_growth = min(1.0, time_in_defensive_mode / self.defensive_mode_duration)
+                    
+                    # Calculate shield radius based on growth
+                    base_radius = TILE_SIZE * 2  # Base shield size of 2 tiles
+                    growth_bonus = TILE_SIZE * 1.5  # Can grow up to 1.5 additional tiles
+                    self.shield_radius = base_radius + (growth_bonus * self.shield_growth)
             
             # If in shield mode, check for collisions with the player
             if self.defensive_mode:
