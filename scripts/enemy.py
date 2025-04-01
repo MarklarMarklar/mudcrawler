@@ -3649,8 +3649,8 @@ class Boss(Enemy):
                     # Damage player
                     player.take_damage(zone.damage)
                     
-                    # Heal the boss by the same amount
-                    self.health = min(self.max_health, self.health + zone.damage)
+                    # Heal the boss by 5x the damage amount
+                    self.health = min(self.max_health, self.health + (zone.damage * 5))
                     
                     # Display healing effect
                     if hasattr(player, 'game') and player.game and hasattr(player.game, 'particle_system'):

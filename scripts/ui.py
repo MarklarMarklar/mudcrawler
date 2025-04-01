@@ -493,7 +493,7 @@ class Menu:
             "Special Thanks",
             "Kacsa, Pocok, Pupi",
             "Peti, Levi, Sebi,",
-            "Zsizsik, Dübi"
+            "Zsizsik, Dubi"
             "",
             "Made with Python and Pygame",
             "",
