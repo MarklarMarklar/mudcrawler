@@ -1677,7 +1677,7 @@ class HUD:
             7: "Azrathax, the Infernal Tyrant",
             8: "Drakor, the Crimson Overlord",
             9: "Nyxalith, the Shadow",
-            10: "Dark Lord the Summoner"
+            10: "Git the Unclean Merger"
         }
         
         # Draw boss name above the health bar

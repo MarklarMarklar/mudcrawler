@@ -120,8 +120,11 @@ class DarkLord(Boss):
         # Ability tracking
         self.available_abilities = []
         self.current_ability = None
-        self.ability_cooldown = 8000  # 8 seconds between ability uses
+        self.ability_cooldown = 6000  # 6 seconds between ability uses (changed from 8 to 6 sec)
         self.last_ability_time = 0
+        self.ability_sequence_state = 'rope'  # Starts with rope ability
+        self.post_rope_timer = 0  # Timer for delay after rope ability
+        self.post_rope_delay = 1000  # 1-second delay after rope ability
         
         # Visual effects
         self.particles = []
@@ -1303,7 +1306,11 @@ class DarkLord(Boss):
                 # Run regular boss update, but only if we're ready to chase
                 chase_elapsed = current_time - self.chase_start_time
                 if chase_elapsed >= self.chase_delay:
-                    super().update(player)
+                    # Don't update position if an ability is active
+                    ability_active = (hasattr(self, 'rope_cone_active') and self.rope_cone_active) or \
+                                    (hasattr(self, 'charge_active') and self.charge_active)
+                    if not ability_active:
+                        super().update(player)
                 
                 # Update projectiles if any
                 if hasattr(self, 'projectiles') and self.projectiles:
@@ -1319,6 +1326,40 @@ class DarkLord(Boss):
                 
                 # Clean up expired mini death zones
                 self.update_mini_death_zones(current_time)
+                
+                # Check for using abilities in phase 5
+                if self.phase == 5 and self.visible:
+                    # Check if in "wait_for_charge" state and delay has passed
+                    if self.ability_sequence_state == 'wait_for_charge':
+                        # Check if rope ability has ended
+                        if not (hasattr(self, 'rope_cone_active') and self.rope_cone_active):
+                            # If post-rope timer not started, start it
+                            if self.post_rope_timer == 0:
+                                self.post_rope_timer = current_time
+                            
+                            # Check if delay has passed
+                            if current_time - self.post_rope_timer >= self.post_rope_delay:
+                                # Reset timer and change state to charge
+                                self.post_rope_timer = 0
+                                self.ability_sequence_state = 'charge'
+                                # Force ability use immediately
+                                self.use_random_ability(player)
+                    
+                    # Check if cooldown has passed for starting rope ability
+                    elif self.ability_sequence_state == 'rope' and current_time - self.last_ability_time >= self.ability_cooldown:
+                        # Don't start new ability if one is already running
+                        ability_active = (hasattr(self, 'rope_cone_active') and self.rope_cone_active) or \
+                                        (hasattr(self, 'charge_active') and self.charge_active)
+                        if not ability_active:
+                            self.use_random_ability(player)
+                
+                # Update rope cone ability if active
+                if hasattr(self, 'rope_cone_active') and self.rope_cone_active:
+                    self.update_rope_cone_ability(current_time, player)
+                
+                # Update charge ability if active
+                if hasattr(self, 'charge_active') and self.charge_active:
+                    self.update_charge_ability(current_time, player)
                 
                 return
             
@@ -1441,6 +1482,18 @@ class DarkLord(Boss):
         else:
             # Draw aura around boss
             self.draw_aura(surface)
+            
+            # Draw rope cone telegraph if active
+            if hasattr(self, 'rope_cone_active') and self.rope_cone_active and self.rope_cone_casting:
+                self.draw_rope_cone_telegraph(surface)
+                
+            # Draw rope cone ropes if active and cast is complete
+            if hasattr(self, 'rope_cone_active') and self.rope_cone_active and self.rope_cone_cast_complete:
+                self.draw_rope_cone_ropes(surface)
+                
+            # Draw charge telegraph if active
+            if hasattr(self, 'charge_active') and self.charge_active and self.charge_casting:
+                self.draw_charge_telegraph(surface)
             
             # Draw the main boss
             super().draw(surface)
@@ -2012,9 +2065,13 @@ class DarkLord(Boss):
         surface.blit(flash_surface, (0, 0))
     
     def create_mini_death_zones(self):
-        """Create 3-4 mini death zones that last for 6 seconds"""
-        # Determine how many mini zones to create (3-4)
-        num_zones = random.randint(3, 4)
+        """Create mini death zones that last for 6 seconds"""
+        # Determine how many mini zones to create
+        # In phase 5, create 16 mini death zones; otherwise create 3-4
+        if hasattr(self, 'phase') and self.phase == 5:
+            num_zones = 16  # Create 16 zones in phase 5 (increased from 10)
+        else:
+            num_zones = random.randint(3, 4)  # Default for other phases
         
         # Get current time for end time calculation
         current_time = pygame.time.get_ticks()
@@ -2041,10 +2098,15 @@ class DarkLord(Boss):
                 x = random.randint(TILE_SIZE, room_width - TILE_SIZE)
                 y = random.randint(TILE_SIZE, room_height - TILE_SIZE)
                 
-                # Check if position is within the main death zone
-                dx = x - self.pentagram_center[0]
-                dy = y - self.pentagram_center[1]
-                distance = math.sqrt(dx*dx + dy*dy)
+                # Check if position is within the main death zone (only for phases 1-4)
+                is_valid_position = True
+                if not (hasattr(self, 'phase') and self.phase == 5):
+                    # In phases other than 5, zones must be outside the death circle
+                    dx = x - self.pentagram_center[0]
+                    dy = y - self.pentagram_center[1]
+                    distance = math.sqrt(dx*dx + dy*dy)
+                    if distance <= self.outer_circle_radius:
+                        is_valid_position = False
                 
                 # Also check if it overlaps with any existing mini zones
                 overlaps_existing = False
@@ -2056,8 +2118,8 @@ class DarkLord(Boss):
                         overlaps_existing = True
                         break
                 
-                # If position is outside the main death zone and doesn't overlap, use it
-                if distance > self.outer_circle_radius and not overlaps_existing:
+                # Check if the position is valid
+                if is_valid_position and not overlaps_existing:
                     new_zone = (x, y, end_time, creation_time)  # Include creation time
                     self.mini_death_zones.append(new_zone)
                     # Initialize lightning blink state for this zone
@@ -2068,7 +2130,8 @@ class DarkLord(Boss):
                     break
         
         # Add debug message
-        self.add_debug_message(f"Created {len(self.mini_death_zones)} blue lightning zones")
+        phase_text = f"phase {self.phase}" if hasattr(self, 'phase') else "current phase"
+        self.add_debug_message(f"Created {len(self.mini_death_zones)} blue lightning zones in {phase_text}")
     
     def update_mini_death_zones(self, current_time):
         """Update mini death zones and remove expired ones"""
@@ -2401,6 +2464,662 @@ class DarkLord(Boss):
                     
                     # Play angry sound
                     self.sound_manager.play_sound("effects/boss_angry")
+
+    def use_random_ability(self, player):
+        """Use a random ability based on the current phase"""
+        current_time = pygame.time.get_ticks()
+        
+        # Update last ability time
+        self.last_ability_time = current_time
+        
+        # Phase 5 abilities
+        if self.phase == 5:
+            # Use ability based on sequence state
+            if self.ability_sequence_state == 'rope':
+                # Use rope cone ability
+                self.start_rope_cone_ability(player)
+                # Next will be charge after a delay
+                self.ability_sequence_state = 'wait_for_charge'
+            elif self.ability_sequence_state == 'charge':
+                # Use charge ability
+                self.start_charge_ability(player)
+                # Next will be rope after cooldown
+                self.ability_sequence_state = 'rope'
+            return True
+            
+        return False
+    
+    def start_rope_cone_ability(self, player):
+        """Start the rope cone ability (similar to level 4 boss rope ability but in a cone)"""
+        if not player:
+            return False
+            
+        # Initialize rope cone properties
+        self.rope_cone_active = True
+        self.rope_cone_start_time = pygame.time.get_ticks()
+        self.rope_cone_cast_duration = 1000  # 1 second cast time
+        self.rope_cone_casting = True
+        self.rope_cone_cast_complete = False
+        self.rope_cone_telegraph_progress = 0.0
+        
+        # Save player's position at start for aiming the cone
+        player_x, player_y = player.rect.centerx, player.rect.centery
+        self.rope_cone_target_angle = math.atan2(player_y - self.rect.centery, player_x - self.rect.centerx)
+        
+        # Rope properties
+        self.rope_cone_count = 4  # 4 ropes in the cone
+        self.rope_cone_spread = math.pi / 4  # 45 degree cone spread
+        self.rope_cone_max_length = TILE_SIZE * 7  # 7 tiles max length for ropes (increased from 5)
+        self.rope_cone_ropes = []  # List to store rope data
+        self.rope_cone_rope_width = 3  # Width of the rope lines
+        self.rope_cone_pull_speed = 6  # How fast to pull player
+        self.rope_cone_pull_duration = 1000  # 1 second pull duration
+        
+        # Make boss stop moving during cast
+        self.rope_cone_original_speed = self.speed
+        self.speed = 0
+        
+        # Add debug message
+        if hasattr(self, 'add_debug_message'):
+            self.add_debug_message("Starting rope cone ability cast")
+            
+        # Play sound if available
+        if hasattr(self, 'sound_manager'):
+            self.sound_manager.play_sound("effects/boss_10_ability")
+            
+        return True
+    
+    def update_rope_cone_ability(self, current_time, player):
+        """Update the rope cone ability"""
+        if not self.rope_cone_active or not player:
+            return
+            
+        # Handle the casting phase
+        if self.rope_cone_casting:
+            elapsed_cast_time = current_time - self.rope_cone_start_time
+            self.rope_cone_telegraph_progress = min(1.0, elapsed_cast_time / self.rope_cone_cast_duration)
+            
+            # Check if cast is complete
+            if elapsed_cast_time >= self.rope_cone_cast_duration:
+                self.rope_cone_casting = False
+                self.rope_cone_cast_complete = True
+                self.create_rope_cone(player)
+                
+                # Add debug message
+                if hasattr(self, 'add_debug_message'):
+                    self.add_debug_message("Rope cone cast complete, firing ropes")
+                
+        # Update active ropes after casting is complete
+        elif self.rope_cone_cast_complete:
+            # Check if any rope has hit the player
+            rope_hit = False
+            player_rect = pygame.Rect(player.rect.x, player.rect.y, player.rect.width, player.rect.height)
+            
+            for rope in self.rope_cone_ropes:
+                # Skip ropes that are already pulling or have hit walls
+                if rope['is_pulling'] or rope['hit_wall']:
+                    continue
+                    
+                # Update rope length
+                if rope['length'] < self.rope_cone_max_length:
+                    rope['length'] += rope['speed']
+                    
+                    # Calculate end position
+                    rope['end_x'] = self.rect.centerx + math.cos(rope['angle']) * rope['length']
+                    rope['end_y'] = self.rect.centery + math.sin(rope['angle']) * rope['length']
+                    
+                    # Check if rope hit a wall
+                    if (hasattr(player, 'level') and player.level and 
+                        player.level.check_collision(pygame.Rect(
+                            rope['end_x']-5, rope['end_y']-5, 10, 10), check_only_walls=True)):
+                        rope['hit_wall'] = True
+                        continue
+                        
+                    # Check if rope hit player
+                    rope_end_rect = pygame.Rect(rope['end_x']-5, rope['end_y']-5, 10, 10)
+                    if rope_end_rect.colliderect(player_rect) and not rope['is_pulling']:
+                        rope['is_pulling'] = True
+                        rope['pull_start_time'] = current_time
+                        rope_hit = True
+                        
+                        # Add debug message
+                        if hasattr(self, 'add_debug_message'):
+                            self.add_debug_message("Rope hit player, starting pull")
+                
+            # Handle player pulling if any rope has hit them
+            for rope in self.rope_cone_ropes:
+                if rope['is_pulling']:
+                    time_pulling = current_time - rope['pull_start_time']
+                    
+                    if time_pulling < self.rope_cone_pull_duration:
+                        # Calculate pull direction
+                        dx = self.rect.centerx - player.rect.centerx
+                        dy = self.rect.centery - player.rect.centery
+                        distance = math.sqrt(dx*dx + dy*dy)
+                        
+                        if distance > 0:
+                            # Normalize and scale by pull speed
+                            dx = dx / distance * self.rope_cone_pull_speed
+                            dy = dy / distance * self.rope_cone_pull_speed
+                            
+                            # Move player towards boss
+                            player.rect.x += dx
+                            player.rect.y += dy
+                            
+                            # Update collision rect if it exists
+                            if hasattr(player, 'collision_rect'):
+                                player.collision_rect.center = player.rect.center
+                            
+                            # Keep rope end at player position
+                            rope['end_x'] = player.rect.centerx
+                            rope['end_y'] = player.rect.centery
+                    else:
+                        # Pulling complete
+                        rope['is_pulling'] = False
+                        
+                        # End ability if all ropes are done
+                        self.check_rope_cone_complete()
+            
+            # Check if all ropes have reached max length or hit walls
+            all_ropes_done = True
+            for rope in self.rope_cone_ropes:
+                if not rope['hit_wall'] and rope['length'] < self.rope_cone_max_length and not rope['is_pulling']:
+                    all_ropes_done = False
+                    break
+                    
+            if all_ropes_done and not any(rope['is_pulling'] for rope in self.rope_cone_ropes):
+                # All ropes have either hit a wall, reached max length, or finished pulling
+                self.end_rope_cone_ability()
+    
+    def create_rope_cone(self, player):
+        """Create and fire the rope cone after cast is complete"""
+        # Use the saved target angle from when we started casting
+        # (instead of recalculating based on player's current position)
+        base_angle = self.rope_cone_target_angle
+        
+        # Calculate angles for each rope in the cone
+        self.rope_cone_ropes = []
+        
+        if self.rope_cone_count == 1:
+            # Single rope at base angle
+            self.rope_cone_ropes.append({
+                'angle': base_angle,
+                'length': 0,
+                'speed': 10,
+                'end_x': self.rect.centerx,
+                'end_y': self.rect.centery,
+                'is_pulling': False,
+                'hit_wall': False,
+                'pull_start_time': 0
+            })
+        else:
+            # Multiple ropes spread in a cone
+            half_spread = self.rope_cone_spread / 2
+            angle_step = self.rope_cone_spread / (self.rope_cone_count - 1)
+            
+            for i in range(self.rope_cone_count):
+                # Calculate angle offset from center of cone
+                angle_offset = -half_spread + (i * angle_step)
+                rope_angle = base_angle + angle_offset
+                
+                # Create rope data
+                self.rope_cone_ropes.append({
+                    'angle': rope_angle,
+                    'length': 0,
+                    'speed': 10,
+                    'end_x': self.rect.centerx,
+                    'end_y': self.rect.centery,
+                    'is_pulling': False,
+                    'hit_wall': False,
+                    'pull_start_time': 0
+                })
+        
+        # Add debug message
+        if hasattr(self, 'add_debug_message'):
+            self.add_debug_message(f"Firing {len(self.rope_cone_ropes)} ropes at angle {base_angle:.2f}")
+    
+    def check_rope_cone_complete(self):
+        """Check if the rope cone ability is complete"""
+        if not self.rope_cone_active:
+            return
+            
+        # Check if all ropes are done (hit wall, reached max length, or finished pulling)
+        all_done = True
+        for rope in self.rope_cone_ropes:
+            if rope['is_pulling']:
+                all_done = False
+                break
+                
+        if all_done:
+            self.end_rope_cone_ability()
+    
+    def end_rope_cone_ability(self):
+        """End the rope cone ability and reset boss state"""
+        self.rope_cone_active = False
+        self.rope_cone_casting = False
+        self.rope_cone_cast_complete = False
+        self.rope_cone_ropes = []
+        
+        # Restore boss's original speed
+        if hasattr(self, 'rope_cone_original_speed'):
+            self.speed = self.rope_cone_original_speed
+            
+        # Add debug message
+        if hasattr(self, 'add_debug_message'):
+            self.add_debug_message("Rope cone ability ended")
+    
+    def draw_rope_cone_telegraph(self, surface):
+        """Draw the telegraph for the rope cone ability during cast time"""
+        if not hasattr(self, 'rope_cone_active') or not self.rope_cone_active or not self.rope_cone_casting:
+            return
+            
+        # Calculate the cone boundaries
+        base_angle = self.rope_cone_target_angle
+        half_spread = self.rope_cone_spread / 2
+        left_angle = base_angle - half_spread
+        right_angle = base_angle + half_spread
+        
+        # Calculate current length based on cast progress
+        current_length = self.rope_cone_max_length * self.rope_cone_telegraph_progress
+        
+        # Calculate points for the cone
+        cone_points = [
+            (self.rect.centerx, self.rect.centery),  # Apex of the cone
+            (
+                self.rect.centerx + math.cos(left_angle) * current_length,
+                self.rect.centery + math.sin(left_angle) * current_length
+            ),  # Left edge
+            (
+                self.rect.centerx + math.cos(base_angle) * current_length,
+                self.rect.centery + math.sin(base_angle) * current_length
+            ),  # Center point
+            (
+                self.rect.centerx + math.cos(right_angle) * current_length,
+                self.rect.centery + math.sin(right_angle) * current_length
+            ),  # Right edge
+        ]
+        
+        # Create arc points to make a rounded cone shape
+        arc_points = []
+        arc_steps = 10
+        angle_step = (right_angle - left_angle) / arc_steps
+        for i in range(arc_steps + 1):
+            angle = left_angle + (i * angle_step)
+            arc_points.append((
+                self.rect.centerx + math.cos(angle) * current_length,
+                self.rect.centery + math.sin(angle) * current_length
+            ))
+        
+        # Create the final polygon points
+        polygon_points = [cone_points[0]] + arc_points
+        
+        # Draw filled cone with semi-transparency
+        # Create a surface for the semi-transparent cone
+        cone_surface = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+        
+        # Pulse the color intensity with time
+        pulse_factor = (math.sin(pygame.time.get_ticks() / 150) + 1) / 2
+        alpha = int(100 + 50 * pulse_factor)  # Pulse between 100-150 alpha
+        
+        # Fill color that pulses with the cast progress
+        progress_color = (
+            int(255),  # Red increases with progress
+            int(50),
+            int(50),
+            alpha
+        )
+        
+        # Draw the filled cone
+        pygame.draw.polygon(cone_surface, progress_color, polygon_points)
+        
+        # Blit the cone surface onto the main surface
+        surface.blit(cone_surface, (0, 0))
+        
+        # Draw outline of the cone
+        pygame.draw.lines(surface, (255, 0, 0), False, polygon_points, 2)
+    
+    def draw_rope_cone_ropes(self, surface):
+        """Draw the ropes for the rope cone ability"""
+        if not hasattr(self, 'rope_cone_active') or not self.rope_cone_active or not self.rope_cone_cast_complete:
+            return
+            
+        # Draw each rope
+        for rope in self.rope_cone_ropes:
+            if rope['length'] <= 0:
+                continue
+                
+            # Get start and end positions
+            start_x, start_y = self.rect.centerx, self.rect.centery
+            end_x, end_y = rope['end_x'], rope['end_y']
+            
+            # Draw rope with a zig-zag pattern similar to death rays
+            if rope['length'] > 0:
+                # Get current time for animation
+                current_time = pygame.time.get_ticks()
+                
+                # Create list of points for the zig-zag path
+                zig_zag_points = [
+                    (start_x, start_y),  # Start point
+                ]
+                
+                # Parameters for zig-zag effect
+                segment_length = 20  # Length of each segment in the zig-zag
+                
+                # Calculate number of segments based on rope length
+                num_segments = max(1, int(rope['length'] / segment_length))
+                remaining_length = rope['length']
+                
+                # Calculate current direction vector
+                dir_x = math.cos(rope['angle'])
+                dir_y = math.sin(rope['angle'])
+                
+                # Create perpendicular vector for zig-zag displacement
+                perp_x = -dir_y
+                perp_y = dir_x
+                
+                # Current position
+                current_x, current_y = start_x, start_y
+                
+                # Animation modifier for zig-zag
+                animation_speed = 0.02
+                animation_offset = current_time * animation_speed % (math.pi * 2)
+                
+                # Base amplitude for zig-zag
+                amplitude = 2
+                
+                # Create each segment of the zig-zag
+                for j in range(num_segments):
+                    # Calculate segment length
+                    seg_length = min(segment_length, remaining_length)
+                    if seg_length <= 0:
+                        break
+                        
+                    # Calculate position along rope
+                    segment_progress = (j * segment_length) / rope['length']
+                    
+                    # Calculate displacement using sine wave
+                    wave_position = segment_progress * 10 + animation_offset
+                    displacement = amplitude * math.sin(wave_position)
+                    
+                    # Apply displacement perpendicular to rope direction
+                    offset_x = perp_x * displacement
+                    offset_y = perp_y * displacement
+                    
+                    # Calculate next point position
+                    next_x = current_x + (dir_x * seg_length) + offset_x
+                    next_y = current_y + (dir_y * seg_length) + offset_y
+                    
+                    # Add point to path
+                    zig_zag_points.append((next_x, next_y))
+                    
+                    # Update current position (without perpendicular displacement)
+                    current_x += dir_x * seg_length
+                    current_y += dir_y * seg_length
+                    
+                    # Reduce remaining length
+                    remaining_length -= seg_length
+                
+                # Make sure the last point is exactly at the end of the rope
+                zig_zag_points.append((end_x, end_y))
+                
+                # Draw the zig-zag rope
+                if len(zig_zag_points) > 1:
+                    # Determine color based on if rope is pulling
+                    rope_color = (255, 0, 0, 200) if rope['is_pulling'] else (200, 0, 0, 200)
+                    
+                    pygame.draw.lines(
+                        surface,
+                        rope_color,
+                        False,  # Don't connect last point to first
+                        zig_zag_points,
+                        self.rope_cone_rope_width
+                    )
+                    
+                    # Draw a small glow at the end of the rope
+                    glow_radius = self.rope_cone_rope_width * 1.5
+                    pygame.draw.circle(
+                        surface,
+                        rope_color,
+                        (int(end_x), int(end_y)),
+                        int(glow_radius)
+                    )
+                    
+                    # Draw a small glow at the start of the rope
+                    pygame.draw.circle(
+                        surface,
+                        rope_color,
+                        (int(start_x), int(start_y)),
+                        int(glow_radius)
+                    )
+
+    def start_charge_ability(self, player):
+        """Start the charge ability with telegraph"""
+        if not player:
+            return False
+            
+        # Initialize charge properties
+        self.charge_active = True
+        self.charge_start_time = pygame.time.get_ticks()
+        self.charge_cast_duration = 1000  # 1 second cast time
+        self.charge_casting = True
+        self.charge_cast_complete = False
+        self.charge_telegraph_progress = 0.0
+        
+        # Save player's position at start for aiming the charge
+        player_x, player_y = player.rect.centerx, player.rect.centery
+        self.charge_target_angle = math.atan2(player_y - self.rect.centery, player_x - self.rect.centerx)
+        
+        # Charge properties
+        self.charge_length = TILE_SIZE * 8  # 8 tiles long
+        self.charge_width = TILE_SIZE * 2   # 2 tiles wide
+        self.charge_speed = 12  # Charge speed in pixels per update
+        self.charge_damage = self.damage  # Use normal melee damage
+        self.charge_distance_traveled = 0  # Track how far boss has charged
+        
+        # Store original position to calculate distance traveled
+        self.charge_original_position = (self.rect.centerx, self.rect.centery)
+        
+        # Calculate target position (will be adjusted if hitting walls)
+        target_x = self.rect.centerx + math.cos(self.charge_target_angle) * self.charge_length
+        target_y = self.rect.centery + math.sin(self.charge_target_angle) * self.charge_length
+        self.charge_target_position = (target_x, target_y)
+        
+        # Make boss stop moving during cast
+        self.charge_original_speed = self.speed
+        self.speed = 0
+        
+        # Add debug message
+        if hasattr(self, 'add_debug_message'):
+            self.add_debug_message("Starting charge ability cast")
+            
+        # Play sound if available
+        if hasattr(self, 'sound_manager'):
+            self.sound_manager.play_sound("effects/boss_10_charge")
+            
+        return True
+    
+    def update_charge_ability(self, current_time, player):
+        """Update the charge ability cast and execution"""
+        if not self.charge_active:
+            return
+            
+        # Handle the casting phase
+        if self.charge_casting:
+            elapsed_cast_time = current_time - self.charge_start_time
+            self.charge_telegraph_progress = min(1.0, elapsed_cast_time / self.charge_cast_duration)
+            
+            # Check if cast is complete
+            if elapsed_cast_time >= self.charge_cast_duration:
+                self.charge_casting = False
+                self.charge_cast_complete = True
+                
+                # Set movement direction for charge
+                self.charge_dir_x = math.cos(self.charge_target_angle)
+                self.charge_dir_y = math.sin(self.charge_target_angle)
+                
+                # Add debug message
+                if hasattr(self, 'add_debug_message'):
+                    self.add_debug_message("Charge cast complete, starting charge")
+                
+        # Execute charge after casting is complete
+        elif self.charge_cast_complete:
+            # Store original position before moving
+            old_x, old_y = self.rect.centerx, self.rect.centery
+            
+            # Move boss in charge direction
+            new_x = self.rect.centerx + self.charge_dir_x * self.charge_speed
+            new_y = self.rect.centery + self.charge_dir_y * self.charge_speed
+            
+            # Update position
+            self.rect.centerx = int(new_x)
+            self.rect.centery = int(new_y)
+            
+            # Update collision rect if it exists
+            if hasattr(self, 'collision_rect'):
+                self.collision_rect.center = self.rect.center
+                
+            # Update damage hitbox if it exists
+            if hasattr(self, 'damage_hitbox'):
+                self.damage_hitbox.center = self.rect.center
+                
+            # Check for collision with walls
+            wall_collision = False
+            if hasattr(player, 'level') and player.level:
+                if player.level.check_collision(self.rect, check_only_walls=True):
+                    # Revert to position before charge update
+                    self.rect.centerx = old_x
+                    self.rect.centery = old_y
+                    
+                    # Update collision rect again after revert
+                    if hasattr(self, 'collision_rect'):
+                        self.collision_rect.center = self.rect.center
+                        
+                    # Update damage hitbox again after revert
+                    if hasattr(self, 'damage_hitbox'):
+                        self.damage_hitbox.center = self.rect.center
+                        
+                    wall_collision = True
+                    
+                    # Add debug message
+                    if hasattr(self, 'add_debug_message'):
+                        self.add_debug_message("Charge hit wall and stopped")
+            
+            # Calculate distance traveled
+            dx = self.rect.centerx - self.charge_original_position[0]
+            dy = self.rect.centery - self.charge_original_position[1]
+            self.charge_distance_traveled = math.sqrt(dx*dx + dy*dy)
+            
+            # Check for collision with player
+            if hasattr(self, 'damage_hitbox') and self.damage_hitbox.colliderect(player.rect):
+                # Apply damage to player
+                player.take_damage(self.charge_damage)
+                
+                # Add debug message
+                if hasattr(self, 'add_debug_message'):
+                    self.add_debug_message(f"Charge hit player for {self.charge_damage} damage")
+            
+            # End charge if hit wall or traveled max distance
+            if wall_collision or self.charge_distance_traveled >= self.charge_length:
+                self.end_charge_ability()
+    
+    def end_charge_ability(self):
+        """End the charge ability and reset boss state"""
+        self.charge_active = False
+        self.charge_casting = False
+        self.charge_cast_complete = False
+        
+        # Restore boss's original speed
+        if hasattr(self, 'charge_original_speed'):
+            self.speed = self.charge_original_speed
+            
+        # Add debug message
+        if hasattr(self, 'add_debug_message'):
+            self.add_debug_message(f"Charge ended after traveling {self.charge_distance_traveled:.1f} pixels")
+    
+    def draw_charge_telegraph(self, surface):
+        """Draw the telegraph for the charge ability during cast time"""
+        if not hasattr(self, 'charge_active') or not self.charge_active or not self.charge_casting:
+            return
+            
+        # Calculate the rectangle for the charge telegraph
+        half_width = self.charge_width / 2
+        
+        # Calculate current length based on cast progress
+        current_length = self.charge_length * self.charge_telegraph_progress
+        
+        # Calculate the end point of the charge
+        end_x = self.rect.centerx + math.cos(self.charge_target_angle) * current_length
+        end_y = self.rect.centery + math.sin(self.charge_target_angle) * current_length
+        
+        # Calculate the perpendicular vector for width
+        perp_x = -math.sin(self.charge_target_angle)
+        perp_y = math.cos(self.charge_target_angle)
+        
+        # Calculate the four corners of the rectangle
+        top_left = (
+            self.rect.centerx + perp_x * half_width,
+            self.rect.centery + perp_y * half_width
+        )
+        top_right = (
+            self.rect.centerx - perp_x * half_width,
+            self.rect.centery - perp_y * half_width
+        )
+        bottom_right = (
+            end_x - perp_x * half_width,
+            end_y - perp_y * half_width
+        )
+        bottom_left = (
+            end_x + perp_x * half_width,
+            end_y + perp_y * half_width
+        )
+        
+        # Create the polygon points
+        polygon_points = [top_left, top_right, bottom_right, bottom_left]
+        
+        # Draw filled rectangle with semi-transparency
+        # Create a surface for the semi-transparent rectangle
+        charge_surface = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+        
+        # Pulse the color intensity with time
+        pulse_factor = (math.sin(pygame.time.get_ticks() / 150) + 1) / 2
+        alpha = int(100 + 50 * pulse_factor)  # Pulse between 100-150 alpha
+        
+        # Fill color that pulses
+        progress_color = (
+            int(255),  # Red
+            int(120 + 100 * pulse_factor),  # Yellow-orange pulsing
+            int(0),
+            alpha
+        )
+        
+        # Draw the filled rectangle
+        pygame.draw.polygon(charge_surface, progress_color, polygon_points)
+        
+        # Blit the charge surface onto the main surface
+        surface.blit(charge_surface, (0, 0))
+        
+        # Draw outline of the rectangle
+        pygame.draw.lines(surface, (255, 150, 0), True, polygon_points, 2)
+        
+        # Draw arrow at the end to indicate direction
+        arrow_size = half_width * 0.8
+        arrow_tip = (
+            end_x + math.cos(self.charge_target_angle) * arrow_size,
+            end_y + math.sin(self.charge_target_angle) * arrow_size
+        )
+        
+        arrow_left = (
+            end_x + math.cos(self.charge_target_angle - 2.5) * arrow_size,
+            end_y + math.sin(self.charge_target_angle - 2.5) * arrow_size
+        )
+        
+        arrow_right = (
+            end_x + math.cos(self.charge_target_angle + 2.5) * arrow_size,
+            end_y + math.sin(self.charge_target_angle + 2.5) * arrow_size
+        )
+        
+        # Draw arrow
+        pygame.draw.polygon(surface, (255, 200, 0), [arrow_tip, arrow_left, arrow_right], 0)
 
 class DarkLordCopy(pygame.sprite.Sprite):
     """A copy/clone of the Dark Lord that participates in the ritual"""

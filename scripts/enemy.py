@@ -3026,7 +3026,7 @@ class Boss(Enemy):
                                 player.rect.centerx,
                                 player.rect.centery,
                                 TILE_SIZE,  # Size of the puddle
-                                15,  # Damage
+                                0 if self.level == 9 else 15,  # No damage for level 9 boss, 15 damage for others
                                 creator=self  # Reference to the boss
                             )
                             
@@ -3729,7 +3729,7 @@ class Boss(Enemy):
                         self.rect.centerx, 
                         self.rect.centery, 
                         self.trail_size, 
-                        5,  # Fixed damage value of 5 HP
+                        0 if self.level == 9 else 5,  # No damage for level 9 boss, 5 damage for others
                         creator=self  # Pass reference to the boss
                     )
                     self.poison_trails.add(new_trail)
