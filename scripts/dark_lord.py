@@ -2,6 +2,7 @@ import pygame
 import math
 import random
 import os
+import types
 from scripts.enemy import Boss, Enemy, BossProjectile
 from scripts.asset_manager import get_asset_manager
 from scripts.sound_manager import get_sound_manager
@@ -33,7 +34,7 @@ class DarkLord(Boss):
         self.ritual_active = False
         self.introduction_complete = False
         self.introduction_timer = 0
-        self.introduction_duration = 5000  # 5 seconds for introduction
+        self.introduction_duration = 3000  # 5 seconds for introduction
         self.ritual_timer = 0
         self.ritual_duration = 15000  # 15 seconds to complete the ritual
         self.pentagram_pulse = 0
@@ -125,6 +126,16 @@ class DarkLord(Boss):
         self.ability_sequence_state = 'rope'  # Starts with rope ability
         self.post_rope_timer = 0  # Timer for delay after rope ability
         self.post_rope_delay = 1000  # 1-second delay after rope ability
+        self.post_charge_timer = 0  # Timer for delay after charge ability
+        self.post_charge_delay = 500  # 0.5-second delay after charge ability
+        
+        # Projectile attack properties
+        self.projectile_attack_active = False
+        self.projectiles = pygame.sprite.Group()  # Group to store all active projectiles
+        self.projectile_damage = 20  # Base damage for projectiles
+        self.projectile_speed = 1.3  # Speed of projectiles (reduced from 3.0)
+        self.projectile_color = (200, 50, 200)  # Purple color for projectiles
+        self.projectile_split_time = 1500  # Time in ms before projectiles split (2 seconds)
         
         # Visual effects
         self.particles = []
@@ -1270,6 +1281,15 @@ class DarkLord(Boss):
         # Get current time
         current_time = pygame.time.get_ticks()
         
+        # Update projectiles if any
+        if hasattr(self, 'projectiles') and self.projectiles:
+            self.projectiles.update()
+            
+            # Check collisions with player
+            for projectile in self.projectiles:
+                if hasattr(projectile, 'check_collision') and projectile.check_collision(player.rect):
+                    player.take_damage(self.projectile_damage)
+        
         # Check summoned boss status - this runs every frame
         if self.summoned_boss:
             # Check if the boss has been defeated
@@ -1319,7 +1339,7 @@ class DarkLord(Boss):
                     # Check collisions with player
                     for projectile in self.projectiles:
                         if hasattr(projectile, 'check_collision') and projectile.check_collision(player.rect):
-                            player.take_damage(projectile.damage)
+                            player.take_damage(self.projectile_damage)
                 
                 # Check mini death zones
                 self.check_mini_death_zones(player)
@@ -1342,6 +1362,22 @@ class DarkLord(Boss):
                                 # Reset timer and change state to charge
                                 self.post_rope_timer = 0
                                 self.ability_sequence_state = 'charge'
+                                # Force ability use immediately
+                                self.use_random_ability(player)
+                    
+                    # Check if in "wait_for_projectile" state and delay has passed
+                    elif self.ability_sequence_state == 'wait_for_projectile':
+                        # Check if charge ability has ended
+                        if not (hasattr(self, 'charge_active') and self.charge_active):
+                            # If post-charge timer not started, start it
+                            if self.post_charge_timer == 0:
+                                self.post_charge_timer = current_time
+                            
+                            # Check if delay has passed
+                            if current_time - self.post_charge_timer >= self.post_charge_delay:
+                                # Reset timer and change state to projectile
+                                self.post_charge_timer = 0
+                                self.ability_sequence_state = 'projectile'
                                 # Force ability use immediately
                                 self.use_random_ability(player)
                     
@@ -1445,15 +1481,6 @@ class DarkLord(Boss):
         
         # Regular boss logic
         super().update(player)
-        
-        # Update projectiles if any
-        if hasattr(self, 'projectiles') and self.projectiles:
-            self.projectiles.update()
-            
-            # Check collisions with player
-            for projectile in self.projectiles:
-                if hasattr(projectile, 'check_collision') and projectile.check_collision(player.rect):
-                    player.take_damage(projectile.damage)
         
         # Check phase changes based on health percentage
         health_percentage = self.health / self.max_health
@@ -2483,6 +2510,11 @@ class DarkLord(Boss):
             elif self.ability_sequence_state == 'charge':
                 # Use charge ability
                 self.start_charge_ability(player)
+                # Next will be projectile attack after a delay
+                self.ability_sequence_state = 'wait_for_projectile'
+            elif self.ability_sequence_state == 'projectile':
+                # Use projectile attack
+                self.start_projectile_attack(player)
                 # Next will be rope after cooldown
                 self.ability_sequence_state = 'rope'
             return True
@@ -3121,6 +3153,80 @@ class DarkLord(Boss):
         # Draw arrow
         pygame.draw.polygon(surface, (255, 200, 0), [arrow_tip, arrow_left, arrow_right], 0)
 
+    def start_projectile_attack(self, player):
+        """Start the projectile attack, firing 3 projectiles in a circle"""
+        if not player:
+            return False
+            
+        # Create 3 projectiles spread evenly around in a circle
+        for i in range(3):
+            angle = (i * 2 * math.pi / 3) + random.uniform(0, math.pi/6)  # Add slight randomness
+            dx = math.cos(angle)
+            dy = math.sin(angle)
+            
+            # Create projectile
+            projectile = BossProjectile(
+                self.rect.centerx,
+                self.rect.centery,
+                (dx, dy),
+                speed=self.projectile_speed,
+                damage=self.projectile_damage,
+                color=self.projectile_color,
+                boss_level=10,  # Dark Lord projectiles
+                spawn_secondary=True,  # Enable splitting
+                spawn_time=self.projectile_split_time,  # Split after 2 seconds
+                orbit_boss=self  # Reference to the boss for spawning
+            )
+            
+            # Reduce the max distance so projectiles have time to split before leaving screen
+            projectile.max_distance = TILE_SIZE * 20
+            
+            # Override the spawn_secondary_projectiles method with our custom implementation
+            def custom_spawn_secondary_projectiles(proj_self):
+                # Create 3 projectiles at 120-degree intervals
+                for j in range(3):
+                    split_angle = (j * 2 * math.pi / 3) + random.uniform(0, math.pi/6)  # Add slight randomness
+                    split_dx = math.cos(split_angle)
+                    split_dy = math.sin(split_angle)
+                    
+                    # Create new projectile with same properties but no secondary spawn
+                    secondary = BossProjectile(
+                        proj_self.rect.centerx,
+                        proj_self.rect.centery,
+                        (split_dx, split_dy),
+                        proj_self.speed,
+                        proj_self.damage,
+                        proj_self.color,
+                        boss_level=10,
+                        spawn_secondary=False  # Prevent infinite spawning
+                    )
+                    
+                    # Make sure secondary projectiles live long enough
+                    secondary.max_distance = TILE_SIZE * 15
+                    
+                    # Add to Dark Lord's projectile group
+                    self.projectiles.add(secondary)
+                    
+                # Play sound effect for splitting
+                if hasattr(self, 'sound_manager'):
+                    self.sound_manager.play_sound("effects/boss_projectile_split")
+                    
+            # Replace the original method with our custom one
+            projectile.spawn_secondary_projectiles = types.MethodType(custom_spawn_secondary_projectiles, projectile)
+            
+            # Add to projectile group
+            self.projectiles.add(projectile)
+        
+        # Play projectile sound
+        if hasattr(self, 'sound_manager'):
+            self.sound_manager.play_sound("effects/boss_10_projectile")
+            
+        # Add debug message
+        if hasattr(self, 'add_debug_message'):
+            self.add_debug_message("Fired 3 projectiles that will split after 2 seconds")
+            
+        return True
+
 class DarkLordCopy(pygame.sprite.Sprite):
     """A copy/clone of the Dark Lord that participates in the ritual"""
     def __init__(self, x, y, master, index):
@@ -3291,4 +3397,4 @@ class DarkLordCopy(pygame.sprite.Sprite):
 
 # Add this constant if not available in config.py
 if not 'DEBUG_MODE' in globals():
-    DEBUG_MODE = False 
+    DEBUG_MODE = False
