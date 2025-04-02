@@ -3657,16 +3657,30 @@ class Boss(Enemy):
                     
                     # Display healing effect
                     if hasattr(player, 'game') and player.game and hasattr(player.game, 'particle_system'):
-                        for _ in range(5):
-                            offset_x = random.randint(-15, 15)
-                            offset_y = random.randint(-15, 15)
+                        # Create healing particles that look like blood drops
+                        for _ in range(12):  # Create several small drops
+                            offset_x = random.randint(-20, 20)
+                            offset_y = random.randint(-20, 20)
+                            
+                            # Red colors for blood drops
+                            red_intensity = random.randint(180, 255)
+                            particle_color = (
+                                red_intensity,         # Strong red component
+                                random.randint(0, 30), # Very little green
+                                random.randint(0, 30)  # Very little blue
+                            )
+                            
+                            # Upward movement for healing effect
+                            upward_velocity = random.uniform(-1.5, -0.3)  # Negative y is upward
+                            slight_x_drift = random.uniform(-0.3, 0.3)    # Slight horizontal drift
+                            
                             player.game.particle_system.create_particle(
                                 self.rect.centerx + offset_x,
                                 self.rect.centery + offset_y,
-                                color=(0, 255, 0),  # Green healing particles
-                                size=random.randint(3, 6),
-                                speed=random.uniform(0.5, 1.2),
-                                lifetime=random.randint(20, 30)
+                                color=particle_color,
+                                velocity=(slight_x_drift, upward_velocity),
+                                size=random.randint(2, 4),  # Smaller particles
+                                lifetime=random.randint(20, 35)  # Shorter lifetime
                             )
                     
                     # Display feedback message if possible
