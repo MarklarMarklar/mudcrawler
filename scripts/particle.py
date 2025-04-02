@@ -652,7 +652,14 @@ class ParticleSystem:
                 particle.draw(surface, camera_offset)
             else:
                 # Skip dead particles
-                if particle['lifetime'] <= 0 or particle['size'] <= 0:
+                if particle['lifetime'] <= 0:
+                    continue
+                
+                # Skip particles without size (like lightning bolts)
+                if 'size' not in particle:
+                    continue
+                    
+                if particle['size'] <= 0:
                     continue
                 
                 # Apply camera offset

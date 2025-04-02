@@ -1335,11 +1335,16 @@ class Room:
                 if sparkle['life'] <= 0:
                     self.sparkle_particles.remove(sparkle)
         
-    def check_collision(self, rect, check_only_walls=False):
+    def check_collision(self, rect, check_only_walls=False, entity=None):
         """Check if a rectangle collides with walls in this room
         
         If check_only_walls is True, only check for collisions with wall tiles
         and ignore room boundaries for entities that should be able to move freely.
+        
+        Args:
+            rect: The collision rectangle to check
+            check_only_walls: Whether to only check walls and not room boundaries
+            entity: Optional entity that owns the collision rectangle (for special checks)
         """
         # Skip bounds checking if we're only checking for wall collisions
         if not check_only_walls:
@@ -1358,6 +1363,20 @@ class Room:
             for x in range(tile_x1, tile_x2 + 1):
                 if 0 <= y < self.height and 0 <= x < self.width:
                     if self.tiles[y][x] == 1:  # Wall tile
+                        # Check if it's a boss trying to move near a destroyable wall
+                        is_boss = entity is not None and hasattr(entity, 'is_boss') and entity.is_boss
+                        is_destroyable = (hasattr(self, 'destroyable_walls') and 
+                                         y < len(self.destroyable_walls) and 
+                                         x < len(self.destroyable_walls[y]) and 
+                                         self.destroyable_walls[y][x])
+                        
+                        # Skip collision check for bosses against destroyable walls near the edges
+                        if is_boss and is_destroyable:
+                            # This is a boss colliding with a destroyable wall
+                            # Let it pass if it's trying to approach the edge of the room
+                            continue
+                            
+                        # Regular wall collision
                         wall_rect = pygame.Rect(x * TILE_SIZE, y * TILE_SIZE,
                                               TILE_SIZE, TILE_SIZE)
                         if rect.colliderect(wall_rect):
@@ -2629,10 +2648,10 @@ class Level:
                 if hasattr(self, 'game') and hasattr(self.game, 'display_message'):
                     self.game.display_message("Cursed area damage!", (150, 50, 255))
         
-    def check_collision(self, rect, check_only_walls=False):
+    def check_collision(self, rect, check_only_walls=False, entity=None):
         """Check collision with walls in the current room only"""
         current_room = self.rooms[self.current_room_coords]
-        return current_room.check_collision(rect, check_only_walls=check_only_walls)
+        return current_room.check_collision(rect, check_only_walls=check_only_walls, entity=entity)
         
     def try_destroy_wall(self, x, y):
         """Try to destroy a wall at the given tile coordinates"""

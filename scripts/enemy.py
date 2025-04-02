@@ -2132,6 +2132,9 @@ class Boss(Enemy):
         self.collision_rect.centerx = self.rect.centerx
         self.collision_rect.centery = self.rect.centery
         
+        # Flag this as a boss for special collision handling
+        self.is_boss = True
+        
         # Ensure level_instance is set, critical for Boss 9's egg spawning
         if not self.level_instance and level_instance:
             self.level_instance = level_instance
@@ -3462,7 +3465,7 @@ class Boss(Enemy):
         self.rect.x += self.velocity_x
         
         # If collision occurs, try with half the velocity
-        if hasattr(player, 'level') and player.level and player.level.check_collision(self.collision_rect):
+        if hasattr(player, 'level') and player.level and player.level.check_collision(self.collision_rect, entity=self):
             self.rect.x = old_rect.x
             # Update collision rect to match main rect
             self.collision_rect.centerx = self.rect.centerx
@@ -3479,7 +3482,7 @@ class Boss(Enemy):
         # Update collision rect position
         self.collision_rect.centery = self.rect.centery
         
-        if hasattr(player, 'level') and player.level and player.level.check_collision(self.collision_rect):
+        if hasattr(player, 'level') and player.level and player.level.check_collision(self.collision_rect, entity=self):
             # Simply revert if collision occurs
             self.rect.y = old_rect.y
             # Update collision rect to match main rect
