@@ -313,6 +313,10 @@ class Game:
         self.death_original_zoom = 2.0  # Store original zoom level
         self.death_target_zoom = 4.0  # Target zoom level for death sequence
         
+        # Reset special ability counter
+        self.kill_counter = 0
+        print(f"Special ability counter reset: {self.kill_counter}/{self.kill_counter_max}")
+        
         # Reset camera zoom to default value
         self.camera.zoom = 2.0  # Reset to default zoom
         self.camera.view_width = self.camera.width / self.camera.zoom
@@ -2213,6 +2217,10 @@ class Game:
         self.death_zoom_duration = 3000  # 3 seconds for zoom effect
         self.death_original_zoom = 2.0  # Store original zoom level
         self.death_target_zoom = 4.0  # Target zoom level for death sequence
+        
+        # Reset special ability counter
+        self.kill_counter = 0
+        print(f"Special ability counter reset: {self.kill_counter}/{self.kill_counter_max}")
         
         # Reset camera zoom to default value
         self.camera.zoom = 2.0  # Reset to default zoom

@@ -2692,7 +2692,7 @@ class Boss(Enemy):
                     self.rect.centerx + center_dx * 10,  # Offset slightly ahead 
                     self.rect.centery + center_dy * 10, 
                     (center_dx, center_dy), 
-                    1.4, 
+                    1.8, 
                     self.damage * 1.5, 
                     color=(20, 150, 255),  # Brighter blue
                     boss_level=self.level,  # Pass the boss level
@@ -2705,7 +2705,7 @@ class Boss(Enemy):
                     self.rect.centerx, 
                     self.rect.centery, 
                     (left_dx, left_dy), 
-                    1.4, 
+                    1.8, 
                     self.damage * 1.5, 
                     color=(255, 0, 255),  # Magenta
                     boss_level=self.level,  # Pass the boss level
@@ -2718,7 +2718,7 @@ class Boss(Enemy):
                     self.rect.centerx, 
                     self.rect.centery, 
                     (right_dx, right_dy), 
-                    1.4, 
+                    1.8, 
                     self.damage * 1.5, 
                     color=(255, 165, 0),  # Orange
                     boss_level=self.level,  # Pass the boss level

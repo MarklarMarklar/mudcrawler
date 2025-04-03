@@ -49,11 +49,11 @@ ENEMY_TYPES = {
     'level3': {'name': 'Ghost', 'health': 40, 'damage': 15, 'speed': 2},
     'level4': {'name': 'Goblin', 'health': 70, 'damage': 20, 'speed': 2.5},
     'level5': {'name': 'Dark Knight', 'health': 80, 'damage': 25, 'speed': 2},
-    'level6': {'name': 'Wizard', 'health': 65, 'damage': 20, 'speed': 1.8},
+    'level6': {'name': 'Wizard', 'health': 65, 'damage': 20, 'speed': 2},
     'level7': {'name': 'Demon', 'health': 90, 'damage': 20, 'speed': 2},
     'level8': {'name': 'Dragon Spawn', 'health': 100, 'damage': 20, 'speed': 2},
-    'level9': {'name': 'Shadow', 'health': 85, 'damage': 3, 'speed': 2.2},
-    'level10': {'name': 'Dark Elf', 'health': 110, 'damage': 40, 'speed': 0.5}
+    'level9': {'name': 'Shadow', 'health': 85, 'damage': 15, 'speed': 2.2},
+    'level10': {'name': 'Dark Elf', 'health': 110, 'damage': 25, 'speed': 2.2}
 }
 
 # Boss Settings
@@ -65,7 +65,7 @@ BOSS_TYPES = {
     'level5': {'name': 'Dark Champion', 'health': 800, 'damage': 25, 'speed': 2.2},
     'level6': {'name': 'Arch Wizard', 'health': 800, 'damage': 25, 'speed': 2},
     'level7': {'name': 'Demon Lord', 'health': 900, 'damage': 20, 'speed': 2},
-    'level8': {'name': 'Dragon', 'health': 1000, 'damage': 15, 'speed': 2},
+    'level8': {'name': 'Dragon', 'health': 1000, 'damage': 20, 'speed': 2},
     'level9': {'name': 'Shadow King', 'health': 1100, 'damage': 30, 'speed': 2},
     'level10': {'name': 'Dark Lord', 'health': 1500, 'damage': 30, 'speed': 2.2}
 }
