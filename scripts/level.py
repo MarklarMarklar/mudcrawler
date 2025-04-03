@@ -1531,6 +1531,39 @@ class Room:
         # Draw dead boss sprite if it exists for any boss level
         elif hasattr(self, 'boss_corpse'):
             self.boss_corpse.draw(surface)
+            
+        # Draw collision boxes when DEBUG_MODE is enabled
+        from config import DEBUG_MODE
+        if DEBUG_MODE:
+            # Draw room boundaries
+            room_border = pygame.Rect(0, 0, self.width * TILE_SIZE, self.height * TILE_SIZE)
+            pygame.draw.rect(surface, (255, 0, 0), room_border, 2)
+            
+            # Draw wall collision boxes
+            for y in range(self.height):
+                for x in range(self.width):
+                    if self.tiles[y][x] == 1:  # Wall tile
+                        wall_rect = pygame.Rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                        
+                        # Regular walls in red
+                        wall_color = (255, 0, 0)  # Red for normal walls
+                        
+                        # Destroyable walls in blue
+                        if (hasattr(self, 'destroyable_walls') and 
+                            y < len(self.destroyable_walls) and 
+                            x < len(self.destroyable_walls[y]) and 
+                            self.destroyable_walls[y][x]):
+                            wall_color = (0, 0, 255)  # Blue for destroyable walls
+                            
+                        pygame.draw.rect(surface, wall_color, wall_rect, 2)
+                        
+                    elif self.tiles[y][x] == 2:  # Door tile
+                        door_rect = pygame.Rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                        pygame.draw.rect(surface, (0, 255, 0), door_rect, 2)  # Green for doors
+                        
+                    elif self.tiles[y][x] == EXIT_DOOR_TILE:  # Exit door
+                        exit_rect = pygame.Rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                        pygame.draw.rect(surface, (255, 255, 0), exit_rect, 2)  # Yellow for exit doors
         
         # Finally, draw exit door glows on top of everything else
         for x, y in exit_door_positions:

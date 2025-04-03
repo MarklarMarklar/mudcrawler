@@ -2358,7 +2358,7 @@ class Boss(Enemy):
             self.casting_mode_duration = 2000  # 2 seconds in casting mode
             self.last_cast_time = 0
             self.cast_complete = False
-            self.stationary_projectile_duration = 6000  # How long projectiles stay in place
+            self.stationary_projectile_duration = 18000 # How long projectiles stay in place
             
             # Special settings for Boss 8
             if level == 8:
