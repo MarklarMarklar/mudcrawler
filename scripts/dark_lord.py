@@ -570,7 +570,7 @@ class DarkLord(Boss):
                         self.summoned_boss.rect.centery + center_dy * 10,
                         (center_dx, center_dy),
                         speed=3.0,  # Increased from default 1.4 to 3.0
-                        damage=self.summoned_boss.damage * 1.5,
+                        damage=self.summoned_boss.damage * 1.0,
                         color=(20, 150, 255),  # Brighter blue
                         boss_level=self.summoned_boss.level,
                         spawn_secondary=True,  # Enable projectile splitting
@@ -584,7 +584,7 @@ class DarkLord(Boss):
                         self.summoned_boss.rect.centery,
                         (left_dx, left_dy),
                         speed=3.0,  # Increased from default 1.4 to 3.0
-                        damage=self.summoned_boss.damage * 1.5,
+                        damage=self.summoned_boss.damage * 1.0,
                         color=(255, 0, 255),  # Magenta
                         boss_level=self.summoned_boss.level,
                         spawn_secondary=True,  # Enable projectile splitting
@@ -598,7 +598,7 @@ class DarkLord(Boss):
                         self.summoned_boss.rect.centery,
                         (right_dx, right_dy),
                         speed=3.0,  # Increased from default 1.4 to 3.0
-                        damage=self.summoned_boss.damage * 1.5,
+                        damage=self.summoned_boss.damage * 1.0,
                         color=(255, 165, 0),  # Orange
                         boss_level=self.summoned_boss.level,
                         spawn_secondary=True,  # Enable projectile splitting

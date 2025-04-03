@@ -1759,7 +1759,12 @@ class HUD:
         # Get kill counter from game instance
         kill_counter = 0
         kill_counter_max = 10
-        if hasattr(player, 'game') and player.game:
+        if hasattr(player, 'kill_counter') and hasattr(player, 'kill_counter_max'):
+            # Use values directly from player object if available
+            kill_counter = player.kill_counter
+            kill_counter_max = player.kill_counter_max
+        elif hasattr(player, 'game') and player.game:
+            # Fall back to game instance if player doesn't have these attributes
             kill_counter = player.game.kill_counter
             kill_counter_max = player.game.kill_counter_max
         
@@ -2002,3 +2007,30 @@ class HUD:
             has_fire_sword,
             has_lightning_sword
         ) 
+
+    def render(self, player_health, player_max_health, arrow_count, max_arrows, kill_counter, kill_counter_max, level_number=1, level=None, boss_health=None, boss_max_health=None, has_key=False, has_fire_sword=False, has_lightning_sword=False):
+        """Render the HUD - alias for compatibility with the new code using render instead of draw"""
+        # Create a simplified player object with the stats we need
+        class SimplePlayer:
+            def __init__(self, health, max_health, arrow_count, max_arrows, kill_counter, kill_counter_max):
+                self.health = health
+                self.max_health = max_health
+                self.arrow_count = arrow_count
+                self.max_arrows = max_arrows
+                self.kill_counter = kill_counter
+                self.kill_counter_max = kill_counter_max
+                
+        player = SimplePlayer(player_health, player_max_health, arrow_count, max_arrows, kill_counter, kill_counter_max)
+        
+        # Call the existing draw method with our player object
+        self.draw(
+            player,
+            level_number,
+            True,  # audio_available
+            level,
+            boss_health,
+            boss_max_health,
+            has_key,
+            has_fire_sword,
+            has_lightning_sword
+        )

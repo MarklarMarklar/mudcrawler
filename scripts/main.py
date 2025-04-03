@@ -16,6 +16,7 @@ from scripts.asset_manager import get_asset_manager
 from scripts.camera import Camera  # Import our new Camera class
 from scripts.sound_manager import get_sound_manager  # Import our new sound manager
 from scripts.particle import ParticleSystem  # Import our new particle system
+from scripts.controller import ControllerHandler  # Import our new controller handler
 
 class Game:
     def __init__(self, start_fullscreen=False):
@@ -203,6 +204,9 @@ class Game:
         # Check if assets directory exists, if not create it with necessary subdirectories
         self.ensure_asset_directories()
         
+        # Initialize controller handler
+        self.controller_handler = ControllerHandler()
+        
         # Debug font
         self.debug_font = pygame.font.Font(None, 24)
         
@@ -368,6 +372,13 @@ class Game:
         return (world_x, world_y)
 
     def handle_events(self):
+        # Process controller input if available
+        controller_events = self.controller_handler.update_controller()
+        
+        # Add the controller events to pygame's event queue
+        for event in controller_events:
+            pygame.event.post(event)
+            
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
@@ -386,6 +397,10 @@ class Game:
             if self.state == PLAYING and not self.death_sequence_active:
                 # Get screen mouse position
                 screen_mouse_pos = pygame.mouse.get_pos()
+                
+                # Confine mouse to window to prevent it from disappearing
+                self.confine_mouse_to_window()
+                
                 # Convert to world coordinates
                 world_mouse_pos = self.screen_to_world_coords(*screen_mouse_pos)
                 # Update player's attack direction
@@ -527,9 +542,6 @@ class Game:
                         self.play_artwork_music(level_num)
             
             if event.type == pygame.KEYDOWN:
-                # Print debug info on key press
-                print(f"Key pressed: {pygame.key.name(event.key)}")
-                
                 # DEVELOPMENT FEATURE: Level warping with F1-F10 keys
                 # This will be removed for the final release
                 if event.key >= pygame.K_F1 and event.key <= pygame.K_F10 and self.state == PLAYING:
@@ -645,16 +657,18 @@ class Game:
                         
                         # Attack with bow using the exact mouse position
                         self.weapon_manager.attack_bow(world_mouse_pos)
-                        print(f"Bow attack toward cursor position: {world_mouse_pos}")
                     elif event.button == 3:  # Right click
-                        # Trigger dodge in the facing direction
+                        # Trigger dodge in the movement direction
                         if self.player.dodge():
-                            print(f"Player dodged in direction: {self.player.facing}")
                             # Apply a small screen shake for feedback
                             self.trigger_screen_shake(amount=3, duration=5)
                             # Play dodge sound effect
                             self.sound_manager.play_sound("effects/dodge")
                 
+        # Ensure mouse cursor stays within window boundaries after processing all events
+        if self.state == PLAYING:
+            self.confine_mouse_to_window()
+
     def update(self):
         # Update splash screen timer
         if self.state == SPLASH_SCREEN:
@@ -706,9 +720,52 @@ class Game:
             
         # Get mouse position and update player's attack direction
         screen_mouse_pos = pygame.mouse.get_pos()
+        
+        # Confine mouse to window to prevent it from disappearing
+        self.confine_mouse_to_window()
+        
         world_mouse_pos = self.screen_to_world_coords(*screen_mouse_pos)
-        self.player.update_attack_direction_from_mouse(world_mouse_pos)
+        
+        # Handle controller input for aiming
+        is_aiming, aim_direction = self.controller_handler.update_aim_from_right_stick(self)
+        if is_aiming and self.player and not self.player.is_dead:
+            # Get player position in world coordinates
+            player_x, player_y = self.player.rect.centerx, self.player.rect.centery
             
+            # Calculate new aim position based on stick direction
+            scale_factor = 100
+            aim_x = player_x + (aim_direction[0] * scale_factor)
+            aim_y = player_y + (aim_direction[1] * scale_factor)
+            
+            # Calculate angle for direction
+            angle = math.degrees(math.atan2(aim_direction[1], aim_direction[0]))
+            if angle < 0:
+                angle += 360
+                
+            # Determine cardinal direction
+            if (angle >= 315 or angle < 45):
+                attack_dir = 'right'
+            elif (angle >= 45 and angle < 135):
+                attack_dir = 'down'
+            elif (angle >= 135 and angle < 225):
+                attack_dir = 'left'
+            else:  # angle >= 225 and angle < 315
+                attack_dir = 'up'
+            
+            # Update player's facing if not in attack animation
+            if self.player.current_state != 'attack':
+                self.player.facing = attack_dir
+            
+            # Update player's aim direction with world coordinates
+            self.player.update_attack_direction_from_mouse((aim_x, aim_y))
+            
+        else:
+            # Use mouse for aiming if not using controller right stick
+            screen_mouse_pos = pygame.mouse.get_pos()
+            world_mouse_pos = self.screen_to_world_coords(*screen_mouse_pos)
+            if self.player and not self.player.is_dead:
+                self.player.update_attack_direction_from_mouse(world_mouse_pos)
+        
         # Update screen shake effect
         self.update_screen_shake()
         
@@ -869,6 +926,80 @@ class Game:
         
         # Update player movement
         keys = pygame.key.get_pressed()
+        
+        # Also handle controller input directly for movement
+        if self.controller_handler.connected:
+            # Create a class to wrap keyboard state with controller overrides
+            class KeyWrapper:
+                def __init__(self, keyboard_state):
+                    self.keyboard_state = keyboard_state
+                    self.overrides = {}
+                
+                def __getitem__(self, key):
+                    # Check if we have an override for this key
+                    if key in self.overrides:
+                        return self.overrides[key]
+                    # Otherwise return the original keyboard state
+                    return self.keyboard_state[key]
+            
+            # Create wrapper around keyboard state
+            wrapped_keys = KeyWrapper(keys)
+            
+            try:
+                # Check analog stick
+                if self.controller_handler.controller.get_numaxes() > self.controller_handler.AXIS_LEFT_Y:
+                    x_axis = self.controller_handler.controller.get_axis(self.controller_handler.AXIS_LEFT_X)
+                    y_axis = self.controller_handler.controller.get_axis(self.controller_handler.AXIS_LEFT_Y)
+                    
+                    # Set movement keys based on analog stick
+                    if x_axis < -self.controller_handler.DEADZONE:
+                        wrapped_keys.overrides[pygame.K_a] = True
+                    if x_axis > self.controller_handler.DEADZONE:
+                        wrapped_keys.overrides[pygame.K_d] = True
+                    if y_axis < -self.controller_handler.DEADZONE:
+                        wrapped_keys.overrides[pygame.K_w] = True
+                    if y_axis > self.controller_handler.DEADZONE:
+                        wrapped_keys.overrides[pygame.K_s] = True
+                        
+                # Check D-pad (hat)
+                if self.controller_handler.controller.get_numhats() > 0:
+                    dpad_x, dpad_y = self.controller_handler.controller.get_hat(0)
+                    
+                    # D-pad values override analog stick
+                    if dpad_x == -1:  # Left
+                        wrapped_keys.overrides[pygame.K_a] = True
+                        wrapped_keys.overrides[pygame.K_d] = False
+                    elif dpad_x == 1:  # Right
+                        wrapped_keys.overrides[pygame.K_d] = True
+                        wrapped_keys.overrides[pygame.K_a] = False
+                    
+                    if dpad_y == 1:  # Up
+                        wrapped_keys.overrides[pygame.K_w] = True
+                        wrapped_keys.overrides[pygame.K_s] = False
+                    elif dpad_y == -1:  # Down
+                        wrapped_keys.overrides[pygame.K_s] = True
+                        wrapped_keys.overrides[pygame.K_w] = False
+                
+                # Debug output for movement
+                if wrapped_keys.overrides:
+                    movement_keys = []
+                    if wrapped_keys.overrides.get(pygame.K_w, False):
+                        movement_keys.append("W")
+                    if wrapped_keys.overrides.get(pygame.K_s, False):
+                        movement_keys.append("S")
+                    if wrapped_keys.overrides.get(pygame.K_a, False):
+                        movement_keys.append("A")
+                    if wrapped_keys.overrides.get(pygame.K_d, False):
+                        movement_keys.append("D")
+                    if movement_keys:
+                        pass  # Remove the print statement that was here
+                
+                # Use the wrapped keys instead of the original
+                keys = wrapped_keys
+            except Exception as e:
+                # Remove debug print for error reading controller input
+                pass
+        
         self.player.move(keys)
         
         # Check collision using separate X and Y axis checks to allow sliding
@@ -1614,6 +1745,9 @@ class Game:
         # Actually update the display
         pygame.display.flip()
         
+        # Ensure mouse stays within window boundaries at all times
+        self.confine_mouse_to_window()
+        
     def render_game(self):
         # Create a temporary surface for the zoomed room rendering
         room_width = ROOM_WIDTH * TILE_SIZE
@@ -1953,6 +2087,49 @@ class Game:
         # Draw exit confirmation dialog last, directly on the screen (not affected by camera)
         if self.level and self.level.show_exit_confirmation:
             self.level.draw_exit_confirmation(self.screen)
+        
+        # Render HUD
+        # Check for missing attributes in Level object and provide defaults
+        has_key = False
+        has_fire_sword = False 
+        has_lightning_sword = False
+        
+        if self.level:
+            has_key = getattr(self.level, 'has_key', False)
+            has_fire_sword = getattr(self.level, 'has_fire_sword', False)
+            has_lightning_sword = getattr(self.level, 'has_lightning_sword', False)
+        
+        # Get boss health if available
+        boss_health = None
+        boss_max_health = None
+        
+        if self.level and hasattr(self.level, 'rooms') and hasattr(self.level, 'current_room_coords'):
+            current_room = self.level.rooms.get(self.level.current_room_coords)
+            if current_room and hasattr(current_room, 'boss') and current_room.boss:
+                boss_health = current_room.boss.health
+                boss_max_health = current_room.boss.max_health
+        
+        self.hud.render(
+            self.player.health,
+            self.player.max_health,
+            self.player.arrow_count,
+            self.player.max_arrows,
+            self.kill_counter,
+            self.kill_counter_max,
+            self.current_level,
+            self.level,
+            boss_health,
+            boss_max_health,
+            has_key=has_key,
+            has_fire_sword=has_fire_sword,
+            has_lightning_sword=has_lightning_sword
+        )
+        
+        # Display controller status if debug mode is on
+        if DEBUG_HITBOXES:
+            controller_status = "Controller: Connected" if self.controller_handler.get_controller_status() else "Controller: Not Connected"
+            controller_text = self.debug_font.render(controller_status, True, WHITE)
+            self.screen.blit(controller_text, (10, WINDOW_HEIGHT - 30))
         
     def run(self):
         print("Starting game loop")
@@ -2785,6 +2962,26 @@ class Game:
                 glitched.blit(vertical_strip, (x_pos, 0))
         
         return glitched
+
+    def confine_mouse_to_window(self):
+        """Ensures the mouse cursor stays within the game window"""
+        # Get current mouse position
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        
+        # Create a small margin (5 pixels) from the edge to prevent cursor from disappearing
+        margin = 5
+        
+        # Get window dimensions
+        window_width = self.screen.get_width()
+        window_height = self.screen.get_height()
+        
+        # Constrain mouse position within window boundaries with margin
+        constrained_x = max(margin, min(mouse_x, window_width - margin))
+        constrained_y = max(margin, min(mouse_y, window_height - margin))
+        
+        # Only set position if it needs to be changed
+        if (mouse_x, mouse_y) != (constrained_x, constrained_y):
+            pygame.mouse.set_pos((constrained_x, constrained_y))
 
 if __name__ == "__main__":
     import argparse

@@ -128,6 +128,9 @@ class Player(pygame.sprite.Sprite):
         # Movement
         self.velocity_x = 0
         self.velocity_y = 0
+        
+        # Add movement direction tracking (separate from aiming direction)
+        self.movement_direction = 'down'  # Default movement direction
     
     def init_placeholders(self):
         """Initialize placeholder graphics if sprite sheet can't be loaded"""
@@ -229,6 +232,15 @@ class Player(pygame.sprite.Sprite):
                 self.animations['idle'][direction] = [frames[0]]
         
     def move(self, keys):
+        # Check if player is dead - if so, prevent movement
+        if self.is_dead:
+            # Stop any movement
+            self.velocity_x = 0
+            self.velocity_y = 0
+            # Keep player in dead state
+            self.current_state = 'dead'
+            return
+            
         was_moving = self.velocity_x != 0 or self.velocity_y != 0
         self.velocity_x = 0
         self.velocity_y = 0
@@ -236,21 +248,29 @@ class Player(pygame.sprite.Sprite):
         # Movement with WASD/direction keys
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             self.velocity_x = -self.speed
+            # Always update movement direction
+            self.movement_direction = 'left'
             # Only update facing direction if not in attack animation
             if self.current_state != 'attack':
                 self.facing = 'left'
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
             self.velocity_x = self.speed
+            # Always update movement direction
+            self.movement_direction = 'right'
             # Only update facing direction if not in attack animation
             if self.current_state != 'attack':
                 self.facing = 'right'
         if keys[pygame.K_UP] or keys[pygame.K_w]:
             self.velocity_y = -self.speed
+            # Always update movement direction
+            self.movement_direction = 'up'
             # Only update facing direction if not in attack animation
             if self.current_state != 'attack':
                 self.facing = 'up'
         if keys[pygame.K_DOWN] or keys[pygame.K_s]:
             self.velocity_y = self.speed
+            # Always update movement direction
+            self.movement_direction = 'down'
             # Only update facing direction if not in attack animation
             if self.current_state != 'attack':
                 self.facing = 'down'
@@ -264,13 +284,8 @@ class Player(pygame.sprite.Sprite):
         # We no longer update attack_direction from arrow keys
         # since we're using mouse position instead
             
-        # Update animation state based on movement
-        previous_state = self.current_state
+        # Define is_moving flag for walk sound handling
         is_moving = self.velocity_x != 0 or self.velocity_y != 0
-        if not is_moving and self.current_state != 'attack':
-            self.current_state = 'idle'
-        elif self.current_state != 'attack':
-            self.current_state = 'walk'
             
         # Handle walk sound state transitions - only play sounds if player is alive
         if self.health > 0:
@@ -303,7 +318,10 @@ class Player(pygame.sprite.Sprite):
         if self.velocity_x != 0 and self.velocity_y != 0:
             self.velocity_x /= math.sqrt(2)
             self.velocity_y /= math.sqrt(2)
-            
+        
+        # Update animation
+        self._update_animation()
+    
     def dodge(self):
         """Perform a quick dodge (jump) in the direction the player is facing"""
         # Check if player is dead
@@ -323,17 +341,20 @@ class Player(pygame.sprite.Sprite):
         # Calculate dodge distance (1 tile)
         dodge_distance = TILE_SIZE
         
-        # Calculate target position based on facing direction
+        # Use movement direction for dodge, not aiming direction
+        dodge_dir = self.movement_direction
+        
+        # Calculate target position based on movement direction
         target_x = self.rect.x
         target_y = self.rect.y
         
-        if self.facing == 'right':
+        if dodge_dir == 'right':
             target_x += dodge_distance
-        elif self.facing == 'left':
+        elif dodge_dir == 'left':
             target_x -= dodge_distance
-        elif self.facing == 'down':
+        elif dodge_dir == 'down':
             target_y += dodge_distance
-        elif self.facing == 'up':
+        elif dodge_dir == 'up':
             target_y -= dodge_distance
             
         # Store original position
@@ -350,7 +371,7 @@ class Player(pygame.sprite.Sprite):
         self.trail_positions = []
         
         # Calculate positions for ghost images based on starting position and dodge direction
-        if self.facing == 'right':
+        if dodge_dir == 'right':
             # When dodging right, distribute ghosts from arrival position back to starting position
             # First ghost (i=0) at the farthest point from arrival, last ghost (i=3) at arrival position
             for i in range(4):
@@ -361,7 +382,7 @@ class Player(pygame.sprite.Sprite):
                 offset = 2 + (3-i) * 8  # 26, 18, 10, 2 pixels
                 ghost_x -= offset
                 self.trail_positions.append((ghost_x, original_y))
-        elif self.facing == 'left':
+        elif dodge_dir == 'left':
             # When dodging left, distribute ghosts from arrival position back to starting position
             for i in range(4):
                 fraction = i / 3  # 0/3, 1/3, 2/3, 3/3 (0, 0.33, 0.67, 1)
@@ -371,7 +392,7 @@ class Player(pygame.sprite.Sprite):
                 offset = 2 + (3-i) * 8  # 26, 18, 10, 2 pixels
                 ghost_x += offset
                 self.trail_positions.append((ghost_x, original_y))
-        elif self.facing == 'down':
+        elif dodge_dir == 'down':
             # When dodging down, distribute ghosts from arrival position back to starting position
             for i in range(4):
                 fraction = i / 3  # 0/3, 1/3, 2/3, 3/3 (0, 0.33, 0.67, 1)
@@ -381,7 +402,7 @@ class Player(pygame.sprite.Sprite):
                 offset = 2 + (3-i) * 8  # 26, 18, 10, 2 pixels
                 ghost_y -= offset
                 self.trail_positions.append((original_x, ghost_y))
-        elif self.facing == 'up':
+        elif dodge_dir == 'up':
             # When dodging up, distribute ghosts from arrival position back to starting position
             for i in range(4):
                 fraction = i / 3  # 0/3, 1/3, 2/3, 3/3 (0, 0.33, 0.67, 1)
@@ -410,7 +431,7 @@ class Player(pygame.sprite.Sprite):
                 self.hitbox.y = original_hitbox_y
                 
                 # Try to dodge only up to the wall
-                if self.facing == 'right':
+                if dodge_dir == 'right':
                     # Find the closest wall on the right
                     for test_x in range(original_x + 1, target_x + 1):
                         self.rect.x = test_x
@@ -420,7 +441,7 @@ class Player(pygame.sprite.Sprite):
                             self.rect.x = test_x - 1
                             self.hitbox.centerx = self.rect.centerx
                             break
-                elif self.facing == 'left':
+                elif dodge_dir == 'left':
                     # Find the closest wall on the left
                     for test_x in range(original_x - 1, target_x - 1, -1):
                         self.rect.x = test_x
@@ -430,7 +451,7 @@ class Player(pygame.sprite.Sprite):
                             self.rect.x = test_x + 1
                             self.hitbox.centerx = self.rect.centerx
                             break
-                elif self.facing == 'down':
+                elif dodge_dir == 'down':
                     # Find the closest wall below
                     for test_y in range(original_y + 1, target_y + 1):
                         self.rect.y = test_y
@@ -440,7 +461,7 @@ class Player(pygame.sprite.Sprite):
                             self.rect.y = test_y - 1
                             self.hitbox.centery = self.rect.centery
                             break
-                elif self.facing == 'up':
+                elif dodge_dir == 'up':
                     # Find the closest wall above
                     for test_y in range(original_y - 1, target_y - 1, -1):
                         self.rect.y = test_y
@@ -481,7 +502,7 @@ class Player(pygame.sprite.Sprite):
                 
             # Set facing to attack direction for animation purposes
             # This will be used for the attack animation
-            print(f"Attack direction: {self.attack_direction}, Setting facing to: {primary_direction}")
+            
             self.facing = primary_direction
             
             # Create sword hitbox based on attack direction with 30% increased range (15% + 15%)
@@ -566,8 +587,6 @@ class Player(pygame.sprite.Sprite):
         elif -135 <= angle < -45:
             self.facing = 'up'
             
-        print(f"Bow attack angle: {angle:.1f} degrees, Setting facing to: {self.facing}")
-        
         # Return True to indicate that the arrow was successfully shot
         return True
         
@@ -628,7 +647,7 @@ class Player(pygame.sprite.Sprite):
                 self.speed = self._original_speed
                 if hasattr(self, '_speed_debuff_end_time'):
                     delattr(self, '_speed_debuff_end_time')
-                print("Speed debuff removed on player death")
+                
                 
             self.health = 0
             self._die()
@@ -701,7 +720,7 @@ class Player(pygame.sprite.Sprite):
                 # Only restore speed if we have the original value
                 if hasattr(self, '_original_speed'):
                     self.speed = self._original_speed
-                    print(f"Player speed restored to {self._original_speed}")
+                    
                 
                 # Clean up debuff tracking attributes
                 if hasattr(self, '_speed_debuff_end_time'):
@@ -709,27 +728,31 @@ class Player(pygame.sprite.Sprite):
                 if hasattr(self, '_original_speed'):
                     delattr(self, '_original_speed')
         
-        # Update position if not dead
-        if not self.is_dead:
-            self.rect.x += self.velocity_x
-            self.rect.y += self.velocity_y
-            
-            # Update hitbox position to follow the sprite
-            self.hitbox.centerx = self.rect.centerx
-            self.hitbox.centery = self.rect.centery
-            
-            # Keep player on screen
-            self.rect.clamp_ip(pygame.display.get_surface().get_rect())
-        elif not self.death_animation_complete:
+        # If player is dead, ensure 'dead' state is maintained but still check animation timing
+        if self.is_dead:
+            self.current_state = 'dead'
             # Check if death animation should be complete (after 4 seconds)
-            # This is longer to allow for the zoom effect to complete
-            if current_time - self.death_time > 4000:  # 4 seconds
+            if not self.death_animation_complete and current_time - self.death_time > 4000:  # 4 seconds
                 self.death_animation_complete = True
                 # Ensure walking sound is stopped
                 if self.walk_sound_channel is not None:
                     self.sound_manager.stop_sound_channel(self.walk_sound_channel)
                     self.walk_sound_channel = None
                     self.was_walking = False
+            # Update animation
+            self._update_animation()
+            return
+            
+        # Update position if not dead
+        self.rect.x += self.velocity_x
+        self.rect.y += self.velocity_y
+        
+        # Update hitbox position to follow the sprite
+        self.hitbox.centerx = self.rect.centerx
+        self.hitbox.centery = self.rect.centery
+        
+        # Keep player on screen
+        self.rect.clamp_ip(pygame.display.get_surface().get_rect())
         
         # Update trailing effect (for dodge)
         if self.trailing_enabled:
@@ -741,13 +764,31 @@ class Player(pygame.sprite.Sprite):
         self._update_animation()
     
     def _update_animation(self):
-        """Update the animation state and frame"""
+        """Update animation state based on movement"""
+        # If player is dead, make sure we stay in the dead animation state
+        if self.is_dead:
+            self.current_state = 'dead'
+            # Use the facing direction that was set when the player died
+            animation_frames = self.animations[self.current_state][self.facing]
+            self.frame = 0  # Always show first frame of death animation
+            self.image = animation_frames[self.frame]
+            return
+            
+        is_moving = self.velocity_x != 0 or self.velocity_y != 0
+        
+        # Only change animation if not in attack animation
+        if self.current_state != 'attack':
+            if is_moving:
+                self.current_state = 'walk'
+            else:
+                self.current_state = 'idle'
+        
         # Update animation time
         self.animation_time += self.animation_speed
         
         # If the attack animation is done, go back to idle
         if self.current_state == 'attack' and self.animation_time >= len(self.animations[self.current_state][self.facing]):
-            print(f"Attack animation complete. Returning facing from {self.facing} to {self.movement_facing}")
+            
             # Animation complete, switch back to idle state
             self.current_state = 'idle'
             self.animation_time = 0
@@ -1019,4 +1060,11 @@ class Player(pygame.sprite.Sprite):
         elif -112.5 < angle <= -67.5:
             self.attack_direction = 'up'
         elif -67.5 < angle < -22.5:
-            self.attack_direction = 'up-right' 
+            self.attack_direction = 'up-right'
+            
+        # If we're not in attack animation, update the facing direction
+        # to match the primary attack direction
+        if self.current_state != 'attack':
+            # Extract primary direction from attack_direction if it's a compound direction
+            primary_dir = self.attack_direction.split('-')[0] if '-' in self.attack_direction else self.attack_direction
+            self.facing = primary_dir 
