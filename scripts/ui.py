@@ -453,6 +453,10 @@ class Menu:
         self.in_game_over = False
         self.in_victory = False
         
+        # Controller navigation support
+        self.selected_button_index = 0
+        self.active_buttons = []
+        
         # Track fullscreen state
         self.fullscreen_enabled = False
         
@@ -645,6 +649,12 @@ class Menu:
             title_rect = self.custom_title.get_rect(centerx=WINDOW_WIDTH // 2, top=title_y)
             self.screen.blit(self.custom_title, title_rect)
         
+        # Ensure the current controller-selected button is highlighted
+        active_buttons = ['start', 'options', 'artworks', 'quit']
+        if 0 <= self.selected_button_index < len(active_buttons):
+            button_name = active_buttons[self.selected_button_index]
+            self.buttons[button_name].is_hovered = True
+        
         # Draw buttons with enhanced visibility
         self.buttons['start'].draw(self.screen)
         self.buttons['options'].draw(self.screen)
@@ -676,6 +686,12 @@ class Menu:
         title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3))
         self.screen.blit(title, title_rect)
         
+        # Ensure the current controller-selected button is highlighted
+        active_buttons = ['resume', 'restart', 'options', 'quit']
+        if 0 <= self.selected_button_index < len(active_buttons):
+            button_name = active_buttons[self.selected_button_index]
+            self.buttons[button_name].is_hovered = True
+            
         # Draw buttons
         self.buttons['resume'].draw(self.screen)
         self.buttons['restart'].draw(self.screen)
@@ -706,6 +722,12 @@ class Menu:
             
         title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3))
         self.screen.blit(title, title_rect)
+        
+        # Ensure the current controller-selected button is highlighted
+        active_buttons = ['restart', 'quit']
+        if 0 <= self.selected_button_index < len(active_buttons):
+            button_name = active_buttons[self.selected_button_index]
+            self.buttons[button_name].is_hovered = True
         
         # Draw buttons
         self.buttons['restart'].draw(self.screen)
@@ -795,32 +817,33 @@ class Menu:
                 self.screen.blit(heading_surface, text_rect)
 
     def draw_options_menu(self):
-        """Draw the options menu with settings"""
         # Update button positions first
         self._update_button_positions('options_menu')
         
-        # Update state flags - showing_options is already set elsewhere
+        # Draw background
+        self.screen.blit(self.menu_bg, (0, 0))
         
-        # Semi-transparent overlay
-        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
-        overlay.fill((0, 0, 0))
-        overlay.set_alpha(128)
-        self.screen.blit(overlay, (0, 0))
-        
-        # Draw title with pixelated font
+        # Draw title
         title = self.font.render("OPTIONS", True, WHITE)
         title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3))
         self.screen.blit(title, title_rect)
         
         # Update fullscreen button text based on current state
-        self.buttons['fullscreen'].text = f"Fullscreen: {'On' if self.fullscreen_enabled else 'Off'}"
+        fullscreen_text = "Fullscreen: On" if self.fullscreen_enabled else "Fullscreen: Off"
+        self.buttons['fullscreen'].text = fullscreen_text
         
-        # Draw option buttons
+        # Ensure the current controller-selected button is highlighted
+        active_buttons = ['fullscreen', 'controls', 'audio', 'back']
+        if 0 <= self.selected_button_index < len(active_buttons):
+            button_name = active_buttons[self.selected_button_index]
+            self.buttons[button_name].is_hovered = True
+        
+        # Draw buttons
         self.buttons['fullscreen'].draw(self.screen)
         self.buttons['controls'].draw(self.screen)
         self.buttons['audio'].draw(self.screen)
         self.buttons['back'].draw(self.screen)
-        
+    
     def toggle_fullscreen(self):
         """Toggle the fullscreen state and update button text"""
         self.fullscreen_enabled = not self.fullscreen_enabled
@@ -852,6 +875,29 @@ class Menu:
         else:
             # Default to main menu buttons
             active_buttons = ['start', 'options', 'artworks', 'quit']
+            
+        # Store active buttons for controller navigation
+        self.active_buttons = active_buttons
+        
+        # Make sure selected button index is valid for current menu
+        if self.active_buttons and self.selected_button_index >= len(self.active_buttons):
+            self.selected_button_index = 0
+        
+        # Handle controller navigation
+        if event.type == pygame.KEYDOWN:
+            # Up/Down navigation (mapped from controller D-pad and left stick)
+            if event.key == pygame.K_UP or event.key == pygame.K_w:
+                self.navigate_menu(-1)  # Move up
+                return None
+            elif event.key == pygame.K_DOWN or event.key == pygame.K_s:
+                self.navigate_menu(1)   # Move down
+                return None
+            # Select current button with Space (mapped from RT)
+            elif event.key == pygame.K_SPACE:
+                if self.active_buttons and 0 <= self.selected_button_index < len(self.active_buttons):
+                    button_name = self.active_buttons[self.selected_button_index]
+                    print(f"Menu controller select button: {button_name}")
+                    return button_name
         
         # Get current mouse position for hover check
         if event.type == pygame.MOUSEMOTION:
@@ -866,6 +912,10 @@ class Menu:
                         print(f"Mouse hovering over button: {button_name}")
                     else:
                         print(f"Mouse left button: {button_name}")
+                        
+                # Update selected button index when hovering with mouse
+                if button.is_hovered and button_name in self.active_buttons:
+                    self.selected_button_index = self.active_buttons.index(button_name)
         
         # If we're showing the artworks menu, handle its specialized events
         if self.showing_artworks:
@@ -907,6 +957,44 @@ class Menu:
                 return button_name
                 
         return None
+    
+    def navigate_menu(self, direction):
+        """Navigate through menu buttons (direction: 1=down, -1=up)"""
+        if not self.active_buttons:
+            return
+            
+        # Update the selected button index
+        self.selected_button_index = (self.selected_button_index + direction) % len(self.active_buttons)
+        
+        # Reset hover states for all buttons
+        for button in self.buttons.values():
+            button.is_hovered = False
+            
+        # Highlight the selected button
+        selected_button_name = self.active_buttons[self.selected_button_index]
+        self.buttons[selected_button_name].is_hovered = True
+        
+        # Play navigation sound if we have a sound manager
+        if hasattr(self, 'sound_manager') and self.sound_manager:
+            self.sound_manager.play_sfx('menu_move')
+    
+    def get_active_buttons(self):
+        """Return the appropriate list of buttons based on current menu state"""
+        if self.showing_options:
+            return ['fullscreen', 'controls', 'audio', 'back']
+        elif self.showing_controls:
+            return ['back']
+        elif self.showing_audio:
+            return ['back']
+        elif self.showing_artworks:
+            return ['back']
+        elif self.in_pause_menu:
+            return ['resume', 'restart', 'options', 'quit']
+        elif self.in_game_over or self.in_victory:
+            return ['restart', 'quit']
+        else:
+            # Default to main menu buttons
+            return ['start', 'options', 'artworks', 'quit']
 
     def _load_static_welcome_screen(self):
         """Helper method to load the static welcome screen image"""
@@ -920,56 +1008,68 @@ class Menu:
 
     # Add a new method to draw the controls menu
     def draw_controls_menu(self):
-        """Draw the controls menu with game controls"""
         # Update button positions first
         self._update_button_positions('controls_menu')
         
-        # Semi-transparent overlay
-        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
-        overlay.fill((0, 0, 0))
-        overlay.set_alpha(128)
-        self.screen.blit(overlay, (0, 0))
+        # Draw background
+        self.screen.blit(self.menu_bg, (0, 0))
         
-        # Draw title with pixelated font
+        # Draw title
         title = self.font.render("CONTROLS", True, WHITE)
-        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 80))
+        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 50))
         self.screen.blit(title, title_rect)
         
-        # Draw controls information
-        y_offset = 150
-        # Increase spacing between columns and move left column more to the left
-        left_column_x = WINDOW_WIDTH // 2 - 280  # Moved further left
-        right_column_x = WINDOW_WIDTH // 2 + 20  # Moved slightly left to create more space
+        # Draw keyboard controls
+        y_pos = 100
+        line_height = 30
         
-        # Calculate total height needed for controls list
-        total_height = len(self.controls_info) * 45 + 60  # 45px per line + 60px padding
+        controls_data = [
+            ("Movement", "W, A, S, D / Arrow Keys"),
+            ("Attack", "SPACE"),
+            ("Bow Attack", "LEFT MOUSE BUTTON"),
+            ("Dodge", "RIGHT MOUSE BUTTON"),
+            ("Special Attack", "E"),
+            ("Pause", "ESC"),
+            ("Restart Level", "R (only in pause menu)"),
+            ("Toggle Fullscreen", "F11"),
+            ("", ""),  # Empty line
+            ("CONTROLLER:", ""),
+            ("Movement", "Left Stick / D-Pad"),
+            ("Aim", "Right Stick"),
+            ("Attack", "Right Trigger (RT)"),
+            ("Bow Attack", "Left Trigger (LT)"),
+            ("Dodge", "X Button"),
+            ("Special Attack", "Y Button"),
+            ("Pause", "Start Button")
+        ]
         
-        # Calculate maximum width needed for each column
-        left_width = max(self.instruction_font.size(action + ":")[0] for action, _ in self.controls_info)
-        right_width = max(self.instruction_font.size(key)[0] for _, key in self.controls_info)
-        
-        # Create a wider background for controls list
-        bg_width = left_width + right_width + 200  # Added more padding
-        bg_height = total_height
-        controls_bg = pygame.Surface((bg_width, bg_height))
-        controls_bg.fill((50, 50, 50))
-        controls_bg.set_alpha(180)
-        
-        # Center the background
-        controls_bg_rect = controls_bg.get_rect(center=(WINDOW_WIDTH // 2, y_offset + (total_height // 2)))
-        self.screen.blit(controls_bg, controls_bg_rect)
-        
-        # Draw each control with its key
-        for i, (action, key) in enumerate(self.controls_info):
-            # Draw action (left column) with yellow color
-            action_text = self.instruction_font.render(action + ":", True, (255, 255, 100))
-            action_rect = action_text.get_rect(right=(right_column_x - 20), y=(y_offset + i * 45))
-            self.screen.blit(action_text, action_rect)
+        for label, value in controls_data:
+            if label == "CONTROLLER:":
+                # Draw controller header with different color
+                text = self.instruction_font.render(label, True, (255, 255, 0))
+                text_rect = text.get_rect(x=WINDOW_WIDTH // 4, y=y_pos)
+                self.screen.blit(text, text_rect)
+            elif label == "":
+                # Empty line, just increment y position
+                pass
+            else:
+                # Draw control label
+                text = self.instruction_font.render(label + ":", True, WHITE)
+                text_rect = text.get_rect(x=WINDOW_WIDTH // 4, y=y_pos)
+                self.screen.blit(text, text_rect)
+                
+                # Draw control value
+                text = self.instruction_font.render(value, True, (200, 200, 200))
+                text_rect = text.get_rect(x=WINDOW_WIDTH // 2, y=y_pos)
+                self.screen.blit(text, text_rect)
             
-            # Draw key (right column) with white color
-            key_text = self.instruction_font.render(key, True, WHITE)
-            key_rect = key_text.get_rect(left=right_column_x, y=(y_offset + i * 45))
-            self.screen.blit(key_text, key_rect)
+            y_pos += line_height
+        
+        # Ensure the current controller-selected button is highlighted
+        active_buttons = ['back']
+        if 0 <= self.selected_button_index < len(active_buttons):
+            button_name = active_buttons[self.selected_button_index]
+            self.buttons[button_name].is_hovered = True
         
         # Draw back button
         self.buttons['back'].draw(self.screen)
@@ -1221,52 +1321,90 @@ class Menu:
         return None
 
     def draw_audio_menu(self):
-        """Draw the audio settings menu with volume sliders"""
-        # Semi-transparent overlay
-        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
-        overlay.fill((0, 0, 0))
-        overlay.set_alpha(128)
-        self.screen.blit(overlay, (0, 0))
+        """Draw the audio settings menu"""
+        # Draw background
+        self.screen.blit(self.menu_bg, (0, 0))
         
         # Draw title
-        title = self.font.render("AUDIO", True, WHITE)
-        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3))
+        title = self.font.render("AUDIO SETTINGS", True, WHITE)
+        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 50))
         self.screen.blit(title, title_rect)
         
-        # Draw sliders
-        slider_width = 300
-        slider_height = 20
-        slider_x = WINDOW_WIDTH // 2 - slider_width // 2
-        
-        # Music volume slider
-        music_y = WINDOW_HEIGHT // 2
-        pygame.draw.rect(self.screen, (50, 50, 50), (slider_x, music_y, slider_width, slider_height))
-        pygame.draw.rect(self.screen, (200, 200, 200), 
-                        (slider_x, music_y, int(slider_width * self.music_volume), slider_height))
-        
-        # Music label
-        music_label = self.instruction_font.render(f"Music Volume: {int(self.music_volume * 100)}%", True, WHITE)
-        music_label_rect = music_label.get_rect(bottomleft=(slider_x, music_y - 10))
+        # Draw music volume label and slider
+        music_label = self.instruction_font.render("Music Volume:", True, WHITE)
+        music_label_rect = music_label.get_rect(x=WINDOW_WIDTH // 4, y=120)
         self.screen.blit(music_label, music_label_rect)
         
-        # SFX volume slider
-        sfx_y = music_y + 80
-        pygame.draw.rect(self.screen, (50, 50, 50), (slider_x, sfx_y, slider_width, slider_height))
-        pygame.draw.rect(self.screen, (200, 200, 200), 
-                        (slider_x, sfx_y, int(slider_width * self.sfx_volume), slider_height))
+        # Draw music volume slider
+        slider_width = 200
+        slider_height = 20
+        slider_x = WINDOW_WIDTH // 2
+        slider_y = 120
         
-        # SFX label
-        sfx_label = self.instruction_font.render(f"SFX Volume: {int(self.sfx_volume * 100)}%", True, WHITE)
-        sfx_label_rect = sfx_label.get_rect(bottomleft=(slider_x, sfx_y - 10))
+        # Draw slider background
+        slider_bg = pygame.Rect(slider_x, slider_y, slider_width, slider_height)
+        pygame.draw.rect(self.screen, (100, 100, 100), slider_bg)
+        pygame.draw.rect(self.screen, (150, 150, 150), slider_bg, 2)
+        
+        # Draw slider fill based on volume
+        fill_width = int(slider_width * self.music_volume)
+        slider_fill = pygame.Rect(slider_x, slider_y, fill_width, slider_height)
+        pygame.draw.rect(self.screen, (0, 200, 0), slider_fill)
+        
+        # Draw music volume percentage
+        volume_text = self.instruction_font.render(f"{int(self.music_volume * 100)}%", True, WHITE)
+        volume_rect = volume_text.get_rect(x=slider_x + slider_width + 10, y=slider_y)
+        self.screen.blit(volume_text, volume_rect)
+        
+        # Draw SFX volume label and slider
+        sfx_label = self.instruction_font.render("SFX Volume:", True, WHITE)
+        sfx_label_rect = sfx_label.get_rect(x=WINDOW_WIDTH // 4, y=170)
         self.screen.blit(sfx_label, sfx_label_rect)
         
-        # Store slider rects for interaction
-        self.music_slider_rect = pygame.Rect(slider_x, music_y, slider_width, slider_height)
-        self.sfx_slider_rect = pygame.Rect(slider_x, sfx_y, slider_width, slider_height)
+        # Draw SFX volume slider
+        slider_y = 170
+        
+        # Draw slider background
+        slider_bg = pygame.Rect(slider_x, slider_y, slider_width, slider_height)
+        pygame.draw.rect(self.screen, (100, 100, 100), slider_bg)
+        pygame.draw.rect(self.screen, (150, 150, 150), slider_bg, 2)
+        
+        # Draw slider fill based on volume
+        fill_width = int(slider_width * self.sfx_volume)
+        slider_fill = pygame.Rect(slider_x, slider_y, fill_width, slider_height)
+        pygame.draw.rect(self.screen, (0, 200, 0), slider_fill)
+        
+        # Draw SFX volume percentage
+        volume_text = self.instruction_font.render(f"{int(self.sfx_volume * 100)}%", True, WHITE)
+        volume_rect = volume_text.get_rect(x=slider_x + slider_width + 10, y=slider_y)
+        self.screen.blit(volume_text, volume_rect)
+        
+        # Draw instructions
+        instructions = [
+            "Click and drag sliders to adjust volume",
+            "Press M to toggle music on/off",
+            "Press S to toggle sound effects on/off"
+        ]
+        
+        y_pos = 230
+        for instruction in instructions:
+            text = self.instruction_font.render(instruction, True, (200, 200, 200))
+            text_rect = text.get_rect(center=(WINDOW_WIDTH // 2, y_pos))
+            self.screen.blit(text, text_rect)
+            y_pos += 30
+        
+        # Ensure the current controller-selected button is highlighted
+        active_buttons = ['back']
+        if 0 <= self.selected_button_index < len(active_buttons):
+            button_name = active_buttons[self.selected_button_index]
+            self.buttons[button_name].is_hovered = True
         
         # Draw back button
-        self.buttons['back'].rect.y = sfx_y + 80
         self.buttons['back'].draw(self.screen)
+        
+        # Store slider rects for interaction
+        self.music_slider_rect = pygame.Rect(slider_x, 120, slider_width, slider_height)
+        self.sfx_slider_rect = pygame.Rect(slider_x, 170, slider_width, slider_height)
 
     def handle_audio_menu_event(self, event):
         """Handle events specific to the audio menu"""

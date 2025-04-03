@@ -66,6 +66,10 @@ class ControllerHandler:
         # Store aim position for right stick
         self.aim_position = None
         
+        # Track whether we're in a menu
+        self.in_menu = False
+        self.menu_cursor_speed = 15  # Speed of cursor movement in menu
+        
         # Try to connect to a controller
         self.check_for_controller()
     
@@ -187,12 +191,54 @@ class ControllerHandler:
                     event = pygame.event.Event(event_type, {'button': button, 'pos': pos})
                     simulated_events.append(event)
             
+            # Process right stick for menu cursor if in menu state
+            if self.in_menu and self.controller.get_numaxes() > self.AXIS_RIGHT_Y:
+                self.update_menu_cursor()
+            
         except pygame.error:
             # Controller disconnected
             self.connected = False
             self.controller = None
             
         return simulated_events
+    
+    def update_menu_cursor(self):
+        """Move the mouse cursor based on right stick input for menu navigation"""
+        if not self.connected:
+            return
+        
+        try:
+            # Get right stick position
+            right_x = self.controller.get_axis(self.AXIS_RIGHT_X)
+            right_y = self.controller.get_axis(self.AXIS_RIGHT_Y)
+            
+            # Check if stick is moved beyond deadzone
+            if abs(right_x) > 0.1 or abs(right_y) > 0.1:  # Use a smaller deadzone for cursor movement
+                # Get current cursor position
+                current_x, current_y = pygame.mouse.get_pos()
+                
+                # Calculate new position
+                new_x = current_x + int(right_x * self.menu_cursor_speed)
+                new_y = current_y + int(right_y * self.menu_cursor_speed)
+                
+                # Get window dimensions
+                window_width, window_height = pygame.display.get_surface().get_size()
+                
+                # Constrain to window boundaries
+                new_x = max(0, min(new_x, window_width - 1))
+                new_y = max(0, min(new_y, window_height - 1))
+                
+                # Move cursor
+                pygame.mouse.set_pos((new_x, new_y))
+                
+                # Generate a mouse motion event
+                event = pygame.event.Event(pygame.MOUSEMOTION, {'pos': (new_x, new_y), 'rel': (right_x, right_y)})
+                pygame.event.post(event)
+                
+        except pygame.error:
+            # Controller disconnected
+            self.connected = False
+            self.controller = None
     
     def update_controller(self):
         """Updates controller connection status and returns any simulated events"""
@@ -280,4 +326,8 @@ class ControllerHandler:
     
     def get_controller_status(self):
         """Return if a controller is connected"""
-        return self.connected 
+        return self.connected
+    
+    def set_menu_state(self, in_menu):
+        """Set whether we're currently in a menu state or not"""
+        self.in_menu = in_menu 

@@ -711,6 +711,10 @@ class Game:
                 self.sound_manager.play_music('menu')
             return  # Skip other updates during splash screen
             
+        # Tell controller handler if we're in a menu or playing
+        self.controller_handler.set_menu_state(self.state != PLAYING)
+            
+        # Only update game objects in PLAYING state
         if self.state != PLAYING:
             return
             
@@ -718,60 +722,9 @@ class Game:
         if self.level is None:
             self.initialize_level()
             
-        # Get mouse position and update player's attack direction
-        screen_mouse_pos = pygame.mouse.get_pos()
-        
-        # Confine mouse to window to prevent it from disappearing
-        self.confine_mouse_to_window()
-        
-        world_mouse_pos = self.screen_to_world_coords(*screen_mouse_pos)
-        
-        # Handle controller input for aiming
-        is_aiming, aim_direction = self.controller_handler.update_aim_from_right_stick(self)
-        if is_aiming and self.player and not self.player.is_dead:
-            # Get player position in world coordinates
-            player_x, player_y = self.player.rect.centerx, self.player.rect.centery
-            
-            # Calculate new aim position based on stick direction
-            scale_factor = 100
-            aim_x = player_x + (aim_direction[0] * scale_factor)
-            aim_y = player_y + (aim_direction[1] * scale_factor)
-            
-            # Calculate angle for direction
-            angle = math.degrees(math.atan2(aim_direction[1], aim_direction[0]))
-            if angle < 0:
-                angle += 360
-                
-            # Determine cardinal direction
-            if (angle >= 315 or angle < 45):
-                attack_dir = 'right'
-            elif (angle >= 45 and angle < 135):
-                attack_dir = 'down'
-            elif (angle >= 135 and angle < 225):
-                attack_dir = 'left'
-            else:  # angle >= 225 and angle < 315
-                attack_dir = 'up'
-            
-            # Update player's facing if not in attack animation
-            if self.player.current_state != 'attack':
-                self.player.facing = attack_dir
-            
-            # Update player's aim direction with world coordinates
-            self.player.update_attack_direction_from_mouse((aim_x, aim_y))
-            
-        else:
-            # Use mouse for aiming if not using controller right stick
-            screen_mouse_pos = pygame.mouse.get_pos()
-            world_mouse_pos = self.screen_to_world_coords(*screen_mouse_pos)
-            if self.player and not self.player.is_dead:
-                self.player.update_attack_direction_from_mouse(world_mouse_pos)
-        
-        # Update screen shake effect
-        self.update_screen_shake()
-        
         # Update particle system
         self.particle_system.update()
-        
+            
         # Handle boss introduction sequence
         if self.boss_intro_active:
             # Ensure player walking sound is stopped during boss intro
@@ -836,7 +789,7 @@ class Game:
                     self.boss_intro_original_camera_pos = None
                     self.boss_intro_target_camera_pos = None
             return  # Skip normal updates during boss intro
-        
+            
         # Handle special attack if active
         if self.special_attack_active:
             # Update debug print to handle both boss and regular enemy special attacks
@@ -847,7 +800,7 @@ class Game:
             self._update_special_attack()
             # Skip normal updates when special attack is active
             return
-        
+            
         # Check if death sequence is active
         if self.death_sequence_active:
             # Update the player still to advance death animation
@@ -923,6 +876,69 @@ class Game:
             # Continue updating camera during death even after zoom is complete
             self.camera.center_on_point(self.player.rect.centerx, self.player.rect.centery)
             return
+        
+        # Update controller aim position when playing
+        if self.controller_handler.connected:
+            is_aiming, aim_direction = self.controller_handler.update_aim_from_right_stick(self)
+            if is_aiming and self.player:
+                # Update player's aim direction based on controller input
+                # Fix: use update_attack_direction_from_mouse instead of non-existent set_aim_direction
+                # Calculate aim position
+                player_x, player_y = self.player.rect.centerx, self.player.rect.centery
+                aim_x = player_x + (aim_direction[0] * 100)
+                aim_y = player_y + (aim_direction[1] * 100)
+                self.player.update_attack_direction_from_mouse((aim_x, aim_y))
+        
+        # Get mouse position and update player's attack direction
+        screen_mouse_pos = pygame.mouse.get_pos()
+        
+        # Confine mouse to window to prevent it from disappearing
+        self.confine_mouse_to_window()
+        
+        world_mouse_pos = self.screen_to_world_coords(*screen_mouse_pos)
+        
+        # Handle controller input for aiming
+        is_aiming, aim_direction = self.controller_handler.update_aim_from_right_stick(self)
+        if is_aiming and self.player and not self.player.is_dead:
+            # Get player position in world coordinates
+            player_x, player_y = self.player.rect.centerx, self.player.rect.centery
+            
+            # Calculate new aim position based on stick direction
+            scale_factor = 100
+            aim_x = player_x + (aim_direction[0] * scale_factor)
+            aim_y = player_y + (aim_direction[1] * scale_factor)
+            
+            # Calculate angle for direction
+            angle = math.degrees(math.atan2(aim_direction[1], aim_direction[0]))
+            if angle < 0:
+                angle += 360
+                
+            # Determine cardinal direction
+            if (angle >= 315 or angle < 45):
+                attack_dir = 'right'
+            elif (angle >= 45 and angle < 135):
+                attack_dir = 'down'
+            elif (angle >= 135 and angle < 225):
+                attack_dir = 'left'
+            else:  # angle >= 225 and angle < 315
+                attack_dir = 'up'
+            
+            # Update player's facing if not in attack animation
+            if self.player.current_state != 'attack':
+                self.player.facing = attack_dir
+            
+            # Update player's aim direction with world coordinates
+            self.player.update_attack_direction_from_mouse((aim_x, aim_y))
+            
+        else:
+            # Use mouse for aiming if not using controller right stick
+            screen_mouse_pos = pygame.mouse.get_pos()
+            world_mouse_pos = self.screen_to_world_coords(*screen_mouse_pos)
+            if self.player and not self.player.is_dead:
+                self.player.update_attack_direction_from_mouse(world_mouse_pos)
+        
+        # Update screen shake effect
+        self.update_screen_shake()
         
         # Update player movement
         keys = pygame.key.get_pressed()
