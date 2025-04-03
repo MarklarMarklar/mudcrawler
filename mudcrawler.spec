@@ -1,38 +1,38 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-import sys
-from os.path import abspath, join, dirname
-
-# Add the project root to the Python path
-project_root = dirname(abspath('__file__'))
-sys.path.insert(0, project_root)
-
 block_cipher = None
 
 a = Analysis(
-    ['./scripts/main.py'],  # Path to main script
-    pathex=[project_root],  # Include project root in the path
+    ['scripts/main.py'],
+    pathex=['.', './scripts'],
     binaries=[],
     datas=[
-        ('assets', 'assets'),  # Include all assets
-        ('config.py', '.'),    # Include config file
-        ('scripts', 'scripts'),  # Include scripts as a package
+        ('assets/', 'assets/'),
+        ('config.py', '.'),
+        ('README.md', '.'),
     ],
     hiddenimports=[
         'pygame',
         'numpy',
         'pytmx',
-        'cv2',  # For OpenCV functionality
-        'scripts.ui',
+        'cv2',
+        'pillow',
+        'pygame_menu',
+        'pathfinding',
+        'noise',
+        'scripts.asset_manager',
+        'scripts.boss_factory',
+        'scripts.camera',
+        'scripts.dark_lord',
         'scripts.enemy',
         'scripts.level',
+        'scripts.particle',
+        'scripts.pickups',
         'scripts.player',
         'scripts.sound_manager',
-        'scripts.particle',
-        'scripts.asset_manager',
-        'scripts.camera',
+        'scripts.ui',
+        'scripts.update_ui',
         'scripts.weapons',
-        'scripts.pickups',
     ],
     hookspath=[],
     hooksconfig={},
@@ -44,11 +44,12 @@ a = Analysis(
     noarchive=False,
 )
 
-pyz = PYZ(
-    a.pure, 
-    a.zipped_data,
-    cipher=block_cipher
-)
+for d in a.datas:
+    if 'pyconfig' in d[0]:
+        a.datas.remove(d)
+        break
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
     pyz,
@@ -64,24 +65,11 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,  # Set to True to see error messages during testing
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # Uncomment and update this line after creating an .ico file
-    # icon='assets/icons/game_icon.ico',
-)
-
-# For creating a single directory (optional)
-# coll = COLLECT(
-#     exe,
-#     a.binaries,
-#     a.zipfiles,
-#     a.datas,
-#     strip=False,
-#     upx=True,
-#     upx_exclude=[],
-#     name='MudCrawler',
-# ) 
+    icon='assets/icon.ico',
+) 
