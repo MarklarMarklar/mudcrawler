@@ -992,6 +992,29 @@ class Room:
                 
                 attempts += 1
         
+
+        # For levels 3-5, add some level 2 enemies (basic projectile shooters)
+        if self.level_number >= 3 and self.level_number <= 5 and self.room_type != 'boss':  # Don't add to boss rooms
+            # Calculate number of level 2 enemies to add (1-2 based on level)
+            extra_enemies = random.randint(1, 2)
+            
+            for _ in range(extra_enemies):
+                spawned = False
+                attempts = 0
+                
+                while not spawned and attempts < max_attempts:
+                    tile_x = random.randint(1, self.width - 2)
+                    tile_y = random.randint(1, self.height - 2)
+                    
+                    # Only spawn on floor tiles away from doors
+                    if self.tiles[tile_y][tile_x] == 0 and not self.near_door(tile_x, tile_y):
+                        # Create level 2 enemy specifically
+                        enemy = Enemy(tile_x * TILE_SIZE, tile_y * TILE_SIZE, 'level2', 2, level_instance)
+                        self.enemies.add(enemy)
+                        spawned = True
+                    
+                    attempts += 1
+
         # For levels 7-10, add some level 6 enemies (projectile shooters)
         if self.level_number >= 7 and self.level_number <= 10 and self.room_type != 'boss':  # Don't add to boss rooms
             # Calculate number of level 6 enemies to add (1-3 based on level)
