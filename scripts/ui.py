@@ -328,9 +328,18 @@ class Menu:
             
         # Try to load menu background textures if they exist
         try:
+            # First try to load from UI sprites path (backwards compatibility)
             bg_path = os.path.join(UI_SPRITES_PATH, "menu_background.png")
-            if os.path.exists(bg_path):
+            
+            # Then try to load from assets/images folder (prioritize this one)
+            new_bg_path = os.path.join(ASSET_PATH, "images", "menu_background.png")
+            
+            if os.path.exists(new_bg_path):
+                self.menu_bg = self.asset_manager.load_image(new_bg_path, scale=(WINDOW_WIDTH, WINDOW_HEIGHT))
+                print(f"Successfully loaded menu background from assets/images: {new_bg_path}")
+            elif os.path.exists(bg_path):
                 self.menu_bg = self.asset_manager.load_image(bg_path, scale=(WINDOW_WIDTH, WINDOW_HEIGHT))
+                print(f"Successfully loaded menu background from UI sprites: {bg_path}")
         except Exception as e:
             print(f"Failed to load menu background: {e}")
             
@@ -610,7 +619,7 @@ class Menu:
         self.in_game_over = False
         self.in_victory = False
         
-        # Draw welcome screen if available, otherwise fallback to default background
+        # Draw welcome screen if available, otherwise fallback to menu background
         if self.use_welcome_screen:
             if self.video_player and self.video_player.is_playing:
                 # Update and draw video
@@ -675,6 +684,9 @@ class Menu:
         self.in_game_over = False
         self.in_victory = False
         
+        # Draw background
+        self.screen.blit(self.menu_bg, (0, 0))
+        
         # Semi-transparent overlay
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
         overlay.fill((0, 0, 0))
@@ -711,7 +723,7 @@ class Menu:
         if self.use_gameover_custom_img and self.gameover_custom_img:
             self.screen.blit(self.gameover_custom_img, (0, 0))
         else:
-            self.screen.blit(self.gameover_bg, (0, 0))
+            self.screen.blit(self.menu_bg, (0, 0))
         
         # Draw title with pixelated font
         if not self.use_gameover_custom_img or self.gameover_custom_img is None:
@@ -746,7 +758,7 @@ class Menu:
         if self.use_victory_custom_img and self.victory_custom_img:
             self.screen.blit(self.victory_custom_img, (0, 0))
         else:
-            self.screen.blit(self.victory_bg, (0, 0))
+            self.screen.blit(self.menu_bg, (0, 0))
         
         # Start credits if not started yet
         if not self.show_credits:
@@ -864,6 +876,9 @@ class Menu:
             active_buttons = ['fullscreen', 'controls', 'audio', 'back']
         elif self.showing_controls:
             active_buttons = ['back']
+            # Handle controls menu tab navigation
+            if self.handle_controls_navigation(event):
+                return None
         elif self.showing_audio:
             active_buttons = ['back']
         elif self.showing_artworks:
@@ -958,6 +973,44 @@ class Menu:
                 
         return None
     
+    def handle_controls_navigation(self, event):
+        """Handle navigation between keyboard and controller tabs in controls menu"""
+        if not hasattr(self, 'controls_page'):
+            self.controls_page = 'keyboard'  # Default to keyboard page
+            
+        # Switch between keyboard and controller pages using left/right arrow keys
+        if event.type == pygame.KEYDOWN:
+            if event.key in [pygame.K_LEFT, pygame.K_a, pygame.K_q]:  # Q maps to LB on controller
+                self.controls_page = 'keyboard'
+                # Play sound if available
+                if hasattr(self, 'sound_manager') and self.sound_manager:
+                    self.sound_manager.play_sfx('menu_move')
+                return True
+            elif event.key in [pygame.K_RIGHT, pygame.K_d, pygame.K_e]:  # E maps to RB on controller
+                self.controls_page = 'controller'
+                # Play sound if available
+                if hasattr(self, 'sound_manager') and self.sound_manager:
+                    self.sound_manager.play_sfx('menu_move')
+                return True
+                
+        # Handle mouse clicks on tab headers
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mouse_pos = event.pos
+            if hasattr(self, 'keyboard_tab_rect') and self.keyboard_tab_rect.collidepoint(mouse_pos):
+                self.controls_page = 'keyboard'
+                # Play sound if available
+                if hasattr(self, 'sound_manager') and self.sound_manager:
+                    self.sound_manager.play_sfx('menu_select')
+                return True
+            elif hasattr(self, 'controller_tab_rect') and self.controller_tab_rect.collidepoint(mouse_pos):
+                self.controls_page = 'controller'
+                # Play sound if available
+                if hasattr(self, 'sound_manager') and self.sound_manager:
+                    self.sound_manager.play_sfx('menu_select')
+                return True
+                
+        return False
+    
     def navigate_menu(self, direction):
         """Navigate through menu buttons (direction: 1=down, -1=up)"""
         if not self.active_buttons:
@@ -1004,7 +1057,8 @@ class Menu:
             self.use_welcome_screen = True
             print(f"Successfully loaded welcome screen image: {welcome_path}")
         else:
-            print(f"Welcome screen image not found: {welcome_path}")
+            print(f"Welcome screen image not found: {welcome_path}, falling back to menu background")
+            # Just use the menu background instead of default background
 
     # Add a new method to draw the controls menu
     def draw_controls_menu(self):
@@ -1019,51 +1073,151 @@ class Menu:
         title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 50))
         self.screen.blit(title, title_rect)
         
-        # Draw keyboard controls
-        y_pos = 100
-        line_height = 30
+        # Get the current controls page (default to keyboard)
+        current_page = getattr(self, 'controls_page', 'keyboard')
         
-        controls_data = [
-            ("Movement", "W, A, S, D / Arrow Keys"),
-            ("Attack", "SPACE"),
-            ("Bow Attack", "LEFT MOUSE BUTTON"),
-            ("Dodge", "RIGHT MOUSE BUTTON"),
-            ("Special Attack", "E"),
-            ("Pause", "ESC"),
-            ("Restart Level", "R (only in pause menu)"),
-            ("Toggle Fullscreen", "F11"),
-            ("", ""),  # Empty line
-            ("CONTROLLER:", ""),
-            ("Movement", "Left Stick / D-Pad"),
-            ("Aim", "Right Stick"),
-            ("Attack", "Right Trigger (RT)"),
-            ("Bow Attack", "Left Trigger (LT)"),
-            ("Dodge", "X Button"),
-            ("Special Attack", "Y Button"),
-            ("Pause", "Start Button")
-        ]
+        # Draw tabs for navigation
+        self._draw_controls_tabs(current_page)
         
-        for label, value in controls_data:
-            if label == "CONTROLLER:":
-                # Draw controller header with different color
-                text = self.instruction_font.render(label, True, (255, 255, 0))
-                text_rect = text.get_rect(x=WINDOW_WIDTH // 4, y=y_pos)
-                self.screen.blit(text, text_rect)
-            elif label == "":
-                # Empty line, just increment y position
-                pass
-            else:
-                # Draw control label
+        if current_page == 'keyboard':
+            # Draw keyboard controls
+            y_pos = 140
+            line_height = 40
+            
+            # Define column positions
+            action_column_x = 30  # Move action column to the left edge
+            value_column_x = WINDOW_WIDTH // 2 - 50  # Shifted left to give more room for value column
+            
+            # Calculate column widths
+            action_width = value_column_x - action_column_x - 20
+            value_width = WINDOW_WIDTH - value_column_x - 20  # Increased width
+            
+            # Header row
+            header_font = pygame.font.Font(None, 36)
+            action_text = header_font.render("Action", True, (180, 180, 255))
+            key_text = header_font.render("Key / Button", True, (180, 180, 255))
+            
+            # Position headers
+            action_rect = action_text.get_rect(x=action_column_x, y=y_pos)
+            key_rect = key_text.get_rect(x=value_column_x, y=y_pos)
+            
+            # Draw header line
+            pygame.draw.line(self.screen, (100, 100, 180), 
+                             (action_column_x - 10, y_pos + action_text.get_height() + 5),
+                             (value_column_x + value_width, y_pos + action_text.get_height() + 5), 2)
+            
+            # Draw headers
+            self.screen.blit(action_text, action_rect)
+            self.screen.blit(key_text, key_rect)
+            
+            # Update y position after headers
+            y_pos += action_text.get_height() + 15
+            
+            controls_data = [
+                ("Movement", "W, A, S, D / Arrow Keys"),
+                ("Attack", "SPACE"),
+                ("Bow Attack", "LEFT MOUSE BUTTON"),
+                ("Dodge", "RIGHT MOUSE BUTTON"),
+                ("Special Attack", "E"),
+                ("Pause", "ESC"),
+                ("Restart Level", "R (only in pause menu)"),
+                ("Toggle Fullscreen", "F11")
+            ]
+            
+            for label, value in controls_data:
+                # Draw control label with a subtle background
+                label_bg = pygame.Rect(action_column_x - 10, y_pos - 2, action_width, 30)
+                pygame.draw.rect(self.screen, (60, 60, 80), label_bg, border_radius=3)
+                
                 text = self.instruction_font.render(label + ":", True, WHITE)
-                text_rect = text.get_rect(x=WINDOW_WIDTH // 4, y=y_pos)
+                text_rect = text.get_rect(x=action_column_x, y=y_pos)
                 self.screen.blit(text, text_rect)
                 
-                # Draw control value
-                text = self.instruction_font.render(value, True, (200, 200, 200))
-                text_rect = text.get_rect(x=WINDOW_WIDTH // 2, y=y_pos)
+                # Draw control value with a key-like appearance
+                value_bg = pygame.Rect(value_column_x - 10, y_pos - 2, value_width, 30)
+                pygame.draw.rect(self.screen, (50, 50, 60), value_bg, border_radius=3)
+                pygame.draw.rect(self.screen, (80, 80, 100), value_bg, 1, border_radius=3)
+                
+                text = self.instruction_font.render(value, True, (220, 220, 220))
+                text_rect = text.get_rect(x=value_column_x, y=y_pos)
                 self.screen.blit(text, text_rect)
+                
+                y_pos += line_height
+                
+        else:  # controller page
+            # Draw controller controls
+            y_pos = 140
+            line_height = 40
             
-            y_pos += line_height
+            # Define column positions
+            action_column_x = 30  # Move action column to the left edge
+            value_column_x = WINDOW_WIDTH // 2 - 50  # Shifted left to give more room for value column
+            
+            # Calculate column widths
+            action_width = value_column_x - action_column_x - 20
+            value_width = WINDOW_WIDTH - value_column_x - 20  # Increased width
+            
+            # Header row
+            header_font = pygame.font.Font(None, 36)
+            action_text = header_font.render("Action", True, (180, 180, 255))
+            key_text = header_font.render("Controller Input", True, (180, 180, 255))
+            
+            # Position headers
+            action_rect = action_text.get_rect(x=action_column_x, y=y_pos)
+            key_rect = key_text.get_rect(x=value_column_x, y=y_pos)
+            
+            # Draw header line
+            pygame.draw.line(self.screen, (100, 100, 180), 
+                             (action_column_x - 10, y_pos + action_text.get_height() + 5),
+                             (value_column_x + value_width, y_pos + action_text.get_height() + 5), 2)
+            
+            # Draw headers
+            self.screen.blit(action_text, action_rect)
+            self.screen.blit(key_text, key_rect)
+            
+            # Update y position after headers
+            y_pos += action_text.get_height() + 15
+            
+            controls_data = [
+                ("Movement", "Left Stick / D-Pad"),
+                ("Aim", "Right Stick"),
+                ("Attack", "Right Trigger (RT)"),
+                ("Bow Attack", "Left Trigger (LT)"),
+                ("Dodge", "X Button"),
+                ("Special Attack", "Y Button"),
+                ("Pause", "Start Button")
+            ]
+            
+            for label, value in controls_data:
+                # Draw control label with a subtle background
+                label_bg = pygame.Rect(action_column_x - 10, y_pos - 2, action_width, 30)
+                pygame.draw.rect(self.screen, (60, 60, 80), label_bg, border_radius=3)
+                
+                text = self.instruction_font.render(label + ":", True, WHITE)
+                text_rect = text.get_rect(x=action_column_x, y=y_pos)
+                self.screen.blit(text, text_rect)
+                
+                # Draw control value with a button-like appearance
+                value_bg = pygame.Rect(value_column_x - 10, y_pos - 2, value_width, 30)
+                pygame.draw.rect(self.screen, (50, 50, 60), value_bg, border_radius=3)
+                pygame.draw.rect(self.screen, (80, 80, 100), value_bg, 1, border_radius=3)
+                
+                text = self.instruction_font.render(value, True, (220, 220, 220))
+                text_rect = text.get_rect(x=value_column_x, y=y_pos)
+                self.screen.blit(text, text_rect)
+                
+                y_pos += line_height
+        
+        # Draw instructions for navigation between tabs
+        hint_y = WINDOW_HEIGHT - 30
+        
+        # Create a smaller font for the hint text
+        small_font = pygame.font.Font(None, 28)
+        
+        # Draw hint text directly without background
+        hint_text = small_font.render("Use LEFT/RIGHT arrows or LB/RB to switch pages", True, (255, 255, 0))
+        hint_rect = hint_text.get_rect(center=(WINDOW_WIDTH // 2, hint_y))
+        self.screen.blit(hint_text, hint_rect)
         
         # Ensure the current controller-selected button is highlighted
         active_buttons = ['back']
@@ -1073,6 +1227,37 @@ class Menu:
         
         # Draw back button
         self.buttons['back'].draw(self.screen)
+    
+    def _draw_controls_tabs(self, current_page):
+        """Draw tabs for keyboard and controller pages"""
+        # Tab dimensions
+        tab_width = 220  # Increased from 180
+        tab_height = 40
+        margin = 10
+        
+        # Tab positions
+        keyboard_tab_rect = pygame.Rect(WINDOW_WIDTH // 2 - tab_width - margin // 2, 80, tab_width, tab_height)
+        controller_tab_rect = pygame.Rect(WINDOW_WIDTH // 2 + margin // 2, 80, tab_width, tab_height)
+        
+        # Draw keyboard tab
+        keyboard_color = (255, 255, 255) if current_page == 'keyboard' else (100, 100, 100)
+        pygame.draw.rect(self.screen, (60, 60, 80), keyboard_tab_rect)
+        pygame.draw.rect(self.screen, keyboard_color, keyboard_tab_rect, 2)
+        keyboard_text = self.instruction_font.render("Key/Mouse", True, keyboard_color)
+        keyboard_text_rect = keyboard_text.get_rect(center=keyboard_tab_rect.center)
+        self.screen.blit(keyboard_text, keyboard_text_rect)
+        
+        # Draw controller tab
+        controller_color = (255, 255, 255) if current_page == 'controller' else (100, 100, 100)
+        pygame.draw.rect(self.screen, (60, 60, 80), controller_tab_rect)
+        pygame.draw.rect(self.screen, controller_color, controller_tab_rect, 2)
+        controller_text = self.instruction_font.render("Controller", True, controller_color)
+        controller_text_rect = controller_text.get_rect(center=controller_tab_rect.center)
+        self.screen.blit(controller_text, controller_text_rect)
+        
+        # Store tab rects for click handling
+        self.keyboard_tab_rect = keyboard_tab_rect
+        self.controller_tab_rect = controller_tab_rect
 
     def draw_artworks_menu(self):
         """Draw the artworks gallery menu"""
@@ -1331,7 +1516,7 @@ class Menu:
         self.screen.blit(title, title_rect)
         
         # Draw music volume label and slider
-        music_label = self.instruction_font.render("Music Volume:", True, WHITE)
+        music_label = self.instruction_font.render("Music", True, (255, 255, 0))
         music_label_rect = music_label.get_rect(x=WINDOW_WIDTH // 4, y=120)
         self.screen.blit(music_label, music_label_rect)
         
@@ -1357,7 +1542,7 @@ class Menu:
         self.screen.blit(volume_text, volume_rect)
         
         # Draw SFX volume label and slider
-        sfx_label = self.instruction_font.render("SFX Volume:", True, WHITE)
+        sfx_label = self.instruction_font.render("SFX", True, (255, 255, 0))
         sfx_label_rect = sfx_label.get_rect(x=WINDOW_WIDTH // 4, y=170)
         self.screen.blit(sfx_label, sfx_label_rect)
         
@@ -1378,20 +1563,6 @@ class Menu:
         volume_text = self.instruction_font.render(f"{int(self.sfx_volume * 100)}%", True, WHITE)
         volume_rect = volume_text.get_rect(x=slider_x + slider_width + 10, y=slider_y)
         self.screen.blit(volume_text, volume_rect)
-        
-        # Draw instructions
-        instructions = [
-            "Click and drag sliders to adjust volume",
-            "Press M to toggle music on/off",
-            "Press S to toggle sound effects on/off"
-        ]
-        
-        y_pos = 230
-        for instruction in instructions:
-            text = self.instruction_font.render(instruction, True, (200, 200, 200))
-            text_rect = text.get_rect(center=(WINDOW_WIDTH // 2, y_pos))
-            self.screen.blit(text, text_rect)
-            y_pos += 30
         
         # Ensure the current controller-selected button is highlighted
         active_buttons = ['back']
