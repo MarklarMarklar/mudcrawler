@@ -892,21 +892,16 @@ class Room:
         """Try to destroy a wall at the given tile position"""
         # Check if position is within bounds
         if not (0 <= y < self.height and 0 <= x < self.width):
-            print(f"Room: Wall position {x},{y} is out of bounds")
             return False
-        
-        # Add debug output
-        print(f"Room: Checking wall at {x},{y}: tile={self.tiles[y][x]}, destroyable={self.destroyable_walls[y][x] if self.tiles[y][x] == 1 else 'N/A'}")
         
         # Check if there's a destroyable wall at this position
         if self.tiles[y][x] == 1 and self.destroyable_walls[y][x]:
-            print(f"Room: Found destroyable wall at {x},{y}")
             # Destroy the wall
             self.tiles[y][x] = 0
             self.destroyable_walls[y][x] = False
             
-            # Check if this is the special fire sword chest in level 2
-            if self.has_fire_sword_chest and x == self.fire_sword_chest_x and y == self.fire_sword_chest_y and self.level_number == 2:
+            # Check if this is the special fire sword chest in level 3
+            if self.has_fire_sword_chest and x == self.fire_sword_chest_x and y == self.fire_sword_chest_y and self.level_number == 3:
                 # This is the fire sword chest - spawn the fire sword with a larger scale
                 center_x = x * TILE_SIZE + TILE_SIZE // 2
                 center_y = y * TILE_SIZE + TILE_SIZE // 2
@@ -918,11 +913,10 @@ class Room:
                 # Create a burst of particles for dramatic effect
                 self.create_chest_sparkle_burst(center_x, center_y)
                 
-                print("Fire sword chest opened!")
                 return True
                 
-            # Check if this is the special lightning sword chest in level 4
-            elif self.has_lightning_sword_chest and x == self.lightning_sword_chest_x and y == self.lightning_sword_chest_y and self.level_number == 4:
+            # Check if this is the special lightning sword chest in level 6
+            elif self.has_lightning_sword_chest and x == self.lightning_sword_chest_x and y == self.lightning_sword_chest_y and self.level_number == 6:
                 # This is the lightning sword chest - spawn the lightning sword with a larger scale
                 center_x = x * TILE_SIZE + TILE_SIZE // 2
                 center_y = y * TILE_SIZE + TILE_SIZE // 2
@@ -934,7 +928,6 @@ class Room:
                 # Create a burst of particles for dramatic effect
                 self.create_chest_sparkle_burst(center_x, center_y)
                 
-                print("Lightning sword chest opened!")
                 return True
             
             # Regular destroyable wall - normal loot drop logic
@@ -945,17 +938,13 @@ class Room:
             # 30% chance to spawn a health pickup
             if pickup_roll < 0.3:
                 self.health_pickups.append(HealthPickup(center_x, center_y))
-                print(f"Room: Health pickup spawned at {center_x}, {center_y} from destroyed wall")
             # 20% chance to spawn an arrow pickup
             elif pickup_roll < 0.5:
                 self.arrow_pickups.append(ArrowPickup(center_x, center_y))
-                print(f"Room: Arrow pickup spawned at {center_x}, {center_y} from destroyed wall")
             
-            print(f"Room: Successfully destroyed wall at {x},{y}")
+            # Only return true if we actually destroyed a wall
             return True
         else:
-            print(f"Room: No destroyable wall at {x},{y}")
-            # Only return true if we actually destroyed a wall
             return False
         
     def try_pickup_health(self, player_rect):
@@ -1155,12 +1144,12 @@ class Room:
             # Boss is defeated, drop the key
             self.drop_key()
             
-            # For level 2 boss, drop the fire sword
-            if self.level_number == 2:
+            # For level 3 boss, drop the fire sword
+            if self.level_number == 3:
                 self.drop_fire_sword(player)
             
-            # For level 4 boss, drop the lightning sword
-            if self.level_number == 4:
+            # For level 6 boss, drop the lightning sword
+            if self.level_number == 6:
                 self.drop_lightning_sword(player)
             
             # For level 3 boss - resurrection mechanic is now implemented in the Boss class
@@ -1745,13 +1734,13 @@ class Room:
             print(f"Boss defeated! A key has been dropped at {self.key_position}")
             
     def drop_fire_sword(self, player=None):
-        """Drop a fire sword when the level 2 boss is defeated
+        """Drop a fire sword when the level 3 boss is defeated
         
         Args:
             player: Optional Player object to check collision with the chest spawn location
         """
-        # Make sure this ONLY happens in level 2
-        if self.room_type == 'boss' and self.boss and self.boss.health <= 0 and self.level_number == 2 and not self.fire_sword_dropped:
+        # Make sure this ONLY happens in level 3
+        if self.room_type == 'boss' and self.boss and self.boss.health <= 0 and self.level_number == 3 and not self.fire_sword_dropped:
             # Calculate the center of the room in tile coordinates
             center_x = self.width // 2
             center_y = self.height // 2
@@ -1812,13 +1801,13 @@ class Room:
             self.sparkle_timer = 0
             
     def drop_lightning_sword(self, player=None):
-        """Drop a lightning sword when the level 4 boss is defeated
+        """Drop a lightning sword when the level 6 boss is defeated
         
         Args:
             player: Optional Player object to check collision with the chest spawn location
         """
-        # Make sure this ONLY happens in level 4
-        if self.room_type == 'boss' and self.boss and self.boss.health <= 0 and self.level_number == 4 and not self.lightning_sword_dropped:
+        # Make sure this ONLY happens in level 6
+        if self.room_type == 'boss' and self.boss and self.boss.health <= 0 and self.level_number == 6 and not self.lightning_sword_dropped:
             # Calculate the center of the room in tile coordinates
             center_x = self.width // 2
             center_y = self.height // 2
@@ -2688,10 +2677,8 @@ class Level:
         
     def try_destroy_wall(self, x, y):
         """Try to destroy a wall at the given tile coordinates"""
-        print(f"Level: Trying to destroy wall at {x},{y} in room {self.current_room_coords}")
         current_room = self.rooms[self.current_room_coords]
         result = current_room.try_destroy_wall(x, y)
-        print(f"Result of wall destruction: {result}")
         return result
         
     def check_health_pickup(self, player_rect):

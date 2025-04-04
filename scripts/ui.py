@@ -26,7 +26,6 @@ class Button:
         font_path = os.path.join(ASSET_PATH, "fonts/PixelatedEleganceRegular-ovyAA.ttf")
         if os.path.exists(font_path):
             self.font = pygame.font.Font(font_path, font_size)
-            print(f"Successfully loaded pixelated font for buttons")
         else:
             # Fallback to default font if the pixelated font is not available
             self.font = pygame.font.Font(None, font_size)
@@ -130,22 +129,13 @@ class Button:
             mouse_pos = pygame.mouse.get_pos()
             previous_hover = self.is_hovered
             self.is_hovered = self.rect.collidepoint(mouse_pos)
-            
-            # Debug print when hover state changes
-            if previous_hover != self.is_hovered:
-                if self.is_hovered:
-                    print(f"Mouse hovering over {self.text} button")
-                else:
-                    print(f"Mouse left {self.text} button")
                     
         # Handle mouse button clicks
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:  # Left click
                 mouse_pos = event.pos
                 is_clicked = self.rect.collidepoint(mouse_pos)
-                print(f"Click at {mouse_pos}. Button {self.text} rect: {self.rect}. Click hit: {is_clicked}")
                 if is_clicked:
-                    print(f"Button clicked: {self.text}")
                     return True
         return False
 
@@ -646,6 +636,11 @@ class Menu:
             subtitle_rect = subtitle.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 3 + 50))
             self.screen.blit(subtitle, subtitle_rect)
         
+        # Draw version number in top right corner
+        version_text = self.instruction_font.render("1.0 Alpha", True, (255, 255, 0))
+        version_rect = version_text.get_rect(topright=(WINDOW_WIDTH - 10, 10))
+        self.screen.blit(version_text, version_rect)
+        
         # Draw the custom title image if available
         if self.use_custom_title and self.custom_title:
             # Position the title above the start button
@@ -911,7 +906,6 @@ class Menu:
             elif event.key == pygame.K_SPACE:
                 if self.active_buttons and 0 <= self.selected_button_index < len(self.active_buttons):
                     button_name = self.active_buttons[self.selected_button_index]
-                    print(f"Menu controller select button: {button_name}")
                     return button_name
         
         # Get current mouse position for hover check
@@ -920,13 +914,6 @@ class Menu:
             for button_name, button in self.buttons.items():
                 previous_hover = button.is_hovered
                 button.is_hovered = button.rect.collidepoint(mouse_pos)
-                
-                # Debug logging when hover state changes
-                if DEBUG_MODE and previous_hover != button.is_hovered:
-                    if button.is_hovered:
-                        print(f"Mouse hovering over button: {button_name}")
-                    else:
-                        print(f"Mouse left button: {button_name}")
                         
                 # Update selected button index when hovering with mouse
                 if button.is_hovered and button_name in self.active_buttons:
@@ -946,14 +933,11 @@ class Menu:
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:  # Left mouse button
                 mouse_pos = event.pos
-                print(f"Menu mouse click at {mouse_pos}")
                 # Check all active buttons for click collision
                 for button_name in active_buttons:
                     if button_name in self.buttons:
                         button = self.buttons[button_name]
                         if button.rect.collidepoint(mouse_pos):
-                            print(f"Menu detected click on button: {button_name}")
-                            
                             # Handle video player cleanup for specific buttons
                             if button_name in ['start', 'restart', 'quit']:
                                 if self.video_player:

@@ -1181,7 +1181,7 @@ class Game:
                 # Try to destroy the wall
                 if wall_tile_x is not None and wall_tile_y is not None:
                     if self.level.try_destroy_wall(wall_tile_x, wall_tile_y):
-                        print(f"Destroyed wall at {wall_tile_x}, {wall_tile_y}")
+                        pass # Wall was destroyed
             except Exception as e:
                 print(f"Error checking sword-wall collisions: {e}")
         
@@ -1205,21 +1205,17 @@ class Game:
                     arrow_tile_x = arrow.rect.centerx // TILE_SIZE
                     arrow_tile_y = arrow.rect.centery // TILE_SIZE
                     
-                    # Debug the exact position
-                    print(f"Arrow check at: screen ({arrow.x}, {arrow.y}), tile ({arrow_tile_x}, {arrow_tile_y})")
-                    
                     # Check if the arrow hit ANY wall, not just destroyable walls
                     if (0 <= arrow_tile_y < current_room.height and 
                         0 <= arrow_tile_x < current_room.width and 
                         current_room.tiles[arrow_tile_y][arrow_tile_x] == 1):  # Any wall tile
                         
-                        print(f"Arrow hit wall at {arrow_tile_x}, {arrow_tile_y}")
                         # Mark the arrow for removal
                         arrows_to_remove.append(arrow)
                         
                         # Try to destroy the wall (if it's destroyable)
                         if self.level.try_destroy_wall(arrow_tile_x, arrow_tile_y):
-                            print(f"Destroyed wall at {arrow_tile_x}, {arrow_tile_y} with arrow")
+                            pass # Wall was destroyed
                 except Exception as e:
                     print(f"Error processing arrow-wall collision: {e}")
                     arrows_to_remove.append(arrow)
