@@ -2459,6 +2459,17 @@ class Game:
         boss = None
         if hasattr(current_room, 'boss') and current_room.boss and current_room.boss.health > 0:
             boss = current_room.boss
+            
+            # Special case for Dark Lord boss - Don't allow special attack on him during phases 1-4
+            if hasattr(boss, 'name') and boss.name == "Dark Lord" and hasattr(boss, 'phase'):
+                if boss.phase < 5:
+                    # Instead, target any summoned bosses if available
+                    if hasattr(boss, 'summoned_bosses') and boss.summoned_bosses:
+                        # Replace the boss with one of the summoned bosses
+                        boss = boss.summoned_bosses.sprites()[0]  # Target the first summoned boss
+                    else:
+                        print("Cannot use special attack on the Dark Lord during summoning phases")
+                        return
         
         if not visible_enemies and not boss:
             print("No enemies or boss in range for special attack")

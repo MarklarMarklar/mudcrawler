@@ -1672,7 +1672,7 @@ class DarkLord(Boss):
         sequence = [0, 2, 4, 1, 3, 0]  # Repeat 0 at the end to close the shape
         
         # Use the pulsing color with alpha
-        alpha_value = int(150 + 100 * self.pentagram_pulse)
+        alpha_value = int(min(255, 150 + 100 * self.pentagram_pulse))
         line_color = (*self.current_color, alpha_value)
         
         for i in range(len(sequence) - 1):
@@ -2287,7 +2287,7 @@ class DarkLord(Boss):
             if grace_period_active:
                 # Calculate pulse effect (subtle pulsing outline)
                 pulse = (math.sin(current_time / 100) + 1) / 2  # Value between 0 and 1
-                pulse_width = int(2 + pulse * 2)  # Width between 2-4 pixels
+                pulse_width = int(min(255, 2 + pulse * 2))  # Width between 2-4 pixels
                 
                 # Draw pulsing outline to indicate grace period
                 pygame.draw.circle(
@@ -2791,7 +2791,7 @@ class DarkLord(Boss):
         
         # Pulse the color intensity with time
         pulse_factor = (math.sin(pygame.time.get_ticks() / 150) + 1) / 2
-        alpha = int(100 + 50 * pulse_factor)  # Pulse between 100-150 alpha
+        alpha = int(min(255, 100 + 50 * pulse_factor))  # Pulse between 100-150 alpha
         
         # Fill color that pulses with the cast progress
         progress_color = (
@@ -3114,12 +3114,12 @@ class DarkLord(Boss):
         
         # Pulse the color intensity with time
         pulse_factor = (math.sin(pygame.time.get_ticks() / 150) + 1) / 2
-        alpha = int(100 + 50 * pulse_factor)  # Pulse between 100-150 alpha
+        alpha = int(min(255, 100 + 50 * pulse_factor))  # Pulse between 100-150 alpha
         
         # Fill color that pulses
         progress_color = (
             int(255),  # Red
-            int(120 + 100 * pulse_factor),  # Yellow-orange pulsing
+            int(min(255, 120 + 100 * pulse_factor)),  # Yellow-orange pulsing
             int(0),
             alpha
         )

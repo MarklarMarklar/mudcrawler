@@ -1950,8 +1950,8 @@ class Enemy(pygame.sprite.Sprite):
                 glow_surface = pygame.Surface((pulse_size * 2, pulse_size * 2), pygame.SRCALPHA)
                 
                 # Color transitions from dark purple to bright purple based on progress
-                alpha = int(40 + 100 * progress)
-                glow_color = (100 + int(50 * progress), 0, 180 + int(75 * progress), alpha)
+                alpha = int(min(255, 40 + 100 * progress))
+                glow_color = (min(255, 100 + int(50 * progress)), 0, min(255, 180 + int(75 * progress)), min(255, alpha))
                 pygame.draw.circle(glow_surface, glow_color, (pulse_size, pulse_size), pulse_size)
                 
                 # Blit the glow at the enemy position
@@ -1968,7 +1968,7 @@ class Enemy(pygame.sprite.Sprite):
                         spark_size = random.randint(2, 4)
                         
                         # Draw the spark with a purple color
-                        spark_color = (180 + int(75 * progress), 50, 255)
+                        spark_color = (min(255, 180 + int(75 * progress)), 50, 255)
                         pygame.draw.circle(surface, spark_color, (int(spark_x), int(spark_y)), spark_size)
             
             # If just resurrected
@@ -4135,8 +4135,8 @@ class Boss(Enemy):
                 glow_surface = pygame.Surface((pulse_size * 2, pulse_size * 2), pygame.SRCALPHA)
                 
                 # Color transitions from dark purple to bright purple based on progress
-                alpha = int(40 + 100 * progress)
-                glow_color = (100 + int(50 * progress), 0, 180 + int(75 * progress), alpha)
+                alpha = int(min(255, 40 + 100 * progress))
+                glow_color = (min(255, 100 + int(50 * progress)), 0, min(255, 180 + int(75 * progress)), min(255, alpha))
                 pygame.draw.circle(glow_surface, glow_color, (pulse_size, pulse_size), pulse_size)
                 
                 # Blit the glow at the enemy position
@@ -4153,7 +4153,7 @@ class Boss(Enemy):
                         spark_size = random.randint(2, 4)
                         
                         # Draw the spark with a purple color
-                        spark_color = (180 + int(75 * progress), 50, 255)
+                        spark_color = (min(255, 180 + int(75 * progress)), 50, 255)
                         pygame.draw.circle(surface, spark_color, (int(spark_x), int(spark_y)), spark_size)
             
             # If just resurrected
@@ -4221,7 +4221,7 @@ class Boss(Enemy):
                 shield_surface = pygame.Surface((shield_radius * 2, shield_radius * 2), pygame.SRCALPHA)
                 
                 # Blue shield color with pulsing opacity
-                shield_alpha = int(100 + 50 * math.sin(current_time / 150))
+                shield_alpha = min(255, int(min(255, 100 + 50 * math.sin(current_time / 150))))
                 
                 # Change shield color if damage was just reflected - make it brighter
                 if hasattr(self, 'reflected_damage') and self.reflected_damage > 0:
@@ -4282,7 +4282,7 @@ class Boss(Enemy):
                 shield_surface = pygame.Surface((shield_radius * 2, shield_radius * 2), pygame.SRCALPHA)
                 
                 # Purple shield color with pulsing opacity (different from level 4's blue)
-                shield_alpha = int(100 + 50 * math.sin(current_time / 150))
+                shield_alpha = min(255, int(min(255, 100 + 50 * math.sin(current_time / 150))))
                 
                 # Change shield color if damage was just reflected - make it brighter
                 if hasattr(self, 'reflected_damage') and self.reflected_damage > 0:
@@ -4460,7 +4460,7 @@ class Boss(Enemy):
             shield_surface = pygame.Surface((shield_radius * 2, shield_radius * 2), pygame.SRCALPHA)
             
             # Purple shield color with pulsing opacity (different from level 4's blue)
-            shield_alpha = int(100 + 50 * math.sin(current_time / 150))
+            shield_alpha = min(255, int(min(255, 100 + 50 * math.sin(current_time / 150))))
             
             # Change shield color if damage was just reflected - make it brighter
             if hasattr(self, 'reflected_damage') and self.reflected_damage > 0:
