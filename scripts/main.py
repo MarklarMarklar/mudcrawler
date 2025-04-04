@@ -2496,7 +2496,7 @@ class Game:
                 'original_camera_zoom': original_zoom,
                 'start_time': pygame.time.get_ticks(),
                 'transition_time': 500,  # 500ms for each transition
-                'damage': 50,  # Damage per boss hit (reduced from 100)
+                'damage': 100,  # Damage per boss hit (reduced from 100)
                 'is_boss_attack': True
             }
             print(f"Special attack activated targeting boss")
@@ -2510,7 +2510,7 @@ class Game:
                 'original_camera_zoom': original_zoom,
                 'start_time': pygame.time.get_ticks(),
                 'transition_time': 500,  # 500ms for each enemy transition
-                'damage': 50,  # Damage per enemy hit (reduced from 100)
+                'damage': 100,  # Damage per enemy hit (reduced from 100)
                 'is_boss_attack': False
             }
             print(f"Special attack activated targeting {len(visible_enemies)} enemies")

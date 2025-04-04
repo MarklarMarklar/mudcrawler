@@ -781,7 +781,7 @@ class Enemy(pygame.sprite.Sprite):
         
         # Initialize projectile capabilities
         self.projectiles = pygame.sprite.Group()
-        self.can_shoot = level == 6  # Only level 6 enemies can shoot
+        self.can_shoot = level == 6 or level == 2  # Enable shooting for level 2 and 6 enemies
         
         if self.can_shoot:
             self.projectile_cooldown = 6000  # 6 seconds between shots
@@ -2098,7 +2098,7 @@ class Enemy(pygame.sprite.Sprite):
             self.projectile_speed, 
             self.projectile_damage, 
             self.projectile_color,
-            is_homing=True,  # Make the projectile homing
+            is_homing=(self.level == 6),  # Only level 6 enemies have homing projectiles
             boss_level=self.level if hasattr(self, 'level') else None  # Pass the boss level if available
         )
         
