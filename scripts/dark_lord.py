@@ -487,7 +487,7 @@ class DarkLord(Boss):
                 self.summoned_boss.rect.centerx, 
                 self.summoned_boss.rect.centery, 
                 (dx, dy), 
-                speed=3.0,  # Increased from default 1.4 to 3.0
+                speed=2.5,  # Increased from default 1.4 to 3.0
                 damage=self.summoned_boss.projectile_damage, 
                 color=self.summoned_boss.projectile_color,
                 is_homing=True,  # Make the projectile homing
@@ -569,7 +569,7 @@ class DarkLord(Boss):
                         self.summoned_boss.rect.centerx + center_dx * 10,
                         self.summoned_boss.rect.centery + center_dy * 10,
                         (center_dx, center_dy),
-                        speed=3.0,  # Increased from default 1.4 to 3.0
+                        speed=2.5,  # Increased from default 1.4 to 3.0
                         damage=self.summoned_boss.damage * 1.0,
                         color=(20, 150, 255),  # Brighter blue
                         boss_level=self.summoned_boss.level,
@@ -583,7 +583,7 @@ class DarkLord(Boss):
                         self.summoned_boss.rect.centerx,
                         self.summoned_boss.rect.centery,
                         (left_dx, left_dy),
-                        speed=3.0,  # Increased from default 1.4 to 3.0
+                        speed=2.5,  # Increased from default 1.4 to 3.0
                         damage=self.summoned_boss.damage * 1.0,
                         color=(255, 0, 255),  # Magenta
                         boss_level=self.summoned_boss.level,
@@ -597,7 +597,7 @@ class DarkLord(Boss):
                         self.summoned_boss.rect.centerx,
                         self.summoned_boss.rect.centery,
                         (right_dx, right_dy),
-                        speed=3.0,  # Increased from default 1.4 to 3.0
+                        speed=2.5,  # Increased from default 1.4 to 3.0
                         damage=self.summoned_boss.damage * 1.0,
                         color=(255, 165, 0),  # Orange
                         boss_level=self.summoned_boss.level,

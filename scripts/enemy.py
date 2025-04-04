@@ -130,7 +130,7 @@ class BossProjectile(pygame.sprite.Sprite):
         self.warning_pulse_rate = 0.1
         
         # Trail effect properties
-        self.trail_enabled = True
+        self.trail_enabled = False if hasattr(self, 'boss_level') and self.boss_level == 10 else True
         self.position_history = []
         self.max_trail_length = 8  # Number of previous positions to remember
         self.trail_update_rate = 2  # Update trail every N frames
@@ -173,17 +173,49 @@ class BossProjectile(pygame.sprite.Sprite):
                     print(f"Fallback ghost image not found, creating a basic projectile")
                     self.create_projectile_image(color)
         else:
-            # For non-orbiting projectiles, use the energy ball texture
-            energy_ball_path = os.path.join(BOSS_SPRITES_PATH, "energy_ball.png")
-            print(f"Looking for energy ball at: {energy_ball_path}")
-            if os.path.exists(energy_ball_path):
-                print(f"Energy ball texture found!")
-                # Load and scale the energy ball image
-                self.image = self.asset_manager.load_image(energy_ball_path, scale=(TILE_SIZE//1.5, TILE_SIZE//1.5))
-                self.original_image = self.image.copy()
+            # For level 2 boss and normal enemy projectiles, use the level_2_projectile.png texture
+                        # For level 10 boss projectiles, use the level_10_boss_projectile.png texture
+            if hasattr(self, 'boss_level') and self.boss_level == 10:
+                level_10_projectile_path = os.path.join(BOSS_SPRITES_PATH, "level_10_boss_projectile.png")
+                print(f"Looking for level 10 projectile at: {level_10_projectile_path}")
+                
+                if os.path.exists(level_10_projectile_path):
+                    print(f"Level 10 projectile texture found!")
+                    # Load and scale the level 10 projectile image
+                    self.image = self.asset_manager.load_image(level_10_projectile_path, scale=(TILE_SIZE//1.5, TILE_SIZE//1.5))
+                    self.original_image = self.image.copy()
+                else:
+                    print(f"Level 10 projectile image not found at {level_10_projectile_path}, using fallback")
+                    self.use_default_projectile_texture(color)
+            # For level 2 boss and normal enemy projectiles, use the level_2_projectile.png texture
+            elif hasattr(self, 'boss_level') and self.boss_level == 2:
+                level_2_projectile_path = os.path.join(BOSS_SPRITES_PATH, "level_2_projectile.png")
+                print(f"Looking for level 2 projectile at: {level_2_projectile_path}")
+                
+                if os.path.exists(level_2_projectile_path):
+                    print(f"Level 2 projectile texture found!")
+                    # Load and scale the level 2 projectile image
+                    self.image = self.asset_manager.load_image(level_2_projectile_path, scale=(TILE_SIZE//1.5, TILE_SIZE//1.5))
+                    self.original_image = self.image.copy()
+                else:
+                    print(f"Level 2 projectile image not found at {level_2_projectile_path}, using fallback")
+                    self.use_default_projectile_texture(color)
             else:
-                print(f"Energy ball image not found at {energy_ball_path}, using fallback")
-                self.create_projectile_image(color)
+                self.use_default_projectile_texture(color)
+    
+    def use_default_projectile_texture(self, color):
+        """Use the default energy ball texture for non-level 2 projectiles"""
+        # For non-orbiting projectiles, use the energy ball texture
+        energy_ball_path = os.path.join(BOSS_SPRITES_PATH, "energy_ball.png")
+        print(f"Looking for energy ball at: {energy_ball_path}")
+        if os.path.exists(energy_ball_path):
+            print(f"Energy ball texture found!")
+            # Load and scale the energy ball image
+            self.image = self.asset_manager.load_image(energy_ball_path, scale=(TILE_SIZE//1.5, TILE_SIZE//1.5))
+            self.original_image = self.image.copy()
+        else:
+            print(f"Energy ball image not found at {energy_ball_path}, using fallback")
+            self.create_projectile_image(color)
     
     def create_projectile_image(self, color):
         """Create a colored ball projectile image"""
@@ -360,15 +392,17 @@ class BossProjectile(pygame.sprite.Sprite):
             # Projectile is stationary - check if it should expire
             if self.stationary_duration > 0 and self.creation_time > 0:
                 time_as_stationary = current_time - self.creation_time
-                if time_as_stationary >= self.stationary_duration:
+                if time_as_stationary >= self.stationary_duration and (not hasattr(self, 'boss_level') or self.boss_level != 10):
                     self.kill()
                     return
             
         # Update pulsing effect
-        self.pulse_counter += self.pulse_rate
+        # Skip pulsing for level 10 boss projectiles
+        if not hasattr(self, 'boss_level') or self.boss_level != 10:
+            self.pulse_counter += self.pulse_rate
         scale_factor = 0.9 + 0.2 * abs(math.sin(self.pulse_counter))  # Oscillate between 0.9 and 1.1 size
         
-        if not self.is_orbiting:
+        if not self.is_orbiting and (not hasattr(self, 'boss_level') or self.boss_level != 10):
             # Only apply scale pulsing to non-ghost projectiles
             new_width = int(self.original_image.get_width() * scale_factor)
             new_height = int(self.original_image.get_height() * scale_factor)
@@ -477,9 +511,9 @@ class BossProjectile(pygame.sprite.Sprite):
                     surface.blit(self.image, self.rect.topleft)
         
         # Add a glowing core to all projectiles
-        if not self.is_orbiting:
-            # For Boss 8 projectiles, use a smaller core to not obscure the fire animation
-            if hasattr(self, 'boss_level') and self.boss_level == 8:
+        if not self.is_orbiting and (not hasattr(self, 'boss_level') or self.boss_level != 10):
+            # For Boss 8 and 10 projectiles, don't use a core
+            if hasattr(self, 'boss_level') and (self.boss_level == 8 or self.boss_level == 10):
                 # No core for boss 8 projectiles
                 pass
             else:
@@ -786,7 +820,10 @@ class Enemy(pygame.sprite.Sprite):
         if self.can_shoot:
             self.projectile_cooldown = 6000  # 6 seconds between shots
             self.last_shot_time = random.randint(0, 3000)  # Randomize initial cooldown
-            self.projectile_speed = 2.5  # Increased from 1.2 to make projectiles faster
+            if self.level == 2:
+                self.projectile_speed = 3.0  # Example: faster speed for level 2 enemies
+            else:
+                self.projectile_speed = 2.5
             self.projectile_damage = self.damage * 0.8  # 80% of normal damage
             self.projectile_color = (200, 50, 50)  # Red projectiles
         
@@ -2099,7 +2136,7 @@ class Enemy(pygame.sprite.Sprite):
             self.projectile_damage, 
             self.projectile_color,
             is_homing=(self.level == 6),  # Only level 6 enemies have homing projectiles
-            boss_level=self.level if hasattr(self, 'level') else None  # Pass the boss level if available
+            boss_level=self.level  # Pass the boss level for all enemies
         )
         
         # Set the player as the target for homing
