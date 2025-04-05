@@ -1676,10 +1676,19 @@ class Game:
                 self.play_level_appropriate_music()
                 
                 self.level = Level(self.current_level)
+                # Give the level access to the particle system and game instance
+                self.level.particle_system = self.particle_system
+                self.level.game = self
+                
                 # Place player on a valid floor tile in the new level
                 player_x, player_y = self.level.get_valid_player_start_position()
                 self.player.rect.centerx = player_x
                 self.player.rect.centery = player_y
+                # Set player's level reference
+                self.player.level = self.level
+                
+                # Show level notification
+                self.level.show_notification(f"Level {self.current_level}", (255, 255, 0), 3000)
         
         # Check if player died
         if self.player.is_dead and not self.death_sequence_active:

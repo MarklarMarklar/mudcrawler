@@ -37,7 +37,7 @@ SOUNDS_PATH = os.path.join(ASSET_PATH, "sounds")
 # Player Settings
 PLAYER_START_HEALTH = 100
 PLAYER_SPEED = 3.5  # Reduced from 5 to make player movement slower
-SWORD_DAMAGE = 500
+SWORD_DAMAGE = 25
 BOW_DAMAGE = 15
 BOW_COOLDOWN = 1000  # milliseconds
 SWORD_COOLDOWN = 500  # milliseconds
@@ -93,4 +93,4 @@ CONTROLS = {
 
 # Debug Settings
 DEBUG_MODE = False  # Set to False for production
-DEBUG_HITBOXES = False  # Set to True to show hitboxes 
+DEBUG_HITBOXES = False # Set to True to show hitboxes 
