@@ -507,6 +507,7 @@ class Menu:
         self.credits_line_height = 40
         self.show_credits = False
         self.credits_started_time = 0
+        self.credits_completed = False  # Track if credits have scrolled through at least once
         
         # Artworks menu variables
         self.selected_level = 1
@@ -794,6 +795,8 @@ class Menu:
         # Reset credits position if all credits have passed
         if all_credits_passed:
             self.credits_y = WINDOW_HEIGHT
+            # Mark credits as completed (scrolled through at least once)
+            self.credits_completed = True
         
         # Draw each line with semi-transparent background for better readability
         credits_width = 0
@@ -822,7 +825,22 @@ class Menu:
                 # Draw line with golden color
                 heading_surface = self.credits_font.render(line, True, (255, 215, 0))  # Gold color
                 self.screen.blit(heading_surface, text_rect)
-
+        
+        # Show "Press any key to continue" message when credits have completed one cycle
+        if self.credits_completed:
+            # Create a pulsing effect for the text
+            alpha = int(127 + 127 * math.sin(pygame.time.get_ticks() / 500))  # Pulse between 127-255 alpha
+            continue_text = self.subtitle_font.render("Press any key to continue", True, (255, 255, 100, alpha))
+            continue_rect = continue_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 50))
+            
+            # Semi-transparent background for better readability
+            text_bg = pygame.Surface((continue_rect.width + 20, continue_rect.height + 10), pygame.SRCALPHA)
+            text_bg.fill((0, 0, 0, 150))
+            self.screen.blit(text_bg, (continue_rect.x - 10, continue_rect.y - 5))
+            
+            # Draw the text
+            self.screen.blit(continue_text, continue_rect)
+    
     def draw_options_menu(self):
         # Update button positions first
         self._update_button_positions('options_menu')
@@ -1043,6 +1061,33 @@ class Menu:
         else:
             print(f"Welcome screen image not found: {welcome_path}, falling back to menu background")
             # Just use the menu background instead of default background
+            
+    def initialize_welcome_screen_video(self):
+        """Initialize or reinitialize the welcome screen video player"""
+        # Stop any existing video player
+        if self.video_player:
+            self.video_player.stop()
+            self.video_player = None
+            
+        # Try to load video if it exists and OpenCV is available
+        try:
+            video_path = os.path.join(ASSET_PATH, "images/menu.mp4")
+            if OPENCV_AVAILABLE and os.path.exists(video_path):
+                self.video_player = VideoPlayer(video_path, self.screen, loop=True)
+                if self.video_player.is_playing:
+                    self.use_welcome_screen = True
+                    print(f"Successfully initialized welcome screen video: {video_path}")
+                else:
+                    print(f"Failed to initialize video player, falling back to static image")
+                    self.video_player = None
+                    # Fall back to static image
+                    self._load_static_welcome_screen()
+            else:
+                # OpenCV not available or video doesn't exist, fall back to static image
+                self._load_static_welcome_screen()
+        except Exception as e:
+            print(f"Failed to initialize welcome screen video: {e}")
+            self._load_static_welcome_screen()
 
     # Add a new method to draw the controls menu
     def draw_controls_menu(self):

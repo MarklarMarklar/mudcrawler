@@ -414,6 +414,23 @@ class Game:
                     # When game over track is added, uncomment this
                     # self.sound_manager.play_music('game_over')
                     continue  # Skip other event handling
+            
+            # Check for any key press after credits have completed at least one cycle
+            if self.state == VICTORY and hasattr(self.menu, 'credits_completed') and self.menu.credits_completed:
+                if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                    print("Player pressed a button after credits - returning to main menu")
+                    # Reset game state
+                    self.new_game()
+                    # Go to menu instead of starting the game
+                    self.state = MENU
+                    # Play menu music
+                    self.sound_manager.play_music('menu')
+                    # Reset credits completion flag for next time
+                    self.menu.credits_completed = False
+                    self.menu.show_credits = False
+                    # Initialize/restart the welcome screen video
+                    self.menu.initialize_welcome_screen_video()
+                    continue  # Skip other event handling
                 
             # Handle exit confirmation dialog if it's showing
             if self.level and self.level.show_exit_confirmation and event.type == pygame.MOUSEBUTTONDOWN:

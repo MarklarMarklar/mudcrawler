@@ -1018,6 +1018,9 @@ class WeaponManager:
             # Reset cooldown
             self.bow.cooldown = self.bow.cooldown_time
             
+            # Play arrow shooting sound effect
+            self.sound_manager.play_sound("effects/arrow")
+            
             # For debugging
             print(f"Created arrow at ({self.player.rect.centerx}, {self.player.rect.centery}) moving in direction ({dx}, {dy})")
             

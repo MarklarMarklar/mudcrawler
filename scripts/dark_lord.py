@@ -193,7 +193,7 @@ class DarkLord(Boss):
         # Load lightning image
         self.lightning_image = None
         try:
-            lightning_path = os.path.join("assets", "characters", "bosses", "lightning.png")
+            lightning_path = os.path.join(BOSS_SPRITES_PATH, "lightning.png")
             if os.path.exists(lightning_path):
                 self.lightning_image = pygame.image.load(lightning_path).convert_alpha()
                 # Scale to appropriate size (approx 1.5 tiles)
