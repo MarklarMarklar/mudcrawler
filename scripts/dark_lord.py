@@ -21,7 +21,8 @@ class DarkLord(Boss):
         self.health = 2000
         self.max_health = self.health
         self.damage = 30
-        self.speed = 1
+        # Use the speed from the boss config rather than hardcoding to 1
+        self.speed = BOSS_TYPES['level10']['speed']  # This should be 2.2 from config.py
         self.name = "Dark Lord"
         
         # Make the boss invulnerable at the start
@@ -182,13 +183,50 @@ class DarkLord(Boss):
         self.defeated_copies_count = 0
         
         # Mini death zones
-        self.mini_death_zones = []  # List of (x, y, end_time) tuples
+        self.mini_death_zones = []  # List of (x, y, end_time, creation_time) tuples
         self.mini_death_zone_radius = TILE_SIZE // 2  # 1 tile diameter
         self.mini_death_zone_duration = 6000  # 6 seconds
         self.mini_death_zone_damage = 50  # Damage per hit
         self.last_mini_zone_hit_time = 0
         self.mini_zone_hit_cooldown = 500  # ms between hits
         self.mini_zone_lightning_blinks = {}  # Tracking lightning visibility for each zone
+        
+        # Lightning hazard animation for mini death zones
+        self.lightning_hazard_frames = []
+        self.lightning_hazard_frame_indices = {}  # Track frame index for each zone
+        self.lightning_hazard_directions = {}     # Track animation direction for each zone
+        self.lightning_hazard_timers = {}         # Track animation timer for each zone
+        self.lightning_hazard_speed = 0.05        # Animation speed (slower for better effect)
+        
+        # Load lightning hazard images
+        try:
+            # Load the 4 lightning hazard animation frames
+            for i in range(4):
+                # Check both potential paths
+                possible_paths = [
+                    os.path.join("assets", "characters", "bosses", f"lightning_hazard_{i}.png"),
+                    os.path.join(BOSS_SPRITES_PATH, f"lightning_hazard_{i}.png")
+                ]
+                
+                loaded = False
+                for hazard_path in possible_paths:
+                    if os.path.exists(hazard_path):
+                        # Load image and scale it to appropriate size for mini death zones
+                        scale_size = int(TILE_SIZE * 1.5)  # A bit larger than the radius for effect
+                        frame = self.asset_manager.load_image(
+                            hazard_path, scale=(scale_size, scale_size)
+                        )
+                        self.lightning_hazard_frames.append(frame)
+                        print(f"Loaded lightning hazard frame: {hazard_path}")
+                        loaded = True
+                        break
+                
+                if not loaded:
+                    print(f"Could not find lightning_hazard_{i}.png in any expected location")
+            
+            print(f"Successfully loaded {len(self.lightning_hazard_frames)} lightning hazard frames")
+        except Exception as e:
+            print(f"Error loading lightning hazard images: {e}")
         
         # Load lightning image
         self.lightning_image = None
@@ -204,7 +242,7 @@ class DarkLord(Boss):
                 self.add_debug_message(f"Lightning image not found at: {lightning_path}")
         except Exception as e:
             self.add_debug_message(f"Error loading lightning image: {str(e)}")
-    
+        
         # Final phase transition
         self.final_phase_active = False
         self.final_phase_start_time = 0
@@ -216,16 +254,52 @@ class DarkLord(Boss):
     def load_dark_lord_images(self):
         """Load specialized images for the Dark Lord"""
         try:
-            # Try to load specific Dark Lord images
-            dark_lord_path = os.path.join(BOSS_SPRITES_PATH, "boss_10.png")
-            if os.path.exists(dark_lord_path):
-                self.image = self.asset_manager.load_image(
-                    dark_lord_path, scale=(TILE_SIZE*2.5, TILE_SIZE*2.5)
-                )
-                print(f"Loaded specialized Dark Lord image: {dark_lord_path}")
-                
+            # Load the 4 boss images for animation
+            self.animation_frames = []
+            self.animation_frame_index = 0
+            self.animation_direction = 1  # 1 for forward, -1 for backward (ping-pong)
+            self.animation_speed = 0.1  # Controls animation speed
+            self.animation_timer = 0
+            
+            # Try to load the 4 animation frames
+            image_paths = [
+                os.path.join(BOSS_SPRITES_PATH, "boss_10.png"),
+                os.path.join(BOSS_SPRITES_PATH, "boss_10_1.png"),
+                os.path.join(BOSS_SPRITES_PATH, "boss_10_2.png"),
+                os.path.join(BOSS_SPRITES_PATH, "boss_10_3.png")
+            ]
+            
+            # Keep track of how many images were successfully loaded
+            loaded_count = 0
+            
+            # Load all animation frames with the same scale
+            for path in image_paths:
+                if os.path.exists(path):
+                    frame = self.asset_manager.load_image(
+                        path, scale=(TILE_SIZE*2.5, TILE_SIZE*2.5)
+                    )
+                    self.animation_frames.append(frame)
+                    loaded_count += 1
+                    print(f"Loaded animation frame: {path}")
+            
+            # Set the initial image to the first frame
+            if self.animation_frames:
+                self.image = self.animation_frames[0]
                 # Ensure the image is properly centered on the rect
                 self.rect = self.image.get_rect(center=(self.rect.centerx, self.rect.centery))
+                print(f"Successfully loaded {loaded_count} animation frames for Dark Lord")
+            else:
+                print("No animation frames were loaded, using fallback")
+                # Try the original method as fallback
+                dark_lord_path = os.path.join(BOSS_SPRITES_PATH, "boss_10.png")
+                if os.path.exists(dark_lord_path):
+                    self.image = self.asset_manager.load_image(
+                        dark_lord_path, scale=(TILE_SIZE*2.5, TILE_SIZE*2.5)
+                    )
+                    print(f"Loaded specialized Dark Lord image: {dark_lord_path}")
+                    
+                    # Ensure the image is properly centered on the rect
+                    self.rect = self.image.get_rect(center=(self.rect.centerx, self.rect.centery))
             
             # Load copy/clone image
             copy_path = os.path.join(BOSS_SPRITES_PATH, "boss_10_copy.png")
@@ -246,6 +320,35 @@ class DarkLord(Boss):
             
         except Exception as e:
             print(f"Error loading Dark Lord images: {e}")
+            
+    def update_animation(self):
+        """Update the ping-pong animation for the Dark Lord"""
+        if not self.animation_frames:
+            return  # No animation frames loaded
+        
+        # Update animation timer
+        self.animation_timer += self.animation_speed
+        
+        # When timer exceeds 1, move to next frame
+        if self.animation_timer >= 1:
+            self.animation_timer = 0
+            
+            # Update the frame index based on current direction
+            self.animation_frame_index += self.animation_direction
+            
+            # Check if we need to reverse direction (ping-pong)
+            if self.animation_frame_index >= len(self.animation_frames) - 1:
+                # Reached the end, reverse direction
+                self.animation_direction = -1
+            elif self.animation_frame_index <= 0:
+                # Reached the beginning, reverse direction
+                self.animation_direction = 1
+            
+            # Ensure index is within bounds
+            self.animation_frame_index = max(0, min(self.animation_frame_index, len(self.animation_frames) - 1))
+            
+            # Update the current image
+            self.image = self.animation_frames[self.animation_frame_index]
     
     def start_introduction(self):
         """Begin the boss introduction sequence"""
@@ -1281,14 +1384,19 @@ class DarkLord(Boss):
         # Get current time
         current_time = pygame.time.get_ticks()
         
+        # Update animation
+        self.update_animation()
+        
         # Update projectiles if any
         if hasattr(self, 'projectiles') and self.projectiles:
             self.projectiles.update()
             
             # Check collisions with player
-            for projectile in self.projectiles:
+            for projectile in list(self.projectiles):  # Use list copy to allow removal during iteration
                 if hasattr(projectile, 'check_collision') and projectile.check_collision(player.rect):
                     player.take_damage(self.projectile_damage)
+                    # Remove the projectile after it hits the player
+                    self.projectiles.remove(projectile)
         
         # Check summoned boss status - this runs every frame
         if self.summoned_boss:
@@ -1300,7 +1408,7 @@ class DarkLord(Boss):
                     player.speed = player._original_speed
                     if hasattr(player, '_speed_debuff_end_time'):
                         delattr(player, '_speed_debuff_end_time')
-                    print("Speed debuff removed because summoned boss died (direct check)")
+                    print("Speed debuff removed because summoned boss died")
                     
                 # Now handle normal boss defeat
                 self.check_summoned_boss_status()
@@ -1337,9 +1445,11 @@ class DarkLord(Boss):
                     self.projectiles.update()
                     
                     # Check collisions with player
-                    for projectile in self.projectiles:
+                    for projectile in list(self.projectiles):  # Use list copy to allow removal during iteration
                         if hasattr(projectile, 'check_collision') and projectile.check_collision(player.rect):
                             player.take_damage(self.projectile_damage)
+                            # Remove the projectile after it hits the player
+                            self.projectiles.remove(projectile)
                 
                 # Check mini death zones
                 self.check_mini_death_zones(player)
@@ -2149,6 +2259,13 @@ class DarkLord(Boss):
                 if is_valid_position and not overlaps_existing:
                     new_zone = (x, y, end_time, creation_time)  # Include creation time
                     self.mini_death_zones.append(new_zone)
+                    
+                    # Initialize animation state for this zone
+                    if self.lightning_hazard_frames:
+                        self.lightning_hazard_frame_indices[new_zone] = 0
+                        self.lightning_hazard_directions[new_zone] = 1  # 1=forward, -1=backward
+                        self.lightning_hazard_timers[new_zone] = 0
+                    
                     # Initialize lightning blink state for this zone
                     self.mini_zone_lightning_blinks[new_zone] = {
                         'visible': random.choice([True, False]),
@@ -2158,7 +2275,7 @@ class DarkLord(Boss):
         
         # Add debug message
         phase_text = f"phase {self.phase}" if hasattr(self, 'phase') else "current phase"
-        self.add_debug_message(f"Created {len(self.mini_death_zones)} blue lightning zones in {phase_text}")
+        self.add_debug_message(f"Created {len(self.mini_death_zones)} lightning hazard zones in {phase_text}")
     
     def update_mini_death_zones(self, current_time):
         """Update mini death zones and remove expired ones"""
@@ -2170,7 +2287,43 @@ class DarkLord(Boss):
             if zone not in self.mini_death_zones:
                 # Remove blink data for expired zones
                 self.mini_zone_lightning_blinks.pop(zone, None)
+                
+                # Also remove animation data
+                self.lightning_hazard_frame_indices.pop(zone, None)
+                self.lightning_hazard_directions.pop(zone, None)
+                self.lightning_hazard_timers.pop(zone, None)
                 continue
+            
+            # Update hazard animation for this zone
+            if self.lightning_hazard_frames and zone in self.lightning_hazard_timers:
+                # Update animation timer
+                self.lightning_hazard_timers[zone] += self.lightning_hazard_speed
+                
+                # When timer exceeds 1, move to next frame
+                if self.lightning_hazard_timers[zone] >= 1:
+                    self.lightning_hazard_timers[zone] = 0
+                    
+                    # Update frame index based on current direction
+                    frame_index = self.lightning_hazard_frame_indices[zone]
+                    direction = self.lightning_hazard_directions[zone]
+                    
+                    # Update index
+                    frame_index += direction
+                    
+                    # Check if we need to reverse direction (ping-pong)
+                    if frame_index >= len(self.lightning_hazard_frames) - 1:
+                        # Reached the end, reverse direction
+                        direction = -1
+                    elif frame_index <= 0:
+                        # Reached the beginning, reverse direction
+                        direction = 1
+                    
+                    # Ensure index is within bounds
+                    frame_index = max(0, min(frame_index, len(self.lightning_hazard_frames) - 1))
+                    
+                    # Update values
+                    self.lightning_hazard_frame_indices[zone] = frame_index
+                    self.lightning_hazard_directions[zone] = direction
                 
             # Check if it's time to change visibility
             blink_data = self.mini_zone_lightning_blinks[zone]
@@ -2237,7 +2390,7 @@ class DarkLord(Boss):
                     break
     
     def draw_mini_death_zones(self, surface):
-        """Draw mini death zones with blue coloring and lightning effects"""
+        """Draw mini death zones with animated lightning hazard images"""
         if not self.mini_death_zones:
             return
             
@@ -2250,132 +2403,226 @@ class DarkLord(Boss):
             # Calculate time since creation
             time_since_creation = current_time - creation_time
             
-            # Calculate remaining lifetime (for effects, not for alpha anymore)
-            time_left = end_time - current_time
+            # For first 500ms, draw larger effect for initial strike
+            initial_effect = time_since_creation < 500
             
-            # Use a constant alpha instead of fading out
-            alpha = 150  # Constant alpha value for visibility
-            
-            # Create surface for the zone
-            zone_surface = pygame.Surface((self.mini_death_zone_radius * 2, self.mini_death_zone_radius * 2), pygame.SRCALPHA)
-            
-            # Fill with blue color (instead of red)
-            zone_color = (0, 100, 255, alpha)  # Blue color
-            pygame.draw.circle(
-                zone_surface,
-                zone_color,
-                (self.mini_death_zone_radius, self.mini_death_zone_radius),
-                self.mini_death_zone_radius
-            )
-            
-            # Draw a slight glow/border
-            pygame.draw.circle(
-                zone_surface,
-                (50, 150, 255, alpha // 2),  # Lighter blue
-                (self.mini_death_zone_radius, self.mini_death_zone_radius),
-                self.mini_death_zone_radius,
-                2
-            )
-            
-            # Position and draw
-            pos_x = zone_x - self.mini_death_zone_radius
-            pos_y = zone_y - self.mini_death_zone_radius
-            surface.blit(zone_surface, (pos_x, pos_y))
-            
-            # Highlight zones in grace period with subtle pulsing effect
-            grace_period_active = (current_time - creation_time) < 1000  # 1 second grace period
-            if grace_period_active:
-                # Calculate pulse effect (subtle pulsing outline)
-                pulse = (math.sin(current_time / 100) + 1) / 2  # Value between 0 and 1
-                pulse_width = int(min(255, 2 + pulse * 2))  # Width between 2-4 pixels
+            # If using animated hazard images and zone has valid animation data
+            if (self.lightning_hazard_frames and 
+                zone in self.lightning_hazard_frame_indices and 
+                zone in self.mini_zone_lightning_blinks):
                 
-                # Draw pulsing outline to indicate grace period
-                pygame.draw.circle(
-                    surface,
-                    (100, 200, 255, int(200 * pulse)),  # Brighter blue with pulse alpha
-                    (zone_x, zone_y),
-                    self.mini_death_zone_radius + 2,
-                    pulse_width
-                )
-            
-            # Draw lightning image if it's in the visible state
-            if self.lightning_image and zone in self.mini_zone_lightning_blinks:
                 blink_data = self.mini_zone_lightning_blinks[zone]
+                frame_index = self.lightning_hazard_frame_indices[zone]
                 
-                # Special handling for first 500ms - blink with 300% scale
-                initial_effect = time_since_creation < 500
+                # Skip if in blink-off state (unless during initial effect)
+                if not blink_data['visible'] and not initial_effect:
+                    # Still draw particles
+                    self.draw_mini_zone_particles(zone, current_time, time_since_creation, surface)
+                    continue
                 
-                if blink_data['visible'] or initial_effect:
-                    # Store original dimensions for scaling calculations
-                    orig_width = self.lightning_image.get_width()
-                    orig_height = self.lightning_image.get_height()
+                # Get the current animation frame
+                hazard_img = self.lightning_hazard_frames[frame_index]
+                
+                # Apply scaling for initial effect
+                if initial_effect:
+                    # Scale effect during initial 500ms (large->normal)
+                    scale_factor = 2.0 - (time_since_creation / 500.0)
+                    scale_factor = max(1.0, min(2.0, scale_factor))
                     
-                    # Apply 300% scaling during the first 500ms
-                    scale = 3.0 if initial_effect else 1.0
-                    
-                    # Create scaled image
-                    if scale != 1.0:
-                        scaled_width = int(orig_width * scale)
-                        scaled_height = int(orig_height * scale)
-                        scaled_img = pygame.transform.scale(self.lightning_image, (scaled_width, scaled_height))
+                    if scale_factor > 1.0:
+                        # Create scaled version
+                        orig_width = hazard_img.get_width()
+                        orig_height = hazard_img.get_height()
+                        scaled_width = int(orig_width * scale_factor)
+                        scaled_height = int(orig_height * scale_factor)
+                        display_img = pygame.transform.scale(hazard_img, (scaled_width, scaled_height))
                     else:
-                        scaled_img = self.lightning_image
+                        display_img = hazard_img
+                else:
+                    display_img = hazard_img
+                
+                # Position with center at the zone coordinates
+                pos_x = zone_x - display_img.get_width() // 2
+                pos_y = zone_y - display_img.get_height() // 2
+                
+                # Draw the image
+                surface.blit(display_img, (pos_x, pos_y))
+                
+                # Draw lightning strike image on top if it's in the visible state
+                if self.lightning_image and zone in self.mini_zone_lightning_blinks:
+                    blink_data = self.mini_zone_lightning_blinks[zone]
                     
-                    # Position lightning image with bottom at the center of the zone
-                    # Adjust for the new scaled size
-                    lightning_x = zone_x - scaled_img.get_width() // 2
-                    lightning_y = zone_y - scaled_img.get_height()
+                    # Special handling for first 500ms - blink with 300% scale
+                    initial_effect = time_since_creation < 500
                     
-                    # Blink effect during initial 500ms (rapid flashing)
-                    if initial_effect:
-                        # Faster blinking for dramatic effect (4 flashes in 500ms)
-                        flash_period = 125  # ms per flash
-                        flash_visible = (time_since_creation // flash_period) % 2 == 0
+                    if blink_data['visible'] or initial_effect:
+                        # Store original dimensions for scaling calculations
+                        orig_width = self.lightning_image.get_width()
+                        orig_height = self.lightning_image.get_height()
                         
-                        if flash_visible:
-                            # Full brightness for the initial strike
+                        # Apply 300% scaling during the first 500ms
+                        scale = 3.0 if initial_effect else 1.0
+                        
+                        # Create scaled image
+                        if scale != 1.0:
+                            scaled_width = int(orig_width * scale)
+                            scaled_height = int(orig_height * scale)
+                            scaled_img = pygame.transform.scale(self.lightning_image, (scaled_width, scaled_height))
+                        else:
+                            scaled_img = self.lightning_image
+                        
+                        # Position lightning image with bottom at the center of the zone
+                        # Adjust for the new scaled size
+                        lightning_x = zone_x - scaled_img.get_width() // 2
+                        lightning_y = zone_y - scaled_img.get_height()
+                        
+                        # Blink effect during initial 500ms (rapid flashing)
+                        if initial_effect:
+                            # Faster blinking for dramatic effect (4 flashes in 500ms)
+                            flash_period = 125  # ms per flash
+                            flash_visible = (time_since_creation // flash_period) % 2 == 0
+                            
+                            if flash_visible:
+                                # Full brightness for the initial strike
+                                surface.blit(scaled_img, (lightning_x, lightning_y))
+                        else:
+                            # Normal display after initial effect
                             surface.blit(scaled_img, (lightning_x, lightning_y))
-                    else:
-                        # Normal display after initial effect
-                        surface.blit(scaled_img, (lightning_x, lightning_y))
-            
-            # Occasionally add particles
-            if hasattr(self, 'particle_manager') and self.particle_manager and random.random() < 0.1:
-                angle = random.uniform(0, math.pi * 2)
-                distance = random.uniform(0, self.mini_death_zone_radius * 0.8)
-                particle_x = zone_x + math.cos(angle) * distance
-                particle_y = zone_y + math.sin(angle) * distance
                 
-                self.particle_manager.add_particle(
-                    particle_type='fade',
-                    pos=(particle_x, particle_y),
-                    velocity=(0, 0),
-                    direction=0,
-                    color=(50, 150, 255),  # Blue color
-                    size=random.randint(1, 3),
-                    lifetime=random.randint(10, 20)
+                # Draw particles
+                self.draw_mini_zone_particles(zone, current_time, time_since_creation, surface)
+                
+            else:
+                # Fallback to blue circle if no animated images
+                alpha = 150  # Constant alpha value for visibility
+                
+                # Create surface for the zone
+                zone_surface = pygame.Surface((self.mini_death_zone_radius * 2, self.mini_death_zone_radius * 2), pygame.SRCALPHA)
+                
+                # Fill with blue color (instead of red)
+                zone_color = (0, 100, 255, alpha)  # Blue color
+                pygame.draw.circle(
+                    zone_surface,
+                    zone_color,
+                    (self.mini_death_zone_radius, self.mini_death_zone_radius),
+                    self.mini_death_zone_radius
                 )
                 
-                # Add extra particles during initial strike
-                if time_since_creation < 500 and random.random() < 0.5:
-                    # More frequent and larger particles for initial strike
-                    for _ in range(3):
-                        spread_angle = random.uniform(0, math.pi * 2)
-                        spread_distance = random.uniform(0, self.mini_death_zone_radius * 1.2)
-                        strike_x = zone_x + math.cos(spread_angle) * spread_distance
-                        strike_y = zone_y + math.sin(spread_angle) * spread_distance
+                # Draw a slight glow/border
+                pygame.draw.circle(
+                    zone_surface,
+                    (50, 150, 255, alpha // 2),  # Lighter blue
+                    (self.mini_death_zone_radius, self.mini_death_zone_radius),
+                    self.mini_death_zone_radius,
+                    2
+                )
+                
+                # Position and draw
+                pos_x = zone_x - self.mini_death_zone_radius
+                pos_y = zone_y - self.mini_death_zone_radius
+                surface.blit(zone_surface, (pos_x, pos_y))
+                
+                # Draw lightning image if it's in the visible state
+                if self.lightning_image and zone in self.mini_zone_lightning_blinks:
+                    blink_data = self.mini_zone_lightning_blinks[zone]
+                    
+                    # Special handling for first 500ms - blink with 300% scale
+                    initial_effect = time_since_creation < 500
+                    
+                    if blink_data['visible'] or initial_effect:
+                        # Store original dimensions for scaling calculations
+                        orig_width = self.lightning_image.get_width()
+                        orig_height = self.lightning_image.get_height()
                         
-                        # Brighter particles for the strike effect
-                        self.particle_manager.add_particle(
-                            particle_type='fade',
-                            pos=(strike_x, strike_y),
-                            velocity=(random.uniform(-1, 1), random.uniform(-1, 1)),
-                            direction=0,
-                            color=(150, 200, 255),  # Brighter blue
-                            size=random.randint(2, 6),
-                            lifetime=random.randint(15, 30)
-                        )
-
+                        # Apply 300% scaling during the first 500ms
+                        scale = 3.0 if initial_effect else 1.0
+                        
+                        # Create scaled image
+                        if scale != 1.0:
+                            scaled_width = int(orig_width * scale)
+                            scaled_height = int(orig_height * scale)
+                            scaled_img = pygame.transform.scale(self.lightning_image, (scaled_width, scaled_height))
+                        else:
+                            scaled_img = self.lightning_image
+                        
+                        # Position lightning image with bottom at the center of the zone
+                        # Adjust for the new scaled size
+                        lightning_x = zone_x - scaled_img.get_width() // 2
+                        lightning_y = zone_y - scaled_img.get_height()
+                        
+                        # Blink effect during initial 500ms (rapid flashing)
+                        if initial_effect:
+                            # Faster blinking for dramatic effect (4 flashes in 500ms)
+                            flash_period = 125  # ms per flash
+                            flash_visible = (time_since_creation // flash_period) % 2 == 0
+                            
+                            if flash_visible:
+                                # Full brightness for the initial strike
+                                surface.blit(scaled_img, (lightning_x, lightning_y))
+                        else:
+                            # Normal display after initial effect
+                            surface.blit(scaled_img, (lightning_x, lightning_y))
+                
+                # Draw particles
+                self.draw_mini_zone_particles(zone, current_time, time_since_creation, surface)
+    
+    def draw_mini_zone_particles(self, zone, current_time, time_since_creation, surface):
+        """Helper method to draw particles for mini death zones"""
+        zone_x, zone_y, _, _ = zone
+        
+        # Highlight zones in grace period with subtle pulsing effect
+        grace_period_active = time_since_creation < 1000  # 1 second grace period
+        if grace_period_active:
+            # Calculate pulse effect (subtle pulsing outline)
+            pulse = (math.sin(current_time / 100) + 1) / 2  # Value between 0 and 1
+            pulse_width = int(min(255, 2 + pulse * 2))  # Width between 2-4 pixels
+            
+            # Draw pulsing outline to indicate grace period
+            pygame.draw.circle(
+                surface,
+                (100, 200, 255, int(200 * pulse)),  # Brighter blue with pulse alpha
+                (zone_x, zone_y),
+                self.mini_death_zone_radius + 2,
+                pulse_width
+            )
+        
+        # Occasionally add particles
+        if hasattr(self, 'particle_manager') and self.particle_manager and random.random() < 0.1:
+            angle = random.uniform(0, math.pi * 2)
+            distance = random.uniform(0, self.mini_death_zone_radius * 0.8)
+            particle_x = zone_x + math.cos(angle) * distance
+            particle_y = zone_y + math.sin(angle) * distance
+            
+            self.particle_manager.add_particle(
+                particle_type='fade',
+                pos=(particle_x, particle_y),
+                velocity=(0, 0),
+                direction=0,
+                color=(50, 150, 255),  # Blue color
+                size=random.randint(1, 3),
+                lifetime=random.randint(10, 20)
+            )
+            
+            # Add extra particles during initial strike
+            if time_since_creation < 500 and random.random() < 0.5:
+                # More frequent and larger particles for initial strike
+                for _ in range(3):
+                    spread_angle = random.uniform(0, math.pi * 2)
+                    spread_distance = random.uniform(0, self.mini_death_zone_radius * 1.2)
+                    strike_x = zone_x + math.cos(spread_angle) * spread_distance
+                    strike_y = zone_y + math.sin(spread_angle) * spread_distance
+                    
+                    # Brighter particles for the strike effect
+                    self.particle_manager.add_particle(
+                        particle_type='fade',
+                        pos=(strike_x, strike_y),
+                        velocity=(random.uniform(-1, 1), random.uniform(-1, 1)),
+                        direction=0,
+                        color=(150, 200, 255),  # Brighter blue
+                        size=random.randint(2, 6),
+                        lifetime=random.randint(15, 30)
+                    )
+    
     def start_final_phase_transition(self):
         """Start the transition to the final phase after all copies are defeated"""
         self.final_phase_active = True
@@ -3234,22 +3481,47 @@ class DarkLordCopy(pygame.sprite.Sprite):
         self.master = master  # Reference to the main boss
         self.index = index    # Position index (0-4)
         
-        # Get image from master or create a default
-        if hasattr(master, 'copy_image') and master.copy_image:
-            self.original_image = master.copy_image.copy()
-        elif hasattr(master, 'image') and master.image:
-            self.original_image = master.image.copy()
-        else:
-            # Create a default image if none is available
-            self.original_image = pygame.Surface((TILE_SIZE*2, TILE_SIZE*2), pygame.SRCALPHA)
-            pygame.draw.circle(
-                self.original_image,
-                (150, 0, 200),
-                (TILE_SIZE, TILE_SIZE),
-                TILE_SIZE
-            )
+        # Animation properties (copied from master)
+        self.animation_frames = []
+        self.animation_frame_index = 0
+        self.animation_direction = 1  # 1 for forward, -1 for backward (ping-pong)
+        self.animation_speed = 0.05  # Slower animation speed to match boss timing
+        self.animation_timer = 0
         
-        self.image = self.original_image.copy()
+        # Use master's animation frames but scale them differently
+        if hasattr(master, 'animation_frames') and master.animation_frames:
+            # Create scaled copies of the master's animation frames
+            for frame in master.animation_frames:
+                # Scale to copy size (TILE_SIZE*2 instead of *2.5)
+                scaled_frame = pygame.transform.scale(
+                    frame, 
+                    (int(TILE_SIZE*2), int(TILE_SIZE*2))
+                )
+                self.animation_frames.append(scaled_frame)
+            
+            # Use the first frame as the initial image
+            if self.animation_frames:
+                self.image = self.animation_frames[0]
+                self.original_image = self.image.copy()
+        else:
+            # Fallback to the old method
+            # Get image from master or create a default
+            if hasattr(master, 'copy_image') and master.copy_image:
+                self.original_image = master.copy_image.copy()
+            elif hasattr(master, 'image') and master.image:
+                self.original_image = master.image.copy()
+            else:
+                # Create a default image if none is available
+                self.original_image = pygame.Surface((TILE_SIZE*2, TILE_SIZE*2), pygame.SRCALPHA)
+                pygame.draw.circle(
+                    self.original_image,
+                    (150, 0, 200),
+                    (TILE_SIZE, TILE_SIZE),
+                    TILE_SIZE
+                )
+            
+            self.image = self.original_image.copy()
+        
         self.rect = self.image.get_rect(center=(x, y))
         
         # Visual properties
@@ -3278,9 +3550,44 @@ class DarkLordCopy(pygame.sprite.Sprite):
         # Set initial alpha
         self.image.set_alpha(self.alpha)
     
+    def update_animation(self):
+        """Update the ping-pong animation for the copy"""
+        if not self.animation_frames:
+            return  # No animation frames loaded
+        
+        # Update animation timer
+        self.animation_timer += self.animation_speed
+        
+        # When timer exceeds 1, move to next frame
+        if self.animation_timer >= 1:
+            self.animation_timer = 0
+            
+            # Update the frame index based on current direction
+            self.animation_frame_index += self.animation_direction
+            
+            # Check if we need to reverse direction (ping-pong)
+            if self.animation_frame_index >= len(self.animation_frames) - 1:
+                # Reached the end, reverse direction
+                self.animation_direction = -1
+            elif self.animation_frame_index <= 0:
+                # Reached the beginning, reverse direction
+                self.animation_direction = 1
+            
+            # Ensure index is within bounds
+            self.animation_frame_index = max(0, min(self.animation_frame_index, len(self.animation_frames) - 1))
+            
+            # Update the current image
+            self.image = self.animation_frames[self.animation_frame_index].copy()
+            
+            # Apply alpha
+            self.image.set_alpha(self.alpha)
+    
     def update(self, player=None):
         """Update the copy's state"""
         current_time = pygame.time.get_ticks()
+        
+        # Update animation
+        self.update_animation()
         
         # Handle movement to the target position
         if self.is_moving:
