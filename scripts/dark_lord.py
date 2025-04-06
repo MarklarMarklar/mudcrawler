@@ -450,8 +450,11 @@ class DarkLord(Boss):
         phase_text = f"phase {self.phase}" if self.phase > 0 else "initial phase"
         self.add_debug_message(f"Started summoning from blinking copy in {phase_text}")
         
-        # Play summoning sound
-        self.sound_manager.play_sound("effects/boss_10_summon")
+        # Play summoning sound - use realform sound for the final phase (5th boss)
+        if self.phase == 5:
+            self.sound_manager.play_sound("effects/boss_10_realform")
+        else:
+            self.sound_manager.play_sound("effects/boss_10_summon")
     
     def update_blinking_copy(self):
         """Update the blinking copy during summoning"""
@@ -2680,8 +2683,7 @@ class DarkLord(Boss):
         # Reset chase timer for the delay
         self.chase_start_time = pygame.time.get_ticks()
         
-        # Play a reveal sound effect
-        self.sound_manager.play_sound("effects/boss_reveal")
+        # Play a reveal sound effect - removed as requested
         
         self.add_debug_message("Dark Lord revealed in final form! Will chase in 2 seconds")
 
