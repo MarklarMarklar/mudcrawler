@@ -445,19 +445,29 @@ class Sword(pygame.sprite.Sprite):
         
         # Add new particles when needed
         if len(self.flame_particles) < 10 and random.random() < 0.4:  # 40% chance each frame
-            # Get the tip position of the sword based on player's facing direction
-            if self.player.facing == 'right':
-                tip_x = self.player.rect.centerx + TILE_SIZE // 2
-                tip_y = self.player.rect.centery
-            elif self.player.facing == 'left':
-                tip_x = self.player.rect.centerx - TILE_SIZE // 2
-                tip_y = self.player.rect.centery
-            elif self.player.facing == 'up':
-                tip_x = self.player.rect.centerx
-                tip_y = self.player.rect.top - TILE_SIZE // 4
-            else:  # down
-                tip_x = self.player.rect.centerx
-                tip_y = self.player.rect.bottom + TILE_SIZE // 4
+            # Get the tip position of the sword based on player's exact attack angle
+            if hasattr(self.player, 'attack_angle'):
+                # Calculate the sword tip position using exact angle
+                angle_rad = math.radians(self.player.attack_angle)
+                # Use the sword's current position and dimensions to determine particle origin
+                # This ensures particles match the sword's visual position
+                tip_distance = TILE_SIZE * 0.7  # Distance from player center to sword tip
+                tip_x = self.player.rect.centerx + math.cos(angle_rad) * tip_distance
+                tip_y = self.player.rect.centery + math.sin(angle_rad) * tip_distance
+            else:
+                # Fallback to the original 4-direction method
+                if self.player.facing == 'right':
+                    tip_x = self.player.rect.centerx + TILE_SIZE // 2
+                    tip_y = self.player.rect.centery
+                elif self.player.facing == 'left':
+                    tip_x = self.player.rect.centerx - TILE_SIZE // 2
+                    tip_y = self.player.rect.centery
+                elif self.player.facing == 'up':
+                    tip_x = self.player.rect.centerx
+                    tip_y = self.player.rect.top - TILE_SIZE // 4
+                else:  # down
+                    tip_x = self.player.rect.centerx
+                    tip_y = self.player.rect.bottom + TILE_SIZE // 4
                 
             # Create a new fire particle
             new_particle = {
@@ -469,6 +479,16 @@ class Sword(pygame.sprite.Sprite):
                 'speed_x': random.uniform(-0.5, 0.5),
                 'speed_y': random.uniform(-1.0, -0.2)  # Fire particles move upward
             }
+            
+            # If we have attack angle, use it to set directional movement
+            if hasattr(self.player, 'attack_angle'):
+                # Add directional movement based on attack angle
+                angle_rad = math.radians(self.player.attack_angle)
+                movement_speed = random.uniform(0.5, 1.5)
+                # Set movement direction based on attack angle with some randomness
+                new_particle['speed_x'] = math.cos(angle_rad) * movement_speed + random.uniform(-0.3, 0.3)
+                new_particle['speed_y'] = math.sin(angle_rad) * movement_speed + random.uniform(-0.3, 0.3)
+            
             self.flame_particles.append(new_particle)
             
         # Update existing particles
@@ -496,51 +516,78 @@ class Sword(pygame.sprite.Sprite):
             self.lightning_particles = [p for p in self.lightning_particles if not 'points' in p]
             
             # Add multiple lightning beams for a more dramatic effect
-            num_beams = 3  # Always create 3 beams per swing
+            num_beams = 2  # Reduced from 3 to 2 beams per swing for better performance
             
-            for _ in range(num_beams):
-                # Get the tip position of the sword based on player's facing direction
+            for i in range(num_beams):
+                # Get the tip position of the sword based on player's exact attack angle
                 # Calculate beam start point (sword tip)
-                if self.player.facing == 'right':
-                    start_x = self.rect.right
-                    start_y = self.rect.centery
-                    beam_length = TILE_SIZE * 4  # Even longer beam
-                    beam_direction = (1, 0)
-                elif self.player.facing == 'left':
-                    start_x = self.rect.left
-                    start_y = self.rect.centery
-                    beam_length = TILE_SIZE * 4  # Even longer beam
-                    beam_direction = (-1, 0)
-                elif self.player.facing == 'up':
-                    start_x = self.rect.centerx
-                    start_y = self.rect.top
-                    beam_length = TILE_SIZE * 4  # Even longer beam
-                    beam_direction = (0, -1)
-                else:  # down
-                    start_x = self.rect.centerx
-                    start_y = self.rect.bottom
-                    beam_length = TILE_SIZE * 4  # Even longer beam
-                    beam_direction = (0, 1)
+                if hasattr(self.player, 'attack_angle'):
+                    # Calculate the base attack angle in radians
+                    base_angle_rad = math.radians(self.player.attack_angle)
                     
-                # Generate a lightning beam with many segments for extreme zigzag
-                segments = random.randint(8, 12)  # More segments for extreme zigzagging
+                    # Add some spread to the beam starting positions around the attack arc
+                    # For the first beam, use the exact attack angle
+                    # For others, spread them around the arc of the attack box
+                    angle_offset = 0
+                    if i == 1:
+                        angle_offset = random.uniform(-0.15, -0.05)  # Smaller offset to the left
+                    
+                    # Apply the offset to create different starting positions
+                    start_angle_rad = base_angle_rad + angle_offset
+                    
+                    # Use the sword's current position for lightning beam start point
+                    # This ensures lightning matches the sword's visual position
+                    beam_distance = TILE_SIZE * 0.7  # Distance from player center to sword tip
+                    
+                    # Calculate starting position based on the offset angle, not just the attack angle
+                    start_x = self.player.rect.centerx + math.cos(start_angle_rad) * beam_distance
+                    start_y = self.player.rect.centery + math.sin(start_angle_rad) * beam_distance
+                    
+                    # The beam direction still follows the attack angle, creating the 360-degree effect
+                    beam_direction = (math.cos(base_angle_rad), math.sin(base_angle_rad))
+                    beam_length = TILE_SIZE * 3.5  # Slightly shorter beam for performance
+                else:
+                    # Fallback to the original 4-direction method
+                    if self.player.facing == 'right':
+                        start_x = self.rect.right
+                        start_y = self.rect.centery
+                        beam_length = TILE_SIZE * 3.5  # Shorter beam
+                        beam_direction = (1, 0)
+                    elif self.player.facing == 'left':
+                        start_x = self.rect.left
+                        start_y = self.rect.centery
+                        beam_length = TILE_SIZE * 3.5  # Shorter beam
+                        beam_direction = (-1, 0)
+                    elif self.player.facing == 'up':
+                        start_x = self.rect.centerx
+                        start_y = self.rect.top
+                        beam_length = TILE_SIZE * 3.5  # Shorter beam
+                        beam_direction = (0, -1)
+                    else:  # down
+                        start_x = self.rect.centerx
+                        start_y = self.rect.bottom
+                        beam_length = TILE_SIZE * 3.5  # Shorter beam
+                        beam_direction = (0, 1)
+                    
+                # Generate a lightning beam with fewer segments for better performance
+                segments = random.randint(6, 8)  # Reduced from 8-12 to 6-8 segments
                 segment_length = beam_length / segments
                 
                 points = [(start_x, start_y)]
                 current_x, current_y = start_x, start_y
                 
-                # Create extreme zigzag pattern for the beam
-                for i in range(segments):
-                    # Calculate next point with extreme randomness for zigzag appearance
+                # Create zigzag pattern for the beam
+                for j in range(segments):
+                    # Calculate next point with randomness for zigzag appearance
                     # Alternate direction of jitter to create zigzag pattern
-                    zigzag_multiplier = 1 if i % 2 == 0 else -1
+                    zigzag_multiplier = 1 if j % 2 == 0 else -1
                     
                     if beam_direction[1] != 0:  # Vertical beam
-                        jitter_x = random.randint(25, 40) * zigzag_multiplier  # Exaggerated horizontal zigzag
+                        jitter_x = random.randint(15, 30) * zigzag_multiplier  # Reduced jitter for less visual noise
                         jitter_y = 0
                     else:  # Horizontal beam
                         jitter_x = 0
-                        jitter_y = random.randint(25, 40) * zigzag_multiplier  # Exaggerated vertical zigzag
+                        jitter_y = random.randint(15, 30) * zigzag_multiplier  # Reduced jitter
                     
                     next_x = current_x + (beam_direction[0] * segment_length) + jitter_x
                     next_y = current_y + (beam_direction[1] * segment_length) + jitter_y
@@ -552,16 +599,16 @@ class Sword(pygame.sprite.Sprite):
                 new_particle = {
                     'points': points,
                     'color': (50, 120, 255),  # Even more blue color for lightning
-                    'thickness': random.randint(4, 8),  # Thicker beam
-                    'lifetime': random.randint(15, 20),  # Longer lifetime so it's visible
+                    'thickness': random.randint(3, 6),  # Slightly thinner beam for performance
+                    'lifetime': random.randint(10, 15),  # Shorter lifetime for performance
                     'start_time': pygame.time.get_ticks(),
                     'beam_direction': beam_direction,
                     'is_main_beam': True  # Mark as main beam
                 }
                 self.lightning_particles.append(new_particle)
                 
-                # Add secondary beams that branch off from random points on the main beam
-                for i in range(random.randint(2, 4)):  # 2-4 branches per main beam
+                # Add fewer secondary beams to improve performance
+                for i in range(random.randint(1, 2)):  # Reduced from 2-4 to 1-2 branches per main beam
                     if len(points) < 2:
                         continue
                         
@@ -572,8 +619,8 @@ class Sword(pygame.sprite.Sprite):
                     
                     # Create a short zigzag branch
                     branch_points = [(branch_start_x, branch_start_y)]
-                    branch_segments = random.randint(3, 5)
-                    branch_length = TILE_SIZE * 1.5
+                    branch_segments = random.randint(2, 3)  # Reduced from 3-5 to 2-3 segments
+                    branch_length = TILE_SIZE * 1.0  # Shorter branches
                     segment_length = branch_length / branch_segments
                     
                     # Random direction for branch
@@ -587,8 +634,8 @@ class Sword(pygame.sprite.Sprite):
                         zigzag_multiplier = 1 if j % 2 == 0 else -1
                         
                         # Add some perpendicular jitter for zigzag effect
-                        perp_x = -branch_direction[1] * random.randint(10, 20) * zigzag_multiplier
-                        perp_y = branch_direction[0] * random.randint(10, 20) * zigzag_multiplier
+                        perp_x = -branch_direction[1] * random.randint(5, 15) * zigzag_multiplier  # Reduced jitter
+                        perp_y = branch_direction[0] * random.randint(5, 15) * zigzag_multiplier  # Reduced jitter
                         
                         next_x = current_x + (branch_direction[0] * segment_length) + perp_x
                         next_y = current_y + (branch_direction[1] * segment_length) + perp_y
@@ -600,8 +647,8 @@ class Sword(pygame.sprite.Sprite):
                     branch_particle = {
                         'points': branch_points,
                         'color': (100, 150, 255),  # Slightly different blue
-                        'thickness': random.randint(2, 4),  # Thinner than main beam
-                        'lifetime': random.randint(10, 15),  # Shorter than main beam
+                        'thickness': random.randint(1, 3),  # Thinner than main beam
+                        'lifetime': random.randint(5, 10),  # Shorter than main beam
                         'start_time': pygame.time.get_ticks(),
                         'beam_direction': branch_direction,
                         'is_main_beam': False  # Mark as branch
@@ -768,6 +815,10 @@ class Sword(pygame.sprite.Sprite):
             if self.is_lightning_sword:
                 self.draw_lightning_particles(surface)
             return
+        
+        # Draw lightning particles BEFORE the sword to prevent covering it
+        if self.is_lightning_sword:
+            self.draw_lightning_particles(surface)
             
         # Get appropriate animation frames based on sword type
         if self.is_fire_sword:
@@ -788,16 +839,42 @@ class Sword(pygame.sprite.Sprite):
         # Blit the current frame at the sword's position
         surface.blit(frame_img, self.rect)
         
-        # Draw flame particles for fire sword
+        # Draw flame particles AFTER the sword so they appear on top
         if self.is_fire_sword:
             self.draw_flame_particles(surface)
             
-        # Draw lightning particles for lightning sword
-        if self.is_lightning_sword:
-            self.draw_lightning_particles(surface)
+        # Lightning particles are now drawn BEFORE the sword so they don't cover it
         
     def update_position(self):
         """Update sword position and animation frame based on player facing direction"""
+        # Use exact attack angle for sword rotation instead of just 4 directions
+        if hasattr(self.player, 'attack_angle'):
+            # Create a sword frame rotated to the exact attack angle
+            self.image = self.create_rotated_sword_frame(self.player.attack_angle)
+            
+            # Get the rectangle for the rotated image
+            self.rect = self.image.get_rect()
+            
+            # Position the sword at the player's center first
+            self.rect.center = self.player.rect.center
+            
+            # Get the attack angle in radians for positioning
+            angle_rad = math.radians(self.player.attack_angle)
+            
+            # Calculate offset distance from player center
+            offset_distance = TILE_SIZE * 0.3  # Changed back to 0.3 to keep sword closer to player
+            
+            # Move the sword in the direction of the attack angle
+            offset_x = math.cos(angle_rad) * offset_distance
+            offset_y = math.sin(angle_rad) * offset_distance
+            
+            # Apply the offset to position the sword
+            self.rect.x += offset_x
+            self.rect.y += offset_y
+            
+            return
+            
+        # Original code for the 4-direction animation as fallback
         # Use the appropriate animation frames based on sword type
         if self.is_lightning_sword:
             animation_frames = self.lightning_animation_frames
@@ -843,6 +920,46 @@ class Sword(pygame.sprite.Sprite):
             self.start_time = pygame.time.get_ticks()
             self.current_frame = 0
             self.update_position()
+        
+    # New method to create sword frame for arbitrary attack angle
+    def create_rotated_sword_frame(self, attack_angle):
+        """Create a sword frame rotated to the exact attack angle."""
+        # Choose base sword image (we'll use the up-facing sword as our base)
+        base_image = self.sword_images['up']
+        if self.is_fire_sword:
+            base_image = self.fire_sword_images['up']
+        elif self.is_lightning_sword:
+            base_image = self.lightning_sword_images['up']
+            
+        original_rect = base_image.get_rect()
+        
+        # Determine swing animation angle offset based on current frame
+        # This makes the sword swing from -20 to +20 degrees during the animation
+        frame_progress = self.current_frame / (self.total_frames - 1)  # 0.0 to 1.0
+        swing_angle = -20 + (frame_progress * 40)  # -20 to +20
+        
+        # Create a large enough surface to accommodate the rotation
+        padding = max(original_rect.width, original_rect.height) * 2
+        rotation_surface = pygame.Surface((padding, padding), pygame.SRCALPHA)
+        
+        # Find the center of the rotation surface
+        rotation_center = (padding // 2, padding // 2)
+        
+        # For the up-facing sword, the handle is at the bottom center
+        # We place it so the handle is at the rotation center
+        blit_pos = (rotation_center[0] - original_rect.width // 2, 
+                   rotation_center[1] - original_rect.height)
+        
+        # Place the sword on the rotation surface
+        rotation_surface.blit(base_image, blit_pos)
+        
+        # Fix the rotation calculation to point the blade away from the player
+        # The base sword points up (270°) so we need 270° offset to match the attack angle
+        # If attack_angle is 0, the sword should point right (90° rotation from up)
+        rotation_angle = 270 - attack_angle + swing_angle
+        rotated = pygame.transform.rotate(rotation_surface, rotation_angle)
+        
+        return rotated
         
 class Bow:
     """Bow weapon that shoots arrows"""

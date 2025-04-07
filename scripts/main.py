@@ -1287,48 +1287,82 @@ class Game:
                         
                     # Create the lightning effect at this position, passing player's facing direction
                     # to ensure lightning goes in the correct direction
-                    if self.player.facing == 'right':
-                        angle = 0  # 0 radians = right
-                    elif self.player.facing == 'left':
-                        angle = math.pi  # π radians = left
-                    elif self.player.facing == 'up':
-                        angle = -math.pi/2  # -π/2 radians = up
-                    else:  # down
-                        angle = math.pi/2  # π/2 radians = down
+                    if hasattr(self.player, 'attack_angle'):
+                        # Use exact attack angle if available
+                        angle = math.radians(self.player.attack_angle)
                         
-                    # Create lightning effect with specific angle
-                    self.particle_system.create_directional_lightning(
-                        effect_x, 
-                        effect_y,
-                        angle=angle,
-                        amount=10  # Reduced amount
-                    )
+                        # Calculate multiple positions around the attack arc
+                        # Use the attack box to determine locations for lightning particles
+                        num_positions = 2  # Reduced from 3 to 2 for better performance
+                        lightning_positions = []
+                        
+                        for i in range(num_positions):
+                            # Calculate position with angle variation to spread lightning around attack arc
+                            offset_angle = angle
+                            if i == 1:
+                                offset_angle = angle - random.uniform(0.05, 0.1)  # Smaller offset for tighter grouping
+                                
+                            # Use different distances from player for each lightning source
+                            distance = TILE_SIZE * random.uniform(0.5, 0.7)  # Reduced distance variation
+                            pos_x = self.player.rect.centerx + math.cos(offset_angle) * distance
+                            pos_y = self.player.rect.centery + math.sin(offset_angle) * distance
+                            
+                            lightning_positions.append((pos_x, pos_y, angle))  # Store position and original angle
+                        
+                        # Create lightning effects at multiple positions
+                        for pos_x, pos_y, beam_angle in lightning_positions:
+                            self.particle_system.create_directional_lightning(
+                                pos_x, 
+                                pos_y,
+                                angle=beam_angle,
+                                amount=2  # Reduced from 3 to 2 per position
+                            )
+                    else:
+                        # Fallback to 4-directional angles
+                        if self.player.facing == 'right':
+                            angle = 0  # 0 radians = right
+                        elif self.player.facing == 'left':
+                            angle = math.pi  # π radians = left
+                        elif self.player.facing == 'up':
+                            angle = -math.pi/2  # -π/2 radians = up
+                        else:  # down
+                            angle = math.pi/2  # π/2 radians = down
+                            
+                        # Create lightning effect with specific angle at a single position
+                        self.particle_system.create_directional_lightning(
+                            effect_x, 
+                            effect_y,
+                            angle=angle,
+                            amount=10  # Original amount
+                        )
                 
                 # Create fire effect on sword swing if using fire sword
                 elif self.weapon_manager.has_fire_sword:
                     # Get the position at the end of the sword in the attack direction
-                    if self.player.facing == 'right':
-                        effect_x = self.player.rect.right + TILE_SIZE // 4
-                        effect_y = self.player.rect.centery
-                    elif self.player.facing == 'left':
-                        effect_x = self.player.rect.left - TILE_SIZE // 4
-                        effect_y = self.player.rect.centery
-                    elif self.player.facing == 'up':
-                        effect_x = self.player.rect.centerx
-                        effect_y = self.player.rect.top - TILE_SIZE // 4
-                    else:  # down
-                        effect_x = self.player.rect.centerx
-                        effect_y = self.player.rect.bottom + TILE_SIZE // 4
-                    
-                    # Convert facing direction to angle
-                    if self.player.facing == 'right':
-                        angle = 0  # 0 radians = right
-                    elif self.player.facing == 'left':
-                        angle = math.pi  # π radians = left
-                    elif self.player.facing == 'up':
-                        angle = -math.pi/2  # -π/2 radians = up
-                    else:  # down
-                        angle = math.pi/2  # π/2 radians = down
+                    if hasattr(self.player, 'attack_angle'):
+                        # Calculate position based on exact attack angle
+                        angle_rad = math.radians(self.player.attack_angle)
+                        effect_x = self.player.rect.centerx + math.cos(angle_rad) * (TILE_SIZE // 2)
+                        effect_y = self.player.rect.centery + math.sin(angle_rad) * (TILE_SIZE // 2)
+                        angle = angle_rad  # Use the same angle for particle direction
+                    else:
+                        # Fallback to 4-directional positioning
+                        if self.player.facing == 'right':
+                            effect_x = self.player.rect.right + TILE_SIZE // 4
+                            effect_y = self.player.rect.centery
+                            angle = 0  # 0 radians = right
+                        elif self.player.facing == 'left':
+                            effect_x = self.player.rect.left - TILE_SIZE // 4
+                            effect_y = self.player.rect.centery
+                            angle = math.pi  # π radians = left
+                        elif self.player.facing == 'up':
+                            effect_x = self.player.rect.centerx
+                            effect_y = self.player.rect.top - TILE_SIZE // 4
+                            angle = -math.pi/2  # -π/2 radians = up
+                        else:  # down
+                            effect_x = self.player.rect.centerx
+                            effect_y = self.player.rect.bottom + TILE_SIZE // 4
+                            angle = math.pi/2  # π/2 radians = down
                     
                     # Create fire effect with specific angle
                     self.particle_system.create_directional_fire(
