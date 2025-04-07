@@ -1173,30 +1173,46 @@ class Game:
         # Check for sword collisions with destroyable walls
         if self.weapon_manager.sword.active:
             try:
-                # Check walls in front of the player based on facing direction
-                wall_tile_x, wall_tile_y = None, None
+                # Get the current rotated attack hitbox
+                sword_hitbox = self.player.get_attack_hitbox()
                 
-                # Get the tile in front of the player based on facing direction
+                # Get the current room for tile checks
+                current_room = self.level.rooms[self.level.current_room_coords]
+                
+                # Check all nearby wall tiles that could potentially be hit by the rotated hitbox
+                # Get the player's center position in tile coordinates
                 center_tile_x = self.player.rect.centerx // TILE_SIZE
                 center_tile_y = self.player.rect.centery // TILE_SIZE
                 
-                if self.player.facing == 'right':
-                    wall_tile_x = center_tile_x + 1
-                    wall_tile_y = center_tile_y
-                elif self.player.facing == 'left':
-                    wall_tile_x = center_tile_x - 1
-                    wall_tile_y = center_tile_y
-                elif self.player.facing == 'up':
-                    wall_tile_x = center_tile_x
-                    wall_tile_y = center_tile_y - 1
-                elif self.player.facing == 'down':
-                    wall_tile_x = center_tile_x
-                    wall_tile_y = center_tile_y + 1
+                # Check a 3x3 area around the player for potentially destroyable walls
+                for y_offset in range(-2, 3):
+                    for x_offset in range(-2, 3):
+                        # Calculate the tile coordinates
+                        wall_tile_x = center_tile_x + x_offset
+                        wall_tile_y = center_tile_y + y_offset
+                        
+                        # Skip if out of bounds
+                        if (wall_tile_x < 0 or wall_tile_x >= current_room.width or
+                            wall_tile_y < 0 or wall_tile_y >= current_room.height):
+                            continue
+                        
+                        # Check if this tile is a wall
+                        if current_room.tiles[wall_tile_y][wall_tile_x] == 1:
+                            # Create a rect for this wall tile
+                            wall_rect = pygame.Rect(
+                                wall_tile_x * TILE_SIZE,
+                                wall_tile_y * TILE_SIZE,
+                                TILE_SIZE,
+                                TILE_SIZE
+                            )
+                            
+                            # Check if the rotated sword hitbox collides with this wall tile
+                            if self.player.collide_with_rotated_hitbox(wall_rect):
+                                # Try to destroy the wall
+                                if self.level.try_destroy_wall(wall_tile_x, wall_tile_y):
+                                    # Wall was successfully destroyed, we can break out of the loop
+                                    break
                 
-                # Try to destroy the wall
-                if wall_tile_x is not None and wall_tile_y is not None:
-                    if self.level.try_destroy_wall(wall_tile_x, wall_tile_y):
-                        pass # Wall was destroyed
             except Exception as e:
                 print(f"Error checking sword-wall collisions: {e}")
         
@@ -1324,60 +1340,62 @@ class Game:
 
             # Process sword collisions with enemies first
             for enemy in current_room.enemies:
-                # Check sword collisions using the directional attack hitbox
-                if (self.weapon_manager.sword.active and 
-                    sword_hitbox and sword_hitbox.colliderect(enemy.rect) and
-                    not enemy.has_been_hit_this_swing):  # Add check for hit tracking
+                # Check sword collisions using the rotated attack hitbox
+                if self.weapon_manager.sword.active and sword_hitbox and not enemy.has_been_hit_this_swing:
+                    # Use the new collision detection with rotated hitbox
+                    collision_detected = self.player.collide_with_rotated_hitbox(enemy.rect)
                     
-                    # Check line of sight between player and enemy before applying damage
-                    # Use the enemy's existing line of sight check function
-                    has_line_of_sight = enemy.check_line_of_sight(
-                        self.player.rect.centerx, self.player.rect.centery,
-                        enemy.rect.centerx, enemy.rect.centery,
-                        self.level
-                    )
-                    
-                    if has_line_of_sight:
-                        # Apply sword damage based on sword type
-                        damage = SWORD_DAMAGE
-                        if self.weapon_manager.has_fire_sword:
-                            damage = int(SWORD_DAMAGE * 1.5)  # 50% damage bonus
-                            # Create fire particles on hit
-                            self.particle_system.create_fire_effect(
-                                enemy.rect.centerx, 
-                                enemy.rect.centery,
-                                amount=5
-                            )
-                            # Play fire sword sound effect
-                            self.sound_manager.play_sound("effects/fire_sword")
-                        elif self.weapon_manager.has_lightning_sword:
-                            damage = int(SWORD_DAMAGE * 1.8)  # 80% damage bonus
-                            # Create additional lightning particles at enemy position on hit
-                            self.particle_system.create_lightning_effect(
-                                enemy.rect.centerx, 
-                                enemy.rect.centery,
-                                amount=8
-                            )
-                            # Play lightning sword sound effect
-                            self.sound_manager.play_sound("effects/lightning_sword")
-                        
-                        # Apply damage and check if enemy was killed
-                        if enemy.take_damage(damage):
-                            # Enemy was killed, increment kill counter
-                            self.kill_counter += 1
-                            print(f"Enemy killed! Kill counter: {self.kill_counter}/{self.kill_counter_max}")
-                            
-                        enemy.has_been_hit_this_swing = True  # Mark as hit for this swing
-                    else:
-                        # Wall is in the way, show a small particle effect to indicate blocked attack
-                        self.particle_system.create_particle(
-                            enemy.rect.centerx, 
-                            enemy.rect.centery,
-                            color=(150, 150, 150),  # Gray particles for blocked attack
-                            size=3,
-                            velocity=(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5)),
-                            lifetime=10
+                    if collision_detected:
+                        # Check line of sight between player and enemy before applying damage
+                        # Use the enemy's existing line of sight check function
+                        has_line_of_sight = enemy.check_line_of_sight(
+                            self.player.rect.centerx, self.player.rect.centery,
+                            enemy.rect.centerx, enemy.rect.centery,
+                            self.level
                         )
+                        
+                        if has_line_of_sight:
+                            # Apply sword damage based on sword type
+                            damage = SWORD_DAMAGE
+                            if self.weapon_manager.has_fire_sword:
+                                damage = int(SWORD_DAMAGE * 1.5)  # 50% damage bonus
+                                # Create fire particles on hit
+                                self.particle_system.create_fire_effect(
+                                    enemy.rect.centerx, 
+                                    enemy.rect.centery,
+                                    amount=5
+                                )
+                                # Play fire sword sound effect
+                                self.sound_manager.play_sound("effects/fire_sword")
+                            elif self.weapon_manager.has_lightning_sword:
+                                damage = int(SWORD_DAMAGE * 1.8)  # 80% damage bonus
+                                # Create additional lightning particles at enemy position on hit
+                                self.particle_system.create_lightning_effect(
+                                    enemy.rect.centerx, 
+                                    enemy.rect.centery,
+                                    amount=8
+                                )
+                                # Play lightning sword sound effect
+                                self.sound_manager.play_sound("effects/lightning_sword")
+                            
+                            # Apply damage and check if enemy was killed
+                            if enemy.take_damage(damage):
+                                # Enemy was killed, increment kill counter
+                                self.kill_counter += 1
+                                print(f"Enemy killed! Kill counter: {self.kill_counter}/{self.kill_counter_max}")
+                                
+                            enemy.has_been_hit_this_swing = True  # Mark as hit for this swing
+                        else:
+                            # Wall is in the way, show a small particle effect to indicate blocked attack
+                            self.particle_system.create_particle(
+                                enemy.rect.centerx, 
+                                enemy.rect.centery,
+                                color=(150, 150, 150),  # Gray particles for blocked attack
+                                size=3,
+                                velocity=(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5)),
+                                lifetime=10
+                            )
+                    # Note: Removed the else clause here that was showing the blocked attack effect for enemies out of range
 
             # Now process arrow collisions with enemies (separate from sword logic)
             arrows_to_remove = []
@@ -1412,159 +1430,162 @@ class Game:
         try:
             # Check for sword collisions with boss
             if current_room.boss and current_room.boss.health > 0:
-                if (self.weapon_manager.sword.active and 
-                    sword_hitbox and sword_hitbox.colliderect(current_room.boss.damage_hitbox) and
-                    not current_room.boss.has_been_hit_this_swing):
+                if self.weapon_manager.sword.active and sword_hitbox and not current_room.boss.has_been_hit_this_swing:
+                    # Use the new collision detection with rotated hitbox
+                    collision_detected = self.player.collide_with_rotated_hitbox(current_room.boss.damage_hitbox)
                     
-                    # Check line of sight between player and boss before applying damage
-                    has_line_of_sight = current_room.boss.check_line_of_sight(
-                        self.player.rect.centerx, self.player.rect.centery,
-                        current_room.boss.rect.centerx, current_room.boss.rect.centery,
-                        self.level
-                    )
-                    
-                    if has_line_of_sight:
-                        # Apply sword damage based on sword type
-                        damage = SWORD_DAMAGE
-                        if self.weapon_manager.has_fire_sword:
-                            damage = int(SWORD_DAMAGE * 1.5)  # 50% damage bonus
-                            # Create fire particles on hit
-                            self.particle_system.create_fire_effect(
-                                current_room.boss.rect.centerx, 
-                                current_room.boss.rect.centery,
-                                amount=10
-                            )
-                            # Play fire sword sound effect
-                            self.sound_manager.play_sound("effects/fire_sword")
-                        elif self.weapon_manager.has_lightning_sword:
-                            damage = int(SWORD_DAMAGE * 1.8)  # 80% damage bonus
-                            # Create lightning particles on hit
-                            self.particle_system.create_lightning_effect(
-                                current_room.boss.rect.centerx, 
-                                current_room.boss.rect.centery,
-                                amount=12
-                            )
-                            # Play lightning sword sound effect
-                            self.sound_manager.play_sound("effects/lightning_sword")
-                        current_room.boss.take_damage(damage)
-                        current_room.boss.has_been_hit_this_swing = True  # Mark as hit for this swing
+                    if collision_detected:
+                        # Check line of sight between player and boss before applying damage
+                        has_line_of_sight = current_room.boss.check_line_of_sight(
+                            self.player.rect.centerx, self.player.rect.centery,
+                            current_room.boss.rect.centerx, current_room.boss.rect.centery,
+                            self.level
+                        )
                         
-                        # Check if damage was reflected by level 4 boss in defensive mode
-                        if hasattr(current_room.boss, 'reflected_damage') and current_room.boss.reflected_damage > 0:
-                            reflected = current_room.boss.reflected_damage
-                            # Add debug logging
-                            print(f"Processing reflected damage: {reflected}, boss defensive mode: {getattr(current_room.boss, 'defensive_mode', False)}")
+                        if has_line_of_sight:
+                            # Apply sword damage based on sword type
+                            damage = SWORD_DAMAGE
+                            if self.weapon_manager.has_fire_sword:
+                                damage = int(SWORD_DAMAGE * 1.5)  # 50% damage bonus
+                                # Create fire particles on hit
+                                self.particle_system.create_fire_effect(
+                                    current_room.boss.rect.centerx, 
+                                    current_room.boss.rect.centery,
+                                    amount=10
+                                )
+                                # Play fire sword sound effect
+                                self.sound_manager.play_sound("effects/fire_sword")
+                            elif self.weapon_manager.has_lightning_sword:
+                                damage = int(SWORD_DAMAGE * 1.8)  # 80% damage bonus
+                                # Create lightning particles on hit
+                                self.particle_system.create_lightning_effect(
+                                    current_room.boss.rect.centerx, 
+                                    current_room.boss.rect.centery,
+                                    amount=12
+                                )
+                                # Play lightning sword sound effect
+                                self.sound_manager.play_sound("effects/lightning_sword")
+                            current_room.boss.take_damage(damage)
+                            current_room.boss.has_been_hit_this_swing = True  # Mark as hit for this swing
                             
-                            # Apply reflected damage to player
-                            self.player.take_damage(reflected)
-                            
-                            # Different reflection effects based on boss level
-                            if hasattr(current_room.boss, 'level') and current_room.boss.level == 7:
-                                # Purple reflection particles for level 7 boss
-                                particle_color = (150, 50, 255)
-                                self.display_message(f"Shield reflected {int(reflected)} damage!", particle_color)
-                            else:
-                                # Blue reflection particles for level 4 boss
-                                particle_color = (0, 100, 255)
-                                self.display_message(f"Boss reflected {int(reflected)} damage!", particle_color)
+                            # Check if damage was reflected by level 4 boss in defensive mode
+                            if hasattr(current_room.boss, 'reflected_damage') and current_room.boss.reflected_damage > 0:
+                                reflected = current_room.boss.reflected_damage
+                                # Add debug logging
+                                print(f"Processing reflected damage: {reflected}, boss defensive mode: {getattr(current_room.boss, 'defensive_mode', False)}")
                                 
-                            # Create visual effect to show damage reflection
+                                # Apply reflected damage to player
+                                self.player.take_damage(reflected)
+                                
+                                # Different reflection effects based on boss level
+                                if hasattr(current_room.boss, 'level') and current_room.boss.level == 7:
+                                    # Purple reflection particles for level 7 boss
+                                    particle_color = (150, 50, 255)
+                                    self.display_message(f"Shield reflected {int(reflected)} damage!", particle_color)
+                                else:
+                                    # Blue reflection particles for level 4 boss
+                                    particle_color = (0, 100, 255)
+                                    self.display_message(f"Boss reflected {int(reflected)} damage!", particle_color)
+                                    
+                                # Create visual effect to show damage reflection
+                                self.particle_system.create_particle(
+                                    current_room.boss.rect.centerx, 
+                                    current_room.boss.rect.centery,
+                                    color=particle_color,
+                                    size=random.randint(4, 8),
+                                    velocity=(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5)),
+                                    lifetime=random.randint(20, 30)
+                                )
+                                
+                                # Reset reflected damage
+                                current_room.boss.reflected_damage = 0
+                        else:
+                            # Wall is in the way, show a small particle effect to indicate blocked attack
                             self.particle_system.create_particle(
                                 current_room.boss.rect.centerx, 
                                 current_room.boss.rect.centery,
-                                color=particle_color,
-                                size=random.randint(4, 8),
+                                color=(150, 150, 150),  # Gray particles for blocked attack
+                                size=3,
                                 velocity=(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5)),
-                                lifetime=random.randint(20, 30)
+                                lifetime=10
                             )
-                            
-                            # Reset reflected damage
-                            current_room.boss.reflected_damage = 0
-                    else:
-                        # Wall is in the way, show a small particle effect to indicate blocked attack
-                        self.particle_system.create_particle(
-                            current_room.boss.rect.centerx, 
-                            current_room.boss.rect.centery,
-                            color=(150, 150, 150),  # Gray particles for blocked attack
-                            size=3,
-                            velocity=(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5)),
-                            lifetime=10
-                        )
-            
+                    # Note: Removed the else clause here that was showing the blocked attack effect for bosses out of range
+
             # NEW CODE - Check for sword collisions with summoned bosses from Dark Lord (level 10 boss)
             if current_room.boss and hasattr(current_room.boss, 'summoned_bosses'):
                 # Iterate over all summoned bosses
                 for summoned_boss in current_room.boss.summoned_bosses:
                     if summoned_boss.health > 0 and hasattr(summoned_boss, 'damage_hitbox'):
-                        if (self.weapon_manager.sword.active and 
-                            sword_hitbox and sword_hitbox.colliderect(summoned_boss.damage_hitbox) and
-                            not summoned_boss.has_been_hit_this_swing):
+                        if self.weapon_manager.sword.active and sword_hitbox and not summoned_boss.has_been_hit_this_swing:
+                            # Use the new collision detection with rotated hitbox
+                            collision_detected = self.player.collide_with_rotated_hitbox(summoned_boss.damage_hitbox)
                             
-                            # Check line of sight
-                            has_line_of_sight = summoned_boss.check_line_of_sight(
-                                self.player.rect.centerx, self.player.rect.centery,
-                                summoned_boss.rect.centerx, summoned_boss.rect.centery,
-                                self.level
-                            )
-                            
-                            if has_line_of_sight:
-                                print(f"SWORD HIT SUMMONED BOSS! Health before: {summoned_boss.health}")
-                                # Apply sword damage based on sword type
-                                damage = SWORD_DAMAGE
-                                if self.weapon_manager.has_fire_sword:
-                                    damage = int(SWORD_DAMAGE * 1.5)  # 50% damage bonus
-                                    # Create fire particles on hit
-                                    self.particle_system.create_fire_effect(
-                                        summoned_boss.rect.centerx, 
-                                        summoned_boss.rect.centery,
-                                        amount=10
-                                    )
-                                    # Play fire sword sound effect
-                                    self.sound_manager.play_sound("effects/fire_sword")
-                                elif self.weapon_manager.has_lightning_sword:
-                                    damage = int(SWORD_DAMAGE * 1.8)  # 80% damage bonus
-                                    # Create lightning particles on hit
-                                    self.particle_system.create_lightning_effect(
-                                        summoned_boss.rect.centerx, 
-                                        summoned_boss.rect.centery,
-                                        amount=12
-                                    )
-                                    # Play lightning sword sound effect
-                                    self.sound_manager.play_sound("effects/lightning_sword")
+                            if collision_detected:
+                                # Check line of sight
+                                has_line_of_sight = summoned_boss.check_line_of_sight(
+                                    self.player.rect.centerx, self.player.rect.centery,
+                                    summoned_boss.rect.centerx, summoned_boss.rect.centery,
+                                    self.level
+                                )
                                 
-                                # Apply damage
-                                summoned_boss.take_damage(damage)
-                                summoned_boss.has_been_hit_this_swing = True
-                                print(f"Applied {damage} damage. Health after: {summoned_boss.health}")
-                                
-                                # Check if damage was reflected by the summoned boss in defensive mode
-                                if hasattr(summoned_boss, 'reflected_damage') and summoned_boss.reflected_damage > 0:
-                                    reflected = summoned_boss.reflected_damage
-                                    print(f"Summoned boss reflected sword damage: {reflected}")
+                                if has_line_of_sight:
+                                    print(f"SWORD HIT SUMMONED BOSS! Health before: {summoned_boss.health}")
+                                    # Apply sword damage based on sword type
+                                    damage = SWORD_DAMAGE
+                                    if self.weapon_manager.has_fire_sword:
+                                        damage = int(SWORD_DAMAGE * 1.5)  # 50% damage bonus
+                                        # Create fire particles on hit
+                                        self.particle_system.create_fire_effect(
+                                            summoned_boss.rect.centerx, 
+                                            summoned_boss.rect.centery,
+                                            amount=10
+                                        )
+                                        # Play fire sword sound effect
+                                        self.sound_manager.play_sound("effects/fire_sword")
+                                    elif self.weapon_manager.has_lightning_sword:
+                                        damage = int(SWORD_DAMAGE * 1.8)  # 80% damage bonus
+                                        # Create lightning particles on hit
+                                        self.particle_system.create_lightning_effect(
+                                            summoned_boss.rect.centerx, 
+                                            summoned_boss.rect.centery,
+                                            amount=12
+                                        )
+                                        # Play lightning sword sound effect
+                                        self.sound_manager.play_sound("effects/lightning_sword")
+                                        
+                                    # Apply damage
+                                    summoned_boss.take_damage(damage)
+                                    summoned_boss.has_been_hit_this_swing = True
+                                    print(f"Applied {damage} damage. Health after: {summoned_boss.health}")
                                     
-                                    # Apply reflected damage to player
-                                    self.player.take_damage(reflected)
-                                    
-                                    # Different reflection effects based on boss level
-                                    if hasattr(summoned_boss, 'level') and summoned_boss.level == 7:
-                                        particle_color = (150, 50, 255)  # Purple for level 7
-                                        self.display_message(f"Shield reflected {int(reflected)} damage!", particle_color)
-                                    else:
-                                        particle_color = (0, 100, 255)  # Blue for level 4
-                                        self.display_message(f"Boss reflected {int(reflected)} damage!", particle_color)
-                                    
-                                    # Create visual effect to show damage reflection
-                                    self.particle_system.create_particle(
-                                        summoned_boss.rect.centerx, 
-                                        summoned_boss.rect.centery,
-                                        color=particle_color,
-                                        size=random.randint(4, 8),
-                                        velocity=(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5)),
-                                        lifetime=random.randint(20, 30)
-                                    )
-                                    
-                                    # Reset reflected damage
-                                    summoned_boss.reflected_damage = 0
+                                    # Check if damage was reflected by the summoned boss in defensive mode
+                                    if hasattr(summoned_boss, 'reflected_damage') and summoned_boss.reflected_damage > 0:
+                                        reflected = summoned_boss.reflected_damage
+                                        print(f"Summoned boss reflected sword damage: {reflected}")
+                                        
+                                        # Apply reflected damage to player
+                                        self.player.take_damage(reflected)
+                                        
+                                        # Different reflection effects based on boss level
+                                        if hasattr(summoned_boss, 'level') and summoned_boss.level == 7:
+                                            particle_color = (150, 50, 255)  # Purple for level 7
+                                            self.display_message(f"Shield reflected {int(reflected)} damage!", particle_color)
+                                        else:
+                                            particle_color = (0, 100, 255)  # Blue for level 4
+                                            self.display_message(f"Boss reflected {int(reflected)} damage!", particle_color)
+                                        
+                                        # Create visual effect to show damage reflection
+                                        self.particle_system.create_particle(
+                                            summoned_boss.rect.centerx, 
+                                            summoned_boss.rect.centery,
+                                            color=particle_color,
+                                            size=random.randint(4, 8),
+                                            velocity=(random.uniform(-0.5, 0.5), random.uniform(-0.5, 0.5)),
+                                            lifetime=random.randint(20, 30)
+                                        )
+                                        
+                                        # Reset reflected damage
+                                        summoned_boss.reflected_damage = 0
             
             # Check for arrow collisions with boss (completely separate logic)
             if current_room.boss and current_room.boss.health > 0:

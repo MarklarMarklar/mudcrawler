@@ -495,59 +495,16 @@ class Player(pygame.sprite.Sprite):
             # so we can restore it after attack animation is done
             self.movement_facing = self.facing
             
-            # Get primary direction if diagonal
+            # Get primary direction if diagonal for animation purposes
             primary_direction = self.attack_direction
             if '-' in self.attack_direction:
                 primary_direction = self.attack_direction.split('-')[0]
                 
             # Set facing to attack direction for animation purposes
-            # This will be used for the attack animation
-            
             self.facing = primary_direction
             
-            # Create sword hitbox based on attack direction with 30% increased range (15% + 15%)
-            attack_size = int(TILE_SIZE * 1.32)  # 32% larger than normal tile size (1.15 * 1.15 ≈ 1.32)
-            
-            # Check if this is a fire sword attack and adjust range if needed
-            if hasattr(self, 'game') and self.game and hasattr(self.game, 'weapon_manager') and self.game.weapon_manager.has_fire_sword:
-                # Make fire sword 20% larger range than normal sword
-                attack_size = int(attack_size * 1.2)
-            
-            # Create directional hitboxes that only extend in the attack direction
-            if 'right' in self.attack_direction:
-                # Right attack - create a wide but short rectangle extending to the right
-                hitbox = pygame.Rect(
-                    self.rect.right,  # Start at right edge
-                    self.rect.centery - attack_size // 3,  # Centered vertically
-                    attack_size,  # Full length horizontally
-                    attack_size * 2 // 3  # Shorter height for more precise hits
-                )
-            elif 'left' in self.attack_direction:
-                # Left attack - create a wide but short rectangle extending to the left
-                hitbox = pygame.Rect(
-                    self.rect.left - attack_size,  # Start attack_size pixels to the left
-                    self.rect.centery - attack_size // 3,  # Centered vertically
-                    attack_size,  # Full length horizontally
-                    attack_size * 2 // 3  # Shorter height for more precise hits
-                )
-            elif 'up' in self.attack_direction:
-                # Up attack - create a tall but narrow rectangle extending upward
-                hitbox = pygame.Rect(
-                    self.rect.centerx - attack_size // 3,  # Centered horizontally
-                    self.rect.top - attack_size,  # Start attack_size pixels above
-                    attack_size * 2 // 3,  # Shorter width for more precise hits
-                    attack_size  # Full length vertically
-                )
-            elif 'down' in self.attack_direction:
-                # Down attack - create a tall but narrow rectangle extending downward
-                hitbox = pygame.Rect(
-                    self.rect.centerx - attack_size // 3,  # Centered horizontally
-                    self.rect.bottom,  # Start at bottom edge
-                    attack_size * 2 // 3,  # Shorter width for more precise hits
-                    attack_size  # Full length vertically
-                )
-            
-            return hitbox
+            # Use the get_attack_hitbox method to create the rotated hitbox
+            return self.get_attack_hitbox()
         return None
         
     def attack_bow(self, mouse_pos):
@@ -901,7 +858,37 @@ class Player(pygame.sprite.Sprite):
             if self.current_state == 'attack':
                 attack_hitbox = self.get_attack_hitbox()
                 if attack_hitbox:
-                    pygame.draw.rect(surface, (255, 0, 0), attack_hitbox, 1)
+                    # Draw rotated hitbox representation
+                    if hasattr(self, 'attack_hitbox_angle') and hasattr(self, 'attack_hitbox_rect'):
+                        # Create points for the rectangle
+                        rect = self.attack_hitbox_rect
+                        center = rect.center
+                        angle_rad = math.radians(self.attack_hitbox_angle)
+                        
+                        # Get the four corners of the rectangle
+                        half_width = rect.width // 2
+                        half_height = rect.height // 2
+                        corners = [
+                            [-half_width, -half_height],
+                            [half_width, -half_height],
+                            [half_width, half_height],
+                            [-half_width, half_height]
+                        ]
+                        
+                        # Rotate the corners
+                        rotated_corners = []
+                        for x, y in corners:
+                            # Rotate point
+                            rotated_x = x * math.cos(angle_rad) - y * math.sin(angle_rad)
+                            rotated_y = x * math.sin(angle_rad) + y * math.cos(angle_rad)
+                            # Translate back to center
+                            rotated_corners.append((center[0] + rotated_x, center[1] + rotated_y))
+                        
+                        # Draw the rotated rectangle
+                        pygame.draw.polygon(surface, (255, 0, 0), rotated_corners, 1)
+                    else:
+                        # Fallback if rotation data is not available
+                        pygame.draw.rect(surface, (255, 0, 0), attack_hitbox, 1)
         
         # Draw dodge cooldown indicator (small blue bar above player's head)
         if hasattr(self, 'last_dodge_time'):
@@ -935,54 +922,57 @@ class Player(pygame.sprite.Sprite):
     
     def get_attack_hitbox(self):
         """Creates and returns the current attack hitbox without triggering an attack or cooldown check"""
-        # Create sword hitbox based on attack direction with 30% increased range (15% + 15%)
-        attack_size = int(TILE_SIZE * 1.32)  # 32% larger than normal tile size (1.15 * 1.15 ≈ 1.32)
+        # Create sword hitbox based on attack direction with proper range
+        attack_size = int(TILE_SIZE * 1.0)  # Exactly one tile
         
         # Check if this is a fire sword attack and adjust range if needed
-        if hasattr(self, 'game') and self.game and hasattr(self.game, 'weapon_manager') and self.game.weapon_manager.has_fire_sword:
-            # Make fire sword 20% larger range than normal sword
-            attack_size = int(attack_size * 1.2)
+        if hasattr(self, 'game') and self.game and hasattr(self.game, 'weapon_manager'):
+            if self.game.weapon_manager.has_fire_sword:
+                # Make fire sword 20% larger range than normal sword
+                attack_size = int(TILE_SIZE * 1.2)
+            elif self.game.weapon_manager.has_lightning_sword:
+                # Make lightning sword 40% larger range than normal sword
+                attack_size = int(TILE_SIZE * 1.4)
         
-        # Get primary direction if diagonal
-        primary_direction = self.attack_direction
-        if '-' in self.attack_direction:
-            primary_direction = self.attack_direction.split('-')[0]
+        # Get the exact angle to the mouse position
+        if not hasattr(self, 'attack_angle'):
+            # Calculate it if it doesn't exist yet
+            if hasattr(self, 'mouse_pos'):
+                dx = self.mouse_pos[0] - self.rect.centerx
+                dy = self.mouse_pos[1] - self.rect.centery
+                self.attack_angle = math.degrees(math.atan2(dy, dx))
+            else:
+                # Default angle if no mouse position is available
+                self.attack_angle = 0
         
-        # Create directional hitboxes that only extend in the attack direction
-        if 'right' in self.attack_direction:
-            # Right attack - create a wide but short rectangle extending to the right
-            hitbox = pygame.Rect(
-                self.rect.right,  # Start at right edge
-                self.rect.centery - attack_size // 3,  # Centered vertically
-                attack_size,  # Full length horizontally
-                attack_size * 2 // 3  # Shorter height for more precise hits
-            )
-        elif 'left' in self.attack_direction:
-            # Left attack - create a wide but short rectangle extending to the left
-            hitbox = pygame.Rect(
-                self.rect.left - attack_size,  # Start attack_size pixels to the left
-                self.rect.centery - attack_size // 3,  # Centered vertically
-                attack_size,  # Full length horizontally
-                attack_size * 2 // 3  # Shorter height for more precise hits
-            )
-        elif 'up' in self.attack_direction:
-            # Up attack - create a tall but narrow rectangle extending upward
-            hitbox = pygame.Rect(
-                self.rect.centerx - attack_size // 3,  # Centered horizontally
-                self.rect.top - attack_size,  # Start attack_size pixels above
-                attack_size * 2 // 3,  # Shorter width for more precise hits
-                attack_size  # Full length vertically
-            )
-        elif 'down' in self.attack_direction:
-            # Down attack - create a tall but narrow rectangle extending downward
-            hitbox = pygame.Rect(
-                self.rect.centerx - attack_size // 3,  # Centered horizontally
-                self.rect.bottom,  # Start at bottom edge
-                attack_size * 2 // 3,  # Shorter width for more precise hits
-                attack_size  # Full length vertically
-            )
-            
-        return hitbox 
+        # Convert angle to radians for calculations
+        angle_rad = math.radians(self.attack_angle)
+        
+        # Define the hitbox dimensions
+        hitbox_width = attack_size  # Length of the hitbox
+        hitbox_height = attack_size * 2 // 3  # Height of the hitbox
+        
+        # Calculate the center of the hitbox at the given distance and angle
+        # Position the hitbox center at half the width from the player center
+        hitbox_center_distance = TILE_SIZE // 2 + hitbox_width // 2
+        
+        hitbox_center_x = self.rect.centerx + math.cos(angle_rad) * hitbox_center_distance
+        hitbox_center_y = self.rect.centery + math.sin(angle_rad) * hitbox_center_distance
+        
+        # Create the hitbox centered at this point
+        hitbox = pygame.Rect(
+            hitbox_center_x - hitbox_width // 2,
+            hitbox_center_y - hitbox_height // 2,
+            hitbox_width,
+            hitbox_height
+        )
+        
+        # For collision detection, we'll use a rotated rectangle
+        # Store the rotation information for visualization and collision detection
+        self.attack_hitbox_angle = self.attack_angle
+        self.attack_hitbox_rect = hitbox
+        
+        return hitbox
     
     def draw_attack_crosshair(self, surface):
         """Draw a simple crosshair to indicate the attack direction"""
@@ -1041,10 +1031,13 @@ class Player(pygame.sprite.Sprite):
         dx = world_mouse_pos[0] - self.rect.centerx
         dy = world_mouse_pos[1] - self.rect.centery
         
-        # Determine attack direction based on angle
-        angle = math.degrees(math.atan2(dy, dx))
+        # Store the exact angle for the attack hitbox rotation
+        self.attack_angle = math.degrees(math.atan2(dy, dx))
         
-        # Convert angle to 8-directional attack direction
+        # Determine attack direction based on angle (for animation purposes)
+        angle = self.attack_angle
+        
+        # Convert angle to 8-directional attack direction (for animation only)
         if -22.5 <= angle <= 22.5:
             self.attack_direction = 'right'
         elif 22.5 < angle <= 67.5:
@@ -1068,3 +1061,77 @@ class Player(pygame.sprite.Sprite):
             # Extract primary direction from attack_direction if it's a compound direction
             primary_dir = self.attack_direction.split('-')[0] if '-' in self.attack_direction else self.attack_direction
             self.facing = primary_dir 
+
+    def collide_with_rotated_hitbox(self, target_rect):
+        """
+        Check if the target rectangle collides with the player's rotated attack hitbox.
+        This uses more accurate collision detection than the default rectangle collision.
+        """
+        if not hasattr(self, 'attack_hitbox_rect') or not hasattr(self, 'attack_hitbox_angle'):
+            # Fall back to regular rectangle collision
+            return self.get_attack_hitbox().colliderect(target_rect)
+            
+        # Get the center of the hitbox
+        hitbox_center = self.attack_hitbox_rect.center
+        angle_rad = math.radians(self.attack_hitbox_angle)
+        
+        # Get the four corners of the hitbox
+        half_width = self.attack_hitbox_rect.width // 2
+        half_height = self.attack_hitbox_rect.height // 2
+        
+        # Calculate rotated corners
+        corners = []
+        for x, y in [
+            [-half_width, -half_height],
+            [half_width, -half_height],
+            [half_width, half_height],
+            [-half_width, half_height]
+        ]:
+            # Rotate point
+            rotated_x = x * math.cos(angle_rad) - y * math.sin(angle_rad)
+            rotated_y = x * math.sin(angle_rad) + y * math.cos(angle_rad)
+            # Translate to center
+            corners.append((hitbox_center[0] + rotated_x, hitbox_center[1] + rotated_y))
+            
+        # Check if any of the corners of the target rect are inside the rotated hitbox
+        target_corners = [
+            (target_rect.left, target_rect.top),
+            (target_rect.right, target_rect.top),
+            (target_rect.right, target_rect.bottom),
+            (target_rect.left, target_rect.bottom)
+        ]
+        
+        # Check if any corner of the target is inside the rotated hitbox
+        for corner in target_corners:
+            if self._point_in_polygon(corner, corners):
+                return True
+                
+        # Check if any corner of the rotated hitbox is inside the target
+        for corner in corners:
+            if target_rect.collidepoint(corner):
+                return True
+                
+        # No collision detected
+        return False
+        
+    def _point_in_polygon(self, point, polygon):
+        """
+        Check if a point is inside a polygon using the ray casting algorithm.
+        """
+        x, y = point
+        n = len(polygon)
+        inside = False
+        
+        p1x, p1y = polygon[0]
+        for i in range(n + 1):
+            p2x, p2y = polygon[i % n]
+            if y > min(p1y, p2y):
+                if y <= max(p1y, p2y):
+                    if x <= max(p1x, p2x):
+                        if p1y != p2y:
+                            xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                        if p1x == p2x or x <= xinters:
+                            inside = not inside
+            p1x, p1y = p2x, p2y
+            
+        return inside 
