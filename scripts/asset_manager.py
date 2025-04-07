@@ -12,10 +12,20 @@ class AssetManager:
         self.animations = {}
         self.sounds = {}
         
+    def clear_cached_image(self, path):
+        """Clear a specific image from the cache to allow reloading at a different scale."""
+        if path in self.images:
+            del self.images[path]
+    
     def load_image(self, path, scale=None, convert_alpha=True):
         """Load an image, cache it, and return it."""
-        if path in self.images:
-            return self.images[path]
+        # If scale is provided, use it as part of the cache key
+        cache_key = path
+        if scale:
+            cache_key = f"{path}_{scale[0]}x{scale[1]}"
+            
+        if cache_key in self.images:
+            return self.images[cache_key]
             
         try:
             if convert_alpha:
@@ -26,7 +36,7 @@ class AssetManager:
             if scale:
                 image = pygame.transform.scale(image, scale)
                 
-            self.images[path] = image
+            self.images[cache_key] = image
             return image
         except pygame.error as e:
             print(f"Error loading image {path}: {e}")
@@ -42,7 +52,7 @@ class AssetManager:
             pygame.draw.line(placeholder, (0, 0, 0), (0, 0), (TILE_SIZE, TILE_SIZE), 2)
             pygame.draw.line(placeholder, (0, 0, 0), (0, TILE_SIZE), (TILE_SIZE, 0), 2)
             
-            self.images[path] = placeholder
+            self.images[cache_key] = placeholder
             return placeholder
             
     def load_animation(self, folder_path, prefix, num_frames, extension=".png", scale=None):

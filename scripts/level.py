@@ -6,6 +6,7 @@ import glob
 from config import *
 from enemy import Enemy
 from asset_manager import get_asset_manager
+from sound_manager import get_sound_manager
 from pickups import ArrowPickup, HealthPickup, KeyPickup, WeaponPickup
 from scripts.boss_factory import create_boss
 
@@ -49,35 +50,102 @@ class BossCorpse:
         self.y = boss.rect.centery
         self.level_number = level_number
         self.asset_manager = get_asset_manager()
+        self.sound_manager = get_sound_manager()
         self.texture = None
         self.rect = None
+        
+        # Special handling for level 10 boss (Dark Lord) death animation
+        self.is_dark_lord = self.level_number == 10
+        self.death_animation_active = self.is_dark_lord
+        self.death_animation_start_time = pygame.time.get_ticks() if self.is_dark_lord else 0
+        self.death_animation_duration = 3000  # 3 seconds
+        self.death_animation_frame_time = 500  # 500ms per frame
+        self.animation_frame = 0
+        self.animation_last_frame_time = pygame.time.get_ticks() if self.is_dark_lord else 0
+        self.animation_frames = []
         
         # Load the appropriate texture based on boss level
         self._load_boss_corpse()
         
+        # Play the death sound for Dark Lord
+        if self.is_dark_lord:
+            self.sound_manager.play_sound("effects/boss_10_dead")
+        
     def _load_boss_corpse(self):
         """Load the boss corpse texture for the current level"""
         try:
-            # Path to dead boss texture
-            dead_boss_path = os.path.join(ASSET_PATH, "characters", "bosses", f"boss_{self.level_number}_dead.png")
-            print(f"Loading boss {self.level_number} corpse from: {dead_boss_path}")
-            print(f"File exists: {os.path.exists(dead_boss_path)}")
-            
-            # Load the texture with proper scaling
-            # Scale to match typical boss size (around 2.2x tile size)
-            boss_size = (int(TILE_SIZE * 2.2), int(TILE_SIZE * 2.2))
-            self.texture = self.asset_manager.load_image(dead_boss_path, scale=boss_size)
-            
-            # Create rect for positioning
-            self.rect = self.texture.get_rect(center=(self.x, self.y))
-            print(f"Successfully loaded boss {self.level_number} corpse texture: {self.texture.get_size()}")
+            if self.is_dark_lord:
+                # Load the animation frames for Dark Lord death
+                anim_frame1_path = os.path.join(ASSET_PATH, "characters", "bosses", "boss_10_dead_anim_1.png")
+                anim_frame2_path = os.path.join(ASSET_PATH, "characters", "bosses", "boss_10_dead_anim_2.png")
+                
+                # Scale to match typical boss size (around 2.5x for final boss)
+                boss_size = (int(TILE_SIZE * 2.5), int(TILE_SIZE * 2.5))
+                
+                # Check if animation files exist
+                if os.path.exists(anim_frame1_path) and os.path.exists(anim_frame2_path):
+                    frame1 = self.asset_manager.load_image(anim_frame1_path, scale=boss_size)
+                    frame2 = self.asset_manager.load_image(anim_frame2_path, scale=boss_size)
+                    self.animation_frames = [frame1, frame2]
+                    print(f"Successfully loaded Dark Lord death animation frames")
+                else:
+                    print(f"Dark Lord animation frames not found. Frame1 exists: {os.path.exists(anim_frame1_path)}, Frame2 exists: {os.path.exists(anim_frame2_path)}")
+                    
+                # Also load the final death texture that will be shown after the animation
+                dead_boss_path = os.path.join(ASSET_PATH, "characters", "bosses", f"boss_{self.level_number}_dead.png")
+                self.texture = self.asset_manager.load_image(dead_boss_path, scale=boss_size)
+                
+                # Initialize with the first animation frame if available
+                if self.animation_frames:
+                    self.rect = self.animation_frames[0].get_rect(center=(self.x, self.y))
+                else:
+                    self.rect = self.texture.get_rect(center=(self.x, self.y))
+                    self.death_animation_active = False  # Disable animation if frames not found
+                
+            else:
+                # Regular boss death texture loading (unchanged)
+                dead_boss_path = os.path.join(ASSET_PATH, "characters", "bosses", f"boss_{self.level_number}_dead.png")
+                print(f"Loading boss {self.level_number} corpse from: {dead_boss_path}")
+                print(f"File exists: {os.path.exists(dead_boss_path)}")
+                
+                # Load the texture with proper scaling
+                # Scale to match typical boss size (around 2.2x tile size)
+                boss_size = (int(TILE_SIZE * 2.2), int(TILE_SIZE * 2.2))
+                self.texture = self.asset_manager.load_image(dead_boss_path, scale=boss_size)
+                
+                # Create rect for positioning
+                self.rect = self.texture.get_rect(center=(self.x, self.y))
+                print(f"Successfully loaded boss {self.level_number} corpse texture: {self.texture.get_size()}")
+                
         except Exception as e:
             print(f"Failed to load boss {self.level_number} corpse texture: {e}")
             self.texture = None
+            self.death_animation_active = False
+            
+    def update(self):
+        """Update the death animation if active"""
+        if not self.death_animation_active:
+            return
+            
+        current_time = pygame.time.get_ticks()
+        
+        # Check if animation should end
+        if current_time - self.death_animation_start_time > self.death_animation_duration:
+            self.death_animation_active = False
+            return
+            
+        # Update animation frame
+        if current_time - self.animation_last_frame_time > self.death_animation_frame_time:
+            self.animation_frame = 1 - self.animation_frame  # Toggle between 0 and 1
+            self.animation_last_frame_time = current_time
             
     def draw(self, surface):
         """Draw the boss corpse to the surface"""
-        if self.texture and self.rect:
+        if self.death_animation_active and self.animation_frames:
+            # Draw the current animation frame
+            surface.blit(self.animation_frames[self.animation_frame], self.rect)
+        elif self.texture and self.rect:
+            # Draw the final death texture (or regular boss death texture)
             surface.blit(self.texture, self.rect)
         else:
             # Fallback to a colored rectangle if texture isn't available
@@ -90,14 +158,24 @@ class Room:
         # Position in the level grid (not pixels)
         self.grid_x = x
         self.grid_y = y
-        
-        # Room properties
         self.level_number = level_number
         self.room_type = room_type  # 'normal', 'start', 'boss', 'treasure'
+        
+        # Get the asset manager for loading textures
+        self.asset_manager = get_asset_manager()
         
         # Room dimensions in tiles
         self.width = ROOM_WIDTH
         self.height = ROOM_HEIGHT
+        
+        # Exit state
+        self.has_exit = False
+        self.exit_position = None
+        
+        # Key state
+        self.key_dropped = False
+        self.key_picked_up = False
+        self.key_position = None
         
         # Doorways to adjacent rooms
         self.doors = {
@@ -116,9 +194,6 @@ class Room:
         self.chests = []
         self.destroyable_walls = []  # Positions of destroyable walls
         
-        # Asset manager for loading images
-        self.asset_manager = get_asset_manager()
-        
         # Sound manager for playing sounds
         try:
             from scripts.sound_manager import get_sound_manager
@@ -134,13 +209,6 @@ class Room:
         self.arrow_pickups = []
         self.weapon_pickups = []
         self.boss = None
-        self.has_exit = False
-        self.exit_position = None
-        
-        # Key pickup related attributes
-        self.key_dropped = False
-        self.key_position = None
-        self.key_picked_up = False  # Flag to track if key was picked up
         
         # Blood puddles to show where enemies died
         self.blood_puddles = []
@@ -1165,6 +1233,13 @@ class Room:
                 self.boss_corpse = BossCorpse(self.boss, self.level_number)
                 self.boss_blood_created = True
                 
+                # Flag to track if key drop is pending (for Dark Lord animation)
+                if self.level_number == 10:
+                    self.key_drop_pending = True
+                else:
+                    # Drop key immediately for other bosses
+                    self.drop_key()
+                
                 # When boss dies, check if player has speed debuff and remove it
                 if hasattr(player, '_original_speed'):
                     player.speed = player._original_speed
@@ -1185,23 +1260,32 @@ class Room:
                     if hasattr(player, 'level') and hasattr(player.level, 'death_rays'):
                         player.level.death_rays.empty()
                         print("Cleared all death rays from level group")
+                
+                # For level 3 boss, drop the fire sword
+                if self.level_number == 3:
+                    self.drop_fire_sword(player)
+                
+                # For level 6 boss, drop the lightning sword
+                if self.level_number == 6:
+                    self.drop_lightning_sword(player)
+                
+                # For level 3 boss - resurrection mechanic
+                if self.level_number == 3:
+                    # Clear any pending respawns when boss dies
+                    self.dead_minions = []
             
-            # Boss is defeated, drop the key
-            self.drop_key()
+            # Update boss corpse animation if it exists
+            if hasattr(self, 'boss_corpse') and self.boss_corpse:
+                self.boss_corpse.update()
+                
+                # Check if we need to drop the key after the animation completes
+                if self.level_number == 10 and hasattr(self, 'key_drop_pending') and self.key_drop_pending:
+                    if not self.boss_corpse.death_animation_active:
+                        # Animation finished, now drop the key
+                        self.drop_key()
+                        self.key_drop_pending = False
+                        print("Key dropped after Dark Lord death animation completed")
             
-            # For level 3 boss, drop the fire sword
-            if self.level_number == 3:
-                self.drop_fire_sword(player)
-            
-            # For level 6 boss, drop the lightning sword
-            if self.level_number == 6:
-                self.drop_lightning_sword(player)
-            
-            # For level 3 boss - resurrection mechanic is now implemented in the Boss class
-            if self.level_number == 3:
-                # Clear any pending respawns when boss dies
-                self.dead_minions = []
-        
         # Handle resurrection of dead minions in level 3 boss room
         if self.level_number == 3 and self.room_type == 'boss' and self.boss and self.boss.health > 0:
             current_time = pygame.time.get_ticks()
@@ -1647,14 +1731,10 @@ class Room:
             try:
                 # Make the key pulse based on time
                 pulse_factor = 0.5 + 0.5 * abs(math.sin(pygame.time.get_ticks() / 200))
-                key_size = TILE_SIZE * pulse_factor
-                
-                # Debug print to verify key texture loading
-                print(f"Drawing key at {self.key_position}, using path: {key_path}")
-                print(f"Key path exists: {os.path.exists(key_path)}")
+                key_size = TILE_SIZE//2 * pulse_factor  # Use TILE_SIZE//2 to match the smaller key size
                 
                 # First draw a glow effect
-                glow_size = TILE_SIZE * 2 * pulse_factor
+                glow_size = TILE_SIZE * 0.75 * pulse_factor  # Adjusted glow size to be proportional to smaller key
                 glow_color = (255, 215, 0, int(100 * pulse_factor))  # Golden glow with pulsing alpha
                 glow_surface = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
                 pygame.draw.circle(glow_surface, glow_color, (glow_size/2, glow_size/2), glow_size/2)
@@ -1662,40 +1742,48 @@ class Room:
                 
                 # If asset manager is available, use it to load the key image
                 if hasattr(self, 'asset_manager') and self.asset_manager:
-                    # Use the asset manager to load and scale the key image
-                    key_image = self.asset_manager.load_image(key_path, scale=(key_size, key_size))
+                    # First clear the cached image to ensure proper loading
+                    self.asset_manager.clear_cached_image(key_path)
+                    
+                    # Ensure we're using half TILE_SIZE for the key size (with pulse effect)
+                    key_size = TILE_SIZE//2 * pulse_factor
+                    
+                    # Use the asset manager to load and scale the key image with proper HALF SIZE
+                    key_image = self.asset_manager.load_image(key_path, scale=(int(key_size), int(key_size)))
                     key_rect = key_image.get_rect(center=self.key_position)
                     surface.blit(key_image, key_rect)
                 else:
                     # Direct load without asset manager
                     if os.path.exists(key_path):
                         key_image = pygame.image.load(key_path).convert_alpha()
+                        # Ensure we're using half TILE_SIZE for the key size (with pulse effect)
+                        key_size = TILE_SIZE//2 * pulse_factor
                         key_image = pygame.transform.scale(key_image, (int(key_size), int(key_size)))
                         key_rect = key_image.get_rect(center=self.key_position)
                         surface.blit(key_image, key_rect)
                     else:
                         # Fallback to drawing a key shape if the image file doesn't exist
                         print(f"Key file not found: {key_path}")
-                        # Draw the key shape (fallback)
-                        key_surface = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
+                        # Draw the key shape (fallback) - with smaller size
+                        key_surface = pygame.Surface((TILE_SIZE//2, TILE_SIZE//2), pygame.SRCALPHA)
                         # Key body
-                        pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//4, 0, TILE_SIZE//2, TILE_SIZE//4))
+                        pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//8, 0, TILE_SIZE//4, TILE_SIZE//8))
                         # Key stem
-                        pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//3, TILE_SIZE//4, TILE_SIZE//3, TILE_SIZE//2))
+                        pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//6, TILE_SIZE//8, TILE_SIZE//6, TILE_SIZE//4))
                         # Key teeth
-                        pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//6, TILE_SIZE//2, TILE_SIZE*2//3, TILE_SIZE//4))
-                        surface.blit(key_surface, (self.key_position[0] - TILE_SIZE//2, self.key_position[1] - TILE_SIZE//2))
+                        pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//12, TILE_SIZE//4, TILE_SIZE//3, TILE_SIZE//8))
+                        surface.blit(key_surface, (self.key_position[0] - TILE_SIZE//4, self.key_position[1] - TILE_SIZE//4))
             except Exception as e:
                 print(f"Error drawing key: {e}")
                 # Fallback to the original key drawing
-                key_surface = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
+                key_surface = pygame.Surface((TILE_SIZE//2, TILE_SIZE//2), pygame.SRCALPHA)
                 # Key body
-                pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//4, 0, TILE_SIZE//2, TILE_SIZE//4))
+                pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//8, 0, TILE_SIZE//4, TILE_SIZE//8))
                 # Key stem
-                pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//3, TILE_SIZE//4, TILE_SIZE//3, TILE_SIZE//2))
+                pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//6, TILE_SIZE//8, TILE_SIZE//6, TILE_SIZE//4))
                 # Key teeth
-                pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//6, TILE_SIZE//2, TILE_SIZE*2//3, TILE_SIZE//4))
-                surface.blit(key_surface, (self.key_position[0] - TILE_SIZE//2, self.key_position[1] - TILE_SIZE//2))
+                pygame.draw.rect(key_surface, (255, 215, 0), (TILE_SIZE//12, TILE_SIZE//4, TILE_SIZE//3, TILE_SIZE//8))
+                surface.blit(key_surface, (self.key_position[0] - TILE_SIZE//4, self.key_position[1] - TILE_SIZE//4))
             
             # Show a message for 5 seconds after the key is dropped
 
@@ -1776,6 +1864,12 @@ class Room:
             self.key_position = (self.boss.rect.centerx, self.boss.rect.centery)
             self.key_dropped = True
             self.key_drop_time = pygame.time.get_ticks()  # Record when the key was dropped
+            
+            # Clear any cached key image to ensure it loads at the correct size
+            key_path = os.path.join(ASSET_PATH, "icons/key.png")
+            if hasattr(self, 'asset_manager') and self.asset_manager:
+                self.asset_manager.clear_cached_image(key_path)
+            
             print(f"Boss defeated! A key has been dropped at {self.key_position}")
             
     def drop_fire_sword(self, player=None):
@@ -1928,12 +2022,13 @@ class Room:
         if not self.key_dropped or not self.key_position:
             return False
             
-        # Create a rect for the key - make it larger for easier pickup
+        # Create a rect for the key - make it a little larger than the key for easier pickup
+        # Now we're using TILE_SIZE//2 to match the updated key size
         key_rect = pygame.Rect(
-            self.key_position[0] - TILE_SIZE, 
-            self.key_position[1] - TILE_SIZE,
-            TILE_SIZE * 2, 
-            TILE_SIZE * 2
+            self.key_position[0] - TILE_SIZE//2, 
+            self.key_position[1] - TILE_SIZE//2,
+            TILE_SIZE, 
+            TILE_SIZE
         )
         
         return rect.colliderect(key_rect)

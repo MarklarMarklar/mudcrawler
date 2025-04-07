@@ -437,7 +437,22 @@ class Game:
                 if self.menu.showing_audio:
                     if self.menu.handle_audio_menu_event(event):
                         continue
-                
+
+                # Check for any keypress during victory screen after credits have completed one cycle
+                if self.state == VICTORY and self.menu.credits_completed and event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                    print("Key pressed after credits completion - returning to welcome screen")
+                    # Reset game state
+                    self.reset_game()
+                    # Reset menu state
+                    self.menu.show_credits = False
+                    self.menu.credits_completed = False
+                    self.menu.credits_y = self.menu.screen.get_height()
+                    # Change state to menu
+                    self.state = MENU
+                    # Play welcome screen music
+                    self.sound_manager.play_music('menu')
+                    continue  # Skip other event handling
+
                 button_clicked = self.menu.handle_event(event)
                 if button_clicked:
                     if button_clicked == 'start':
