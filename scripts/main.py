@@ -2931,7 +2931,7 @@ class Game:
         # For now, only allow if there are enemies to attack
         if not enemies:
             # There are no enemies to attack
-            debug_log("No enemies to perform special attack on")
+            print("No enemies to perform special attack on")
             return
 
         # Activate special attack
