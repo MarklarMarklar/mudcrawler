@@ -554,15 +554,21 @@ class Game:
                         print(f"Selected level {level_num} in artworks menu")
                         # Update music to match the selected level
                         self.play_artwork_music(level_num)
+                    # Handle level warp cheat code
+                    elif button_clicked and button_clicked.startswith('warp_to_level_'):
+                        # Extract level number from the command
+                        try:
+                            level_num = int(button_clicked.split('_')[-1])
+                            print(f"CHEAT CODE: Warping to level {level_num}")
+                            self.warp_to_level(level_num)
+                            # Return to playing state
+                            self.state = PLAYING
+                            # Unpause music
+                            self.sound_manager.unpause_music()
+                        except (ValueError, IndexError) as e:
+                            print(f"Error parsing warp level: {e}")
             
             if event.type == pygame.KEYDOWN:
-                # DEVELOPMENT FEATURE: Level warping with F1-F10 keys
-                # This will be removed for the final release
-                if event.key >= pygame.K_F1 and event.key <= pygame.K_F10 and self.state == PLAYING:
-                    new_level = event.key - pygame.K_F1 + 1  # F1 = Level 1, F2 = Level 2, etc.
-                    self.warp_to_level(new_level)
-                    continue
-                
                 if event.key == pygame.K_ESCAPE:
                     if self.state == PLAYING:
                         print("Pausing game")

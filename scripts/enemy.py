@@ -3131,7 +3131,7 @@ class Boss(Enemy):
         # For level 7 boss, also increase detection range to match level 2
         detection_range = self.detection_range
         if self.level == 2 or self.level == 7:
-            detection_range *= 2  # Double the detection range
+            detection_range *= 1  # Double the detection range
         
         if distance <= detection_range:
             # If Boss 5 or Boss 8 spots the player for the first time, create orbiting projectiles

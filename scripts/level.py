@@ -1096,14 +1096,37 @@ class Room:
             attempts = 0
             
             while not spawned and attempts < max_attempts:
-                tile_x = random.randint(1, self.width - 2)
-                tile_y = random.randint(1, self.height - 2)
+                # For treasure rooms, spawn enemies near the center (near the magic potion)
+                if self.room_type == 'treasure':
+                    center_x = self.width // 2
+                    center_y = self.height // 2
+                    
+                    # Spawn within a radius of 3-5 tiles from center
+                    radius = random.randint(2, 5)
+                    angle = random.uniform(0, 2 * math.pi)
+                    
+                    # Convert polar to cartesian coordinates
+                    offset_x = int(radius * math.cos(angle))
+                    offset_y = int(radius * math.sin(angle))
+                    
+                    tile_x = center_x + offset_x
+                    tile_y = center_y + offset_y
+                    
+                    # Ensure position is within room bounds
+                    tile_x = max(1, min(tile_x, self.width - 2))
+                    tile_y = max(1, min(tile_y, self.height - 2))
+                else:
+                    # For regular rooms, use random positioning
+                    tile_x = random.randint(1, self.width - 2)
+                    tile_y = random.randint(1, self.height - 2)
                 
                 # Only spawn on floor tiles away from doors
                 if self.tiles[tile_y][tile_x] == 0 and not self.near_door(tile_x, tile_y):
                     enemy = Enemy(tile_x * TILE_SIZE, tile_y * TILE_SIZE, None, self.level_number, level_instance)
                     self.enemies.add(enemy)
                     spawned = True
+                    if self.room_type == 'treasure':
+                        print(f"Spawned enemy at ({tile_x}, {tile_y}), distance from center: {radius} tiles")
                 
                 attempts += 1
         
@@ -1118,8 +1141,29 @@ class Room:
                 attempts = 0
                 
                 while not spawned and attempts < max_attempts:
-                    tile_x = random.randint(1, self.width - 2)
-                    tile_y = random.randint(1, self.height - 2)
+                    # For treasure rooms, spawn enemies near the center (near the magic potion)
+                    if self.room_type == 'treasure':
+                        center_x = self.width // 2
+                        center_y = self.height // 2
+                        
+                        # Spawn within a radius of 3-5 tiles from center
+                        radius = random.randint(2, 5)
+                        angle = random.uniform(0, 2 * math.pi)
+                        
+                        # Convert polar to cartesian coordinates
+                        offset_x = int(radius * math.cos(angle))
+                        offset_y = int(radius * math.sin(angle))
+                        
+                        tile_x = center_x + offset_x
+                        tile_y = center_y + offset_y
+                        
+                        # Ensure position is within room bounds
+                        tile_x = max(1, min(tile_x, self.width - 2))
+                        tile_y = max(1, min(tile_y, self.height - 2))
+                    else:
+                        # For regular rooms, use random positioning
+                        tile_x = random.randint(1, self.width - 2)
+                        tile_y = random.randint(1, self.height - 2)
                     
                     # Only spawn on floor tiles away from doors
                     if self.tiles[tile_y][tile_x] == 0 and not self.near_door(tile_x, tile_y):
@@ -1127,6 +1171,8 @@ class Room:
                         enemy = Enemy(tile_x * TILE_SIZE, tile_y * TILE_SIZE, 'level2', 2, level_instance)
                         self.enemies.add(enemy)
                         spawned = True
+                        if self.room_type == 'treasure':
+                            print(f"Spawned level 2 enemy at ({tile_x}, {tile_y}), distance from center: {radius} tiles")
                     
                     attempts += 1
 
@@ -1140,8 +1186,29 @@ class Room:
                 attempts = 0
                 
                 while not spawned and attempts < max_attempts:
-                    tile_x = random.randint(1, self.width - 2)
-                    tile_y = random.randint(1, self.height - 2)
+                    # For treasure rooms, spawn enemies near the center (near the magic potion)
+                    if self.room_type == 'treasure':
+                        center_x = self.width // 2
+                        center_y = self.height // 2
+                        
+                        # Spawn within a radius of 3-5 tiles from center
+                        radius = random.randint(2, 5)
+                        angle = random.uniform(0, 2 * math.pi)
+                        
+                        # Convert polar to cartesian coordinates
+                        offset_x = int(radius * math.cos(angle))
+                        offset_y = int(radius * math.sin(angle))
+                        
+                        tile_x = center_x + offset_x
+                        tile_y = center_y + offset_y
+                        
+                        # Ensure position is within room bounds
+                        tile_x = max(1, min(tile_x, self.width - 2))
+                        tile_y = max(1, min(tile_y, self.height - 2))
+                    else:
+                        # For regular rooms, use random positioning
+                        tile_x = random.randint(1, self.width - 2)
+                        tile_y = random.randint(1, self.height - 2)
                     
                     # Only spawn on floor tiles away from doors
                     if self.tiles[tile_y][tile_x] == 0 and not self.near_door(tile_x, tile_y):
@@ -1149,6 +1216,8 @@ class Room:
                         enemy = Enemy(tile_x * TILE_SIZE, tile_y * TILE_SIZE, 'level6', 6, level_instance)
                         self.enemies.add(enemy)
                         spawned = True
+                        if self.room_type == 'treasure':
+                            print(f"Spawned level 6 enemy at ({tile_x}, {tile_y}), distance from center: {radius} tiles")
                     
                     attempts += 1
     
@@ -2632,6 +2701,9 @@ class Level:
                     num_enemies = self.max_enemies_per_room // 2  # Fewer regular enemies in boss room
             elif room.room_type == 'treasure':
                 num_enemies = self.max_enemies_per_room // 3  # Fewer enemies in treasure room
+                # Ensure treasure rooms have at least 5 enemies to make magic potion harder to get
+                num_enemies = max(5, num_enemies)
+                print(f"Spawning {num_enemies} enemies in treasure room to guard magic potion")
             else:
                 num_enemies = random.randint(1, self.max_enemies_per_room)
                 

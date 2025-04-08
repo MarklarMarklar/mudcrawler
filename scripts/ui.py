@@ -253,7 +253,27 @@ class Menu:
     def __init__(self, screen):
         self.screen = screen
         
-        # Create a path to the pixelated font
+        # Get the asset manager instance
+        self.asset_manager = get_asset_manager()
+        
+        # Initialize sound manager
+        self.sound_manager = get_sound_manager()
+        
+        # Initialize menu state flags
+        self.showing_options = False
+        self.showing_controls = False
+        self.showing_audio = False
+        self.showing_artworks = False
+        self.in_pause_menu = False
+        self.in_game_over = False
+        self.in_victory = False
+
+        # Initialize cheat code tracking
+        self.cheat_code_buffer = ""
+        self.show_warp_dialog = False
+        self.warp_level_selected = 1
+        
+        # Create a font for menu text
         font_path = os.path.join(ASSET_PATH, "fonts/PixelatedEleganceRegular-ovyAA.ttf")
         if os.path.exists(font_path):
             self.font = pygame.font.Font(font_path, 48)
@@ -269,8 +289,6 @@ class Menu:
             self.credits_font = pygame.font.Font(None, 28)
             print(f"Pixelated font not found, using default font: {font_path}")
             
-        self.asset_manager = get_asset_manager()
-        
         # Audio menu variables
         self.music_volume = 0.5  # Initial music volume (0.0 to 1.0)
         self.sfx_volume = 0.7    # Initial SFX volume (0.0 to 1.0)
@@ -706,6 +724,62 @@ class Menu:
         self.buttons['options'].draw(self.screen)
         self.buttons['quit'].draw(self.screen)
         
+        # Draw warp dialog if active
+        if self.show_warp_dialog:
+            self._draw_warp_dialog()
+            
+    def _draw_warp_dialog(self):
+        """Draw the level warp selection dialog"""
+        # Create dialog background - make it taller and position at top
+        dialog_width = 300
+        dialog_height = 450  # Increased height
+        dialog_x = (WINDOW_WIDTH - dialog_width) // 2
+        dialog_y = 50  # Fixed position at top of screen
+        
+        # Draw semi-transparent background
+        dialog_bg = pygame.Surface((dialog_width, dialog_height), pygame.SRCALPHA)
+        dialog_bg.fill((0, 0, 0, 200))
+        self.screen.blit(dialog_bg, (dialog_x, dialog_y))
+        
+        # Draw border
+        pygame.draw.rect(self.screen, (255, 215, 0), (dialog_x, dialog_y, dialog_width, dialog_height), 2)
+        
+        # Draw title
+        title_font = pygame.font.Font(None, 36)
+        title = title_font.render("LEVEL WARP", True, (255, 215, 0))
+        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, dialog_y + 30))
+        self.screen.blit(title, title_rect)
+        
+        # Draw level options
+        level_font = pygame.font.Font(None, 28)
+        for i in range(1, 11):
+            level_text = f"Level {i}"
+            
+            # Highlight selected level
+            if i == self.warp_level_selected:
+                level_color = (255, 255, 0)  # Bright yellow for selected
+                # Draw selection indicator
+                indicator_x = dialog_x + 20
+                indicator_y = dialog_y + 70 + (i * 28)  # Increased spacing
+                pygame.draw.polygon(self.screen, level_color, 
+                                  [(indicator_x, indicator_y), 
+                                   (indicator_x + 10, indicator_y - 5),
+                                   (indicator_x + 10, indicator_y + 5)])
+            else:
+                level_color = (200, 200, 200)  # Gray for unselected
+                
+            level_surf = level_font.render(level_text, True, level_color)
+            self.screen.blit(level_surf, (dialog_x + 40, dialog_y + 70 + (i * 28)))  # Increased spacing
+        
+        # Draw instructions at bottom with more space
+        inst_font = pygame.font.Font(None, 24)
+        inst1 = inst_font.render("Enter: Warp", True, (200, 200, 200))
+        inst2 = inst_font.render("Esc: Cancel", True, (200, 200, 200))
+        
+        # Position instructions at the bottom with more space
+        self.screen.blit(inst1, (dialog_x + 40, dialog_y + dialog_height - 60))
+        self.screen.blit(inst2, (dialog_x + 40, dialog_y + dialog_height - 30))
+    
     def draw_game_over(self):
         # Update button positions first
         self._update_button_positions('game_over')
@@ -898,6 +972,54 @@ class Menu:
             active_buttons = ['back']
         elif self.in_pause_menu:
             active_buttons = ['resume', 'restart', 'options', 'quit']
+            
+            # Handle cheat code in pause menu
+            if event.type == pygame.KEYDOWN:
+                # If warp dialog is shown, handle level selection
+                if self.show_warp_dialog:
+                    if event.key == pygame.K_UP:
+                        self.warp_level_selected = max(1, self.warp_level_selected - 1)
+                        return None
+                    elif event.key == pygame.K_DOWN:
+                        self.warp_level_selected = min(10, self.warp_level_selected + 1)
+                        return None
+                    elif event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+                        # Return special command for level warping
+                        self.show_warp_dialog = False
+                        self.cheat_code_buffer = ""
+                        return f"warp_to_level_{self.warp_level_selected}"
+                    elif event.key == pygame.K_ESCAPE:
+                        # Cancel warp dialog
+                        self.show_warp_dialog = False
+                        self.cheat_code_buffer = ""
+                        return None
+                else:
+                    # Track cheat code input
+                    if event.unicode.lower() in "iddqd":
+                        self.cheat_code_buffer += event.unicode.lower()
+                        # Keep only last 5 characters
+                        self.cheat_code_buffer = self.cheat_code_buffer[-5:]
+                        
+                        # Check if cheat code is complete
+                        if self.cheat_code_buffer == "iddqd":
+                            print("Cheat code activated: IDDQD - Level warp enabled")
+                            self.show_warp_dialog = True
+                            self.warp_level_selected = 1
+                            
+                            # Play the warp sound directly using pygame instead of the sound manager
+                            try:
+                                warp_sound_path = os.path.join(SOUNDS_PATH, "effects", "level_warp.wav")
+                                if os.path.exists(warp_sound_path):
+                                    warp_sound = pygame.mixer.Sound(warp_sound_path)
+                                    warp_sound.set_volume(0.7)  # Set appropriate volume
+                                    warp_sound.play()
+                                    print("Playing level warp sound directly")
+                                else:
+                                    print(f"Level warp sound file not found at: {warp_sound_path}")
+                            except Exception as e:
+                                print(f"Error playing level warp sound: {e}")
+                                
+                            return None
         elif self.in_game_over or self.in_victory:
             active_buttons = ['restart', 'quit']
         else:
@@ -906,6 +1028,11 @@ class Menu:
             
         # Store active buttons for controller navigation
         self.active_buttons = active_buttons
+        
+        # Reset the cheat code buffer when not in pause menu
+        if not self.in_pause_menu:
+            self.cheat_code_buffer = ""
+            self.show_warp_dialog = False
         
         # Make sure selected button index is valid for current menu
         if self.active_buttons and self.selected_button_index >= len(self.active_buttons):
@@ -984,15 +1111,9 @@ class Menu:
         if event.type == pygame.KEYDOWN:
             if event.key in [pygame.K_LEFT, pygame.K_a, pygame.K_q]:  # Q maps to LB on controller
                 self.controls_page = 'keyboard'
-                # Play sound if available
-                if hasattr(self, 'sound_manager') and self.sound_manager:
-                    self.sound_manager.play_sfx('menu_move')
                 return True
             elif event.key in [pygame.K_RIGHT, pygame.K_d, pygame.K_e]:  # E maps to RB on controller
                 self.controls_page = 'controller'
-                # Play sound if available
-                if hasattr(self, 'sound_manager') and self.sound_manager:
-                    self.sound_manager.play_sfx('menu_move')
                 return True
                 
         # Handle mouse clicks on tab headers
@@ -1000,15 +1121,9 @@ class Menu:
             mouse_pos = event.pos
             if hasattr(self, 'keyboard_tab_rect') and self.keyboard_tab_rect.collidepoint(mouse_pos):
                 self.controls_page = 'keyboard'
-                # Play sound if available
-                if hasattr(self, 'sound_manager') and self.sound_manager:
-                    self.sound_manager.play_sfx('menu_select')
                 return True
             elif hasattr(self, 'controller_tab_rect') and self.controller_tab_rect.collidepoint(mouse_pos):
                 self.controls_page = 'controller'
-                # Play sound if available
-                if hasattr(self, 'sound_manager') and self.sound_manager:
-                    self.sound_manager.play_sfx('menu_select')
                 return True
                 
         return False
@@ -1028,10 +1143,6 @@ class Menu:
         # Highlight the selected button
         selected_button_name = self.active_buttons[self.selected_button_index]
         self.buttons[selected_button_name].is_hovered = True
-        
-        # Play navigation sound if we have a sound manager
-        if hasattr(self, 'sound_manager') and self.sound_manager:
-            self.sound_manager.play_sfx('menu_move')
     
     def get_active_buttons(self):
         """Return the appropriate list of buttons based on current menu state"""
@@ -2126,16 +2237,6 @@ class HUD:
                         pygame.draw.line(self.screen, sparkle_color, 
                                       (int(x), int(y - sparkle_size)), 
                                       (int(x), int(y + sparkle_size)), 1)
-        
-        # Draw temporary health counter for debugging
-        font = pygame.font.Font(None, 20)  # Small font size
-        health_text = f"{int(player.health)}/{int(player.max_health)}"
-        text_surf = font.render(health_text, True, WHITE)
-        
-        # Position the text centered on the health bar
-        text_x = health_bar_x + (self.health_bar_rect.width // 2) - (text_surf.get_width() // 2)
-        text_y = health_bar_y - 15  # Position above the health bar
-        self.screen.blit(text_surf, (text_x, text_y))
         
         # Adjust the arrow bar positions to be relative to the health bar image position (10, 10)
         arrow_bar_x = 10 + self.arrow_bar_rect.x
