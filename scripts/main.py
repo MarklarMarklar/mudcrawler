@@ -1,8 +1,10 @@
 import pygame
 import sys
 import os
-import math
+import time
 import random
+import math
+import atexit
 import argparse
 
 # Add the parent directory to the path so we can import config
@@ -2270,6 +2272,11 @@ class Game:
         try:
             print(f"Attempting to switch to {'fullscreen' if self.fullscreen else 'windowed'} mode")
             
+            # Detect Linux platform for special handling
+            is_linux = 'linux' in sys.platform
+            if is_linux:
+                print("Linux platform detected, using special fullscreen handling")
+            
             if self.fullscreen:
                 # Save current window size for later
                 self.windowed_size = (WINDOW_WIDTH, WINDOW_HEIGHT)
@@ -2282,11 +2289,20 @@ class Game:
                 
                 print(f"Switching to fullscreen: {new_width}x{new_height}")
                 
-                # Use true fullscreen with hardware acceleration
-                WINDOW_WIDTH = new_width
-                WINDOW_HEIGHT = new_height
-                self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), 
-                                                     pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF)
+                # Use different flags for Linux to properly scale content
+                if is_linux:
+                    # For Linux, use SCALED flag to ensure proper content scaling
+                    self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), 
+                                                        pygame.FULLSCREEN | pygame.SCALED)
+                    # Note: We keep WINDOW_WIDTH and WINDOW_HEIGHT at their original values
+                    # since the SCALED flag will handle the scaling properly
+                else:
+                    # For Windows/Mac, use the standard approach
+                    WINDOW_WIDTH = new_width
+                    WINDOW_HEIGHT = new_height
+                    self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), 
+                                                        pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF)
+                
                 pygame.display.flip()  # Ensure display is updated
                 
             else:
@@ -2298,7 +2314,7 @@ class Game:
                 pygame.display.flip()  # Ensure display is updated
             
             # Always reset the camera after changing modes
-            print(f"Resetting camera for new dimensions: {WINDOW_WIDTH}x{WINDOW_HEIGHT}")
+            print(f"Resetting camera for dimensions: {WINDOW_WIDTH}x{WINDOW_HEIGHT}")
             self.camera.width = WINDOW_WIDTH
             self.camera.height = WINDOW_HEIGHT
             self.camera.view_width = WINDOW_WIDTH / self.camera.zoom
