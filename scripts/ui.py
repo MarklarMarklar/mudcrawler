@@ -1534,8 +1534,17 @@ class Menu:
         
         return None
 
+    def sync_audio_values(self):
+        """Sync the audio slider values with the current sound manager settings"""
+        sound_manager = get_sound_manager()
+        self.music_volume = sound_manager.music_volume
+        self.sfx_volume = sound_manager.sfx_volume
+        
     def draw_audio_menu(self):
         """Draw the audio settings menu"""
+        # Sync audio values with sound manager
+        self.sync_audio_values()
+        
         # Draw background
         self.screen.blit(self.menu_bg, (0, 0))
         
@@ -2051,18 +2060,82 @@ class HUD:
         health_bar_x = 10 + self.health_bar_rect.x
         health_bar_y = 10 + self.health_bar_rect.y
         
-        # Draw health bar
-        health_percent = player.health / player.max_health
-        health_width = int(self.health_bar_rect.width * health_percent)
+        # Draw regular health portion (capped at player start health)
+        regular_health = min(player.health, PLAYER_START_HEALTH)
+        regular_health_percent = regular_health / PLAYER_START_HEALTH
+        regular_health_width = int(self.health_bar_rect.width * regular_health_percent)
+        
+        # Choose color based on regular health percentage
         health_color = (0, 255, 0)  # Green
-        if health_percent < 0.5:
+        if regular_health_percent < 0.5:
             health_color = (255, 255, 0)  # Yellow
-        if health_percent < 0.25:
+        if regular_health_percent < 0.25:
             health_color = (255, 0, 0)  # Red
             
+        # Draw regular health bar
         pygame.draw.rect(self.screen, health_color, 
-                        (health_bar_x, health_bar_y, 
-                        health_width, self.health_bar_rect.height))
+                       (health_bar_x, health_bar_y, 
+                       regular_health_width, self.health_bar_rect.height))
+        
+        # Display bonus health bar if player has more than starting health
+        if player.max_health > PLAYER_START_HEALTH:
+            # Calculate current bonus health (only if health exceeds starting health)
+            bonus_health = max(0, player.health - PLAYER_START_HEALTH)
+            
+            # Scale relative to MAX_BONUS_HEALTH instead of current bonus max health
+            # This makes each potion fill 10% of the bar (10/100)
+            bonus_percent = bonus_health / MAX_BONUS_HEALTH
+            bonus_width = int(self.health_bar_rect.width * bonus_percent)
+            
+            # Draw bonus health bar
+            pygame.draw.rect(self.screen, BONUS_HEALTH_COLOR, 
+                           (health_bar_x, health_bar_y, 
+                           bonus_width, self.health_bar_rect.height))
+            
+            # Add sparkling effect to the bonus health bar
+            if bonus_health > 0:
+                # Get pulsing effect
+                pulse = abs(math.sin(pygame.time.get_ticks() / 200))  # Faster pulsing
+                
+                # Create a glowing effect around the bonus health part
+                if bonus_percent > 0.1:  # Only add glow if there's enough bonus health to see
+                    # Draw multiple bars with decreasing alpha for glow
+                    for i in range(2):  # Less intense glow than special attack
+                        glow_alpha = int(100 * (1 - i * 0.3) * pulse)  # Fade out each layer
+                        glow_surface = pygame.Surface((bonus_width + i*3, self.health_bar_rect.height + i*3), pygame.SRCALPHA)
+                        glow_color = (20 + int(20 * pulse), 150 + int(50 * pulse), 50, glow_alpha)
+                        pygame.draw.rect(glow_surface, glow_color, glow_surface.get_rect())
+                        self.screen.blit(glow_surface, 
+                                      (health_bar_x - i*1, health_bar_y - i*1))
+                
+                # Draw sparkle effects directly instead of using particles
+                # Only add sparkles if bonus health is above certain threshold
+                if bonus_percent > 0.3:
+                    num_sparkles = max(1, int(3 * bonus_percent))  # More sparkles for higher bonus health
+                    for _ in range(num_sparkles):
+                        x = health_bar_x + random.random() * bonus_width
+                        y = health_bar_y + random.randint(0, self.health_bar_rect.height)
+                        sparkle_size = 1 + int(1 * pulse)
+                        sparkle_color = (100 + int(155 * pulse), 255, 100 + int(155 * pulse), int(200 * pulse))
+                        # Draw a simple sparkle using circles
+                        pygame.draw.circle(self.screen, sparkle_color, (int(x), int(y)), sparkle_size)
+                        # Add a cross shape for extra sparkle effect
+                        pygame.draw.line(self.screen, sparkle_color, 
+                                      (int(x - sparkle_size), int(y)), 
+                                      (int(x + sparkle_size), int(y)), 1)
+                        pygame.draw.line(self.screen, sparkle_color, 
+                                      (int(x), int(y - sparkle_size)), 
+                                      (int(x), int(y + sparkle_size)), 1)
+        
+        # Draw temporary health counter for debugging
+        font = pygame.font.Font(None, 20)  # Small font size
+        health_text = f"{int(player.health)}/{int(player.max_health)}"
+        text_surf = font.render(health_text, True, WHITE)
+        
+        # Position the text centered on the health bar
+        text_x = health_bar_x + (self.health_bar_rect.width // 2) - (text_surf.get_width() // 2)
+        text_y = health_bar_y - 15  # Position above the health bar
+        self.screen.blit(text_surf, (text_x, text_y))
         
         # Adjust the arrow bar positions to be relative to the health bar image position (10, 10)
         arrow_bar_x = 10 + self.arrow_bar_rect.x

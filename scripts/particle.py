@@ -372,6 +372,51 @@ class ParticleSystem:
             }
             self.particles.append(particle)
     
+    def create_magic_sparkles(self, x, y, amount=30, spread=40):
+        """Create sparkling particles for magic effects like potion pickup"""
+        # Define magical sparkle colors - purples, pinks, and white
+        sparkle_colors = [
+            (255, 100, 255),  # Pink (same as BONUS_HEALTH_COLOR)
+            (200, 50, 255),   # Purple
+            (150, 50, 255),   # Deep purple
+            (255, 220, 255),  # Light pink
+            (255, 255, 255),  # White
+        ]
+        
+        for _ in range(amount):
+            # Create particles that move outward in a circle with some upward bias
+            angle = random.uniform(0, math.pi * 2)
+            # Upward bias - particles tend to float up slightly
+            speed = random.uniform(0.5, 2.5)
+            
+            # Calculate velocity with some upward bias
+            velocity_x = math.cos(angle) * speed
+            velocity_y = math.sin(angle) * speed - random.uniform(0.2, 0.8)  # Upward bias
+            
+            # Random position within the spread radius
+            pos_x = x + random.uniform(-spread/2, spread/2)
+            pos_y = y + random.uniform(-spread/2, spread/2)
+            
+            # Random size and lifetime - increased for longer effect (~2 seconds at 60 FPS)
+            size = random.uniform(1.5, 4)
+            lifetime = random.randint(90, 140)  # Increased from 30-60 to 90-140 frames (1.5-2.3 seconds)
+            
+            # Create the sparkle particle
+            particle = {
+                'x': pos_x,
+                'y': pos_y,
+                'velocity_x': velocity_x,
+                'velocity_y': velocity_y,
+                'color': random.choice(sparkle_colors),
+                'size': size,
+                'lifetime': lifetime,
+                'alpha': 255,
+                'gravity': -0.03,  # Negative gravity makes particles float upward
+                'fade_speed': random.uniform(0.8, 1.6),  # Reduced fade speed to match longer lifetime
+                'is_sparkle': True  # Mark as a sparkle for special rendering
+            }
+            self.particles.append(particle)
+    
     def update(self):
         """Update all particles and remove dead ones"""
         # List to track particles to remove
@@ -451,144 +496,194 @@ class ParticleSystem:
     
     def draw(self, surface, camera_offset=(0, 0)):
         """Draw all particles to the surface"""
-        # Sort particles so blood pools are drawn first (underneath everything else)
-        # This ensures blood splatter appears on top of pools
-        sorted_particles = sorted(
-            self.particles, 
-            key=lambda p: 0 if isinstance(p, Particle) or not p.get('is_pool', False) else 1
-        )
+        camera_x, camera_y = camera_offset
         
-        for particle in sorted_particles:
-            if isinstance(particle, Particle):
-                # For Particle class objects
-                particle.draw(surface, camera_offset)
-            elif particle.get('is_lightning_bolt', False):
-                # For lightning bolt particles
-                if particle['lifetime'] <= 0:
-                    continue
+        # First pass: draw everything except lightning bolts (they go on top)
+        lightning_bolts = []
+        
+        for particle in self.particles:
+            if 'is_lightning_bolt' in particle:
+                lightning_bolts.append(particle)
+                continue
                 
-                # Get the points of the bolt
-                points = particle['points']
-                if not points or len(points) < 2:
-                    continue
+            if 'is_pool' in particle:
+                # Skip pools in this pass to avoid overdrawing
+                continue
                 
-                # Apply camera offset to all points
-                offset_points = [(p[0] - camera_offset[0], p[1] - camera_offset[1]) for p in points]
+            # Calculate screen position
+            draw_x = int(particle['x']) - camera_x
+            draw_y = int(particle['y']) - camera_y
+            
+            # Skip particles that are off-screen
+            screen_rect = surface.get_rect()
+            if not screen_rect.collidepoint(draw_x, draw_y):
+                continue
                 
-                # Draw the main bolt
-                color = particle['color']
-                thickness = particle['thickness']
-                alpha = particle.get('alpha', 255)
+            # Calculate alpha
+            alpha = min(255, max(0, int(particle['alpha'])))
+            
+            # Special handling for sparkle particles
+            if 'is_sparkle' in particle:
+                # For sparkles, we draw a star/glitter effect
                 
-                if alpha < 255:
-                    # Create alpha version of color
-                    color = (*color, alpha)
-                    
-                    # Create a surface with alpha channel
-                    bolt_surf = pygame.Surface((800, 600), pygame.SRCALPHA)  # Adjusted size for rendering
-                    
-                    # Draw the bolt on this surface
-                    for i in range(len(offset_points) - 1):
-                        pygame.draw.line(
-                            bolt_surf,
-                            color,
-                            (int(offset_points[i][0]), int(offset_points[i][1])),
-                            (int(offset_points[i+1][0]), int(offset_points[i+1][1])),
-                            thickness
-                        )
-                    
-                    # Draw a brighter center for the glow effect
-                    for i in range(len(offset_points) - 1):
-                        pygame.draw.line(
-                            bolt_surf,
-                            (*color[:3], min(255, alpha + 50)),  # Brighter center
-                            (int(offset_points[i][0]), int(offset_points[i][1])),
-                            (int(offset_points[i+1][0]), int(offset_points[i+1][1])),
-                            max(1, thickness // 2)
-                        )
-                    
-                    # Blit the surface onto the main surface
-                    surface.blit(bolt_surf, (0, 0))
+                # Create a pulsating size based on lifetime
+                pulse_factor = 0.7 + 0.3 * abs(math.sin(particle['lifetime'] * 0.1))
+                sparkle_size = particle['size'] * pulse_factor
+                
+                # Create a color with proper alpha
+                color = list(particle['color'])
+                if len(color) == 3:
+                    color.append(alpha)  # Add alpha channel
                 else:
-                    # Draw the bolt directly on the surface
-                    for i in range(len(offset_points) - 1):
-                        pygame.draw.line(
-                            surface,
-                            color,
-                            (int(offset_points[i][0]), int(offset_points[i][1])),
-                            (int(offset_points[i+1][0]), int(offset_points[i+1][1])),
-                            thickness
-                        )
-                    
-                    # Draw a brighter center for the glow effect
-                    for i in range(len(offset_points) - 1):
-                        pygame.draw.line(
-                            surface,
-                            (min(255, color[0] + 50), min(255, color[1] + 50), min(255, color[2] + 50)),
-                            (int(offset_points[i][0]), int(offset_points[i][1])),
-                            (int(offset_points[i+1][0]), int(offset_points[i+1][1])),
-                            max(1, thickness // 2)
-                        )
+                    color[3] = alpha  # Update alpha channel
+                
+                # Draw a star-like shape for sparkles
+                # Main circle
+                pygame.draw.circle(
+                    surface,
+                    color,
+                    (draw_x, draw_y),
+                    int(sparkle_size)
+                )
+                
+                # Create brighter center point
+                center_color = (255, 255, 255, alpha)  # White center
+                pygame.draw.circle(
+                    surface,
+                    center_color,
+                    (draw_x, draw_y),
+                    int(sparkle_size * 0.4)
+                )
+                
+                # Draw cross lines for star effect if particle is large enough
+                if sparkle_size > 2.5:
+                    line_length = sparkle_size * 1.5
+                    pygame.draw.line(
+                        surface,
+                        color,
+                        (draw_x - line_length, draw_y),
+                        (draw_x + line_length, draw_y),
+                        1
+                    )
+                    pygame.draw.line(
+                        surface,
+                        color,
+                        (draw_x, draw_y - line_length),
+                        (draw_x, draw_y + line_length),
+                        1
+                    )
             else:
-                # For dictionary-based particles
-                # Only draw if alive
-                if 'lifetime' in particle and particle['lifetime'] <= 0:
-                    continue
-                if 'size' in particle and particle['size'] <= 0:
-                    continue
+                # Regular particle drawing
+                # Use a radial gradient to make particles look better
+                max_radius = int(particle['size'])
                 
-                # Apply camera offset
-                draw_x = int(particle['x'] - camera_offset[0])
-                draw_y = int(particle['y'] - camera_offset[1])
-                
-                # Draw the particle
-                try:
-                    # Special drawing for blood pools - flatter ellipses instead of circles
-                    if particle.get('is_pool', False):
-                        size = max(1, int(particle['size']))
-                        height = max(1, int(size * 0.4))  # Flatter height
-                        
-                        # For very large pools, use irregular shapes
-                        if size > 6:
-                            # Draw a slightly irregular pool shape
-                            points = []
-                            segments = 8
-                            for i in range(segments):
-                                angle = i * (2 * math.pi / segments)
-                                # Vary the radius slightly for irregular shape
-                                radius_x = size * (0.9 + random.random() * 0.2)
-                                radius_y = height * (0.9 + random.random() * 0.2)
-                                point_x = draw_x + int(math.cos(angle) * radius_x)
-                                point_y = draw_y + int(math.sin(angle) * radius_y)
-                                points.append((point_x, point_y))
-                            
-                            # Draw the pool as a polygon
-                            pygame.draw.polygon(surface, particle['color'], points)
-                        else:
-                            # For smaller pools, use an ellipse
-                            ellipse_rect = pygame.Rect(
-                                draw_x - size, 
-                                draw_y - height, 
-                                size * 2, 
-                                height * 2
-                            )
-                            pygame.draw.ellipse(surface, particle['color'], ellipse_rect)
-                    elif 'color' in particle and len(particle['color']) >= 3:
-                        # Draw glow effect for fire particles
-                        glow_size = int(particle['size'] * 2)
-                        if glow_size > 0:
-                            glow_surf = pygame.Surface((glow_size * 2, glow_size * 2), pygame.SRCALPHA)
-                            glow_alpha = min(150, int(particle['alpha'] * 0.6) if 'alpha' in particle else 100)
-                            glow_color = (*particle['color'][:3], glow_alpha)
-                            pygame.draw.circle(glow_surf, glow_color, (glow_size, glow_size), glow_size)
-                            surface.blit(glow_surf, (draw_x - glow_size, draw_y - glow_size))
-                        
-                        # Draw the actual particle
-                        size = max(1, int(particle['size']))
-                        pygame.draw.circle(surface, particle['color'], (draw_x, draw_y), size)
-                except Exception as e:
-                    print(f"Error drawing particle: {e}")
+                if max_radius <= 1:
+                    # For very small particles, just draw a pixel
+                    color = particle['color']
+                    if len(color) == 3:
+                        color = color + (alpha,)
                     
+                    surface.set_at((draw_x, draw_y), color)
+                else:
+                    # For larger particles, use a gradient
+                    for radius in range(max_radius, 0, -1):
+                        # Calculate alpha for this radius (more opaque toward center)
+                        radius_alpha = int(alpha * (1 - (radius - 1) / max_radius))
+                        
+                        # Get color with proper alpha
+                        color = particle['color']
+                        if len(color) == 3:
+                            color = color + (radius_alpha,)
+                        else:
+                            color = color[:3] + (radius_alpha,)
+                        
+                        pygame.draw.circle(surface, color, (draw_x, draw_y), radius)
+                        
+        # Second pass: draw blood pools (they should be behind normal particles)
+        for particle in self.particles:
+            if 'is_pool' in particle:
+                # Calculate screen position
+                draw_x = int(particle['x']) - camera_x
+                draw_y = int(particle['y']) - camera_y
+                
+                # Skip particles that are off-screen
+                screen_rect = surface.get_rect()
+                if not screen_rect.collidepoint(draw_x, draw_y):
+                    continue
+                    
+                # Calculate alpha
+                alpha = min(255, max(0, int(particle['alpha'])))
+                
+                # Get drawing color with alpha
+                color = list(particle['color'])
+                if len(color) == 3:
+                    color.append(alpha)
+                else:
+                    color[3] = alpha
+                    
+                # Draw blood pool as an ellipse
+                size = particle['size']
+                # Make pools flatter (height < width)
+                height = size * 0.6  # Flatter height
+                
+                # For very large pools, use irregular shapes
+                if size > 6:
+                    # Draw a slightly irregular pool shape
+                    points = []
+                    segments = 8
+                    for i in range(segments):
+                        angle = i * (2 * math.pi / segments)
+                        # Vary the radius slightly for irregular shape
+                        radius_x = size * (0.9 + random.random() * 0.2)
+                        radius_y = height * (0.9 + random.random() * 0.2)
+                        point_x = draw_x + int(math.cos(angle) * radius_x)
+                        point_y = draw_y + int(math.sin(angle) * radius_y)
+                        points.append((point_x, point_y))
+                    
+                    # Draw the pool as a polygon
+                    pygame.draw.polygon(surface, particle['color'], points)
+                else:
+                    # For smaller pools, use an ellipse
+                    ellipse_rect = pygame.Rect(
+                        draw_x - size, 
+                        draw_y - height, 
+                        size * 2, 
+                        height * 2
+                    )
+                    pygame.draw.ellipse(surface, particle['color'], ellipse_rect)
+                        
+        # Third pass: draw lightning bolts (they go on top)
+        for bolt in lightning_bolts:
+            # Only draw if the bolt has points
+            if 'points' not in bolt or len(bolt['points']) < 2:
+                continue
+                
+            # Calculate alpha
+            alpha = min(255, max(0, int(bolt['alpha'])))
+            
+            # Get color with proper alpha
+            color = list(bolt['color'])
+            if len(color) == 3:
+                color.append(alpha)
+            else:
+                color[3] = alpha
+                
+            # Get adjusted points with camera offset
+            adjusted_points = [
+                (int(x) - camera_x, int(y) - camera_y) 
+                for x, y in bolt['points']
+            ]
+            
+            # Draw the lightning bolt
+            if len(adjusted_points) >= 2:
+                pygame.draw.lines(
+                    surface, 
+                    color, 
+                    False,  # Don't connect last point to first
+                    adjusted_points, 
+                    bolt['thickness']
+                )
+    
     def draw_blood_pools_only(self, surface, camera_offset=(0, 0)):
         """Draw only blood pool particles to the surface"""
         for particle in self.particles:

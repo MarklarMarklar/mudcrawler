@@ -333,3 +333,55 @@ class WeaponPickup(BasePickup):
                 
         except Exception as e:
             print(f"Error rendering {self.weapon_type} pickup: {e}") 
+
+
+class MagicPotionPickup(BasePickup):
+    """Magic potion pickup placed in treasure rooms"""
+    def __init__(self, x, y):
+        # Use 150% of the standard pickup size
+        super().__init__(x, y, size=int(TILE_SIZE*3//4))
+        
+        # Try to load potion texture
+        try:
+            potion_path = os.path.join(ASSET_PATH, "icons/magic_potion.png")
+            if os.path.exists(potion_path):
+                self.potion_texture = self.asset_manager.load_image(potion_path, scale=(self.size, self.size))
+                print(f"Loaded magic potion texture from {potion_path}")
+            else:
+                print(f"Magic potion texture not found at {potion_path}")
+                self.potion_texture = None
+        except Exception as e:
+            print(f"Failed to load magic potion texture: {e}")
+            self.potion_texture = None
+        
+    def draw(self, surface):
+        if self.collected:
+            return
+            
+        try:
+            # Pulsing effect
+            pulse = math.sin(self.pulse_timer) * 0.2 + 0.8
+            size = int(self.size * pulse)
+            
+            # Draw the glow effect FIRST (under the potion)
+            glow_surf = pygame.Surface((size * 3, size * 3), pygame.SRCALPHA)
+            glow_color = (0, 180, 0, 100)  # Green glow
+            pygame.draw.circle(glow_surf, glow_color, (size * 1.5, size * 1.5), size * pulse)
+            glow_rect = glow_surf.get_rect(center=(self.x, self.y))
+            surface.blit(glow_surf, glow_rect)
+            
+            # THEN draw potion pickup OVER the glow
+            if self.potion_texture:
+                # Scale the texture based on pulse
+                scaled_texture = pygame.transform.scale(self.potion_texture, (size, size))
+                # Draw centered at pickup position
+                rect = scaled_texture.get_rect(center=(self.x, self.y))
+                surface.blit(scaled_texture, rect)
+            else:
+                # Draw a fallback potion shape if texture isn't available
+                # Draw a green potion
+                pygame.draw.rect(surface, (0, 128, 0), (self.x - size//4, self.y - size//3, size//2, size//1.5))
+                pygame.draw.circle(surface, (0, 128, 0), (self.x, self.y - size//3), size//4)
+                
+        except Exception as e:
+            print(f"Error rendering magic potion pickup: {e}") 

@@ -7,7 +7,7 @@ from config import *
 from enemy import Enemy
 from asset_manager import get_asset_manager
 from sound_manager import get_sound_manager
-from pickups import ArrowPickup, HealthPickup, KeyPickup, WeaponPickup
+from pickups import ArrowPickup, HealthPickup, KeyPickup, WeaponPickup, MagicPotionPickup
 from scripts.boss_factory import create_boss
 
 class BloodPuddle:
@@ -152,6 +152,29 @@ class BossCorpse:
             fallback_rect = pygame.Rect(self.x - TILE_SIZE, self.y - TILE_SIZE, TILE_SIZE*2, TILE_SIZE*2)
             pygame.draw.rect(surface, (150, 0, 0), fallback_rect)
 
+class FloorDecoration:
+    """Represents a decorative object placed on the floor of a room"""
+    def __init__(self, x, y, image_path):
+        self.x = x
+        self.y = y
+        self.asset_manager = get_asset_manager()
+        
+        # Try to load the image
+        try:
+            self.image = self.asset_manager.load_image(image_path, scale=(TILE_SIZE, TILE_SIZE))
+            self.rect = self.image.get_rect(topleft=(x, y))
+            self.valid = True
+        except Exception as e:
+            print(f"Error loading floor decoration: {e}")
+            self.image = None
+            self.rect = pygame.Rect(x, y, TILE_SIZE, TILE_SIZE)
+            self.valid = False
+        
+    def draw(self, surface):
+        """Draw the floor decoration to the surface"""
+        if self.valid and self.image:
+            surface.blit(self.image, self.rect)
+
 class Room:
     """Represents a single room in a dungeon level"""
     def __init__(self, x, y, level_number, room_type='normal'):
@@ -193,6 +216,7 @@ class Room:
         self.torches = []
         self.chests = []
         self.destroyable_walls = []  # Positions of destroyable walls
+        self.floor_decorations = []  # List to store floor decorations
         
         # Sound manager for playing sounds
         try:
@@ -208,6 +232,7 @@ class Room:
         self.health_pickups = []
         self.arrow_pickups = []
         self.weapon_pickups = []
+        self.magic_potion = None  # Store the magic potion
         self.boss = None
         
         # Blood puddles to show where enemies died
@@ -556,6 +581,12 @@ class Room:
                                 (y == center_y and (x == center_x - central_room_size//2 or x == center_x + central_room_size//2))):
                             self.tiles[y][x] = 1
                     
+            # Place floor decorations
+            self._place_floor_decorations()
+            
+            # Place magic potion in treasure rooms
+            self._place_magic_potion()
+        
         # Add doors based on door configuration
         if self.doors['north']:
             # North door - middle of top wall
@@ -604,6 +635,16 @@ class Room:
             
         # ADD DESTROYABLE WALLS (TREASURE CHESTS) SEPARATELY
         self._place_destroyable_walls()
+        
+        # Place floor decorations
+        self._place_floor_decorations()
+        
+        # Place magic potion in treasure rooms
+        if self.room_type == 'treasure':
+            self._place_magic_potion()
+        
+        # Ensure the room is completely traversable
+        self._check_room_connectivity()
         
     def _place_destroyable_walls(self):
         """Place destroyable walls (treasure chests) in the room"""
@@ -1015,25 +1056,31 @@ class Room:
         else:
             return False
         
-    def try_pickup_health(self, player_rect):
+    def try_pickup_health(self, player_rect, player_health=None, player_max_health=None):
         """Check if player is touching a health pickup"""
         for pickup in self.health_pickups:
             if not pickup.collected and pickup.rect.colliderect(player_rect):
-                pickup.collected = True
-                print(f"Health pickup collected")
-                return pickup.heal_amount
+                # Only collect the health pickup if the player isn't at max health
+                if player_health is None or player_max_health is None or player_health < player_max_health:
+                    pickup.collected = True
+                    print(f"Health pickup collected")
+                    return pickup.heal_amount
+                else:
+                    print(f"Player already at max health, health pickup not collected")
+                    return 0
                 
         return 0
         
-    def try_pickup_arrows(self, player_rect):
+    def try_pickup_arrows(self, player_rect, check_only=False):
         """Check if player is touching an arrow pickup"""
         arrow_amount = 0
         try:
             for pickup in self.arrow_pickups:
                 if not pickup.collected and pickup.rect.colliderect(player_rect):
-                    pickup.collected = True
-                    print(f"Arrow pickup collected")
-                    arrow_amount = pickup.arrow_amount
+                    if not check_only:
+                        pickup.collected = True
+                        print(f"Arrow pickup collected")
+                        arrow_amount = pickup.arrow_amount
                     break
         except Exception as e:
             print(f"Error in try_pickup_arrows: {e}")
@@ -1624,6 +1671,15 @@ class Room:
         for blood_puddle in self.blood_puddles:
             blood_puddle.draw(surface)
         
+        # Draw floor decorations
+        for decoration in self.floor_decorations:
+            decoration.draw(surface)
+        
+        # Draw magic potion if it exists
+        if self.magic_potion and not self.magic_potion.collected:
+            self.magic_potion.update()  # Update animation
+            self.magic_potion.draw(surface)
+        
         # Draw health pickups
         for pickup in self.health_pickups:
             if not pickup.collected:
@@ -2060,6 +2116,100 @@ class Room:
                 )
         except Exception as e:
             print(f"Error creating chest sparkle burst: {e}")
+
+    def _place_floor_decorations(self):
+        """Place random floor decorations on valid floor tiles"""
+        # Load the floor decoration images
+        floor_decor_path = os.path.join(TILE_SPRITES_PATH, "floor decor")
+        if not os.path.exists(floor_decor_path):
+            print(f"Floor decoration path not found: {floor_decor_path}")
+            return
+            
+        floor_decor_files = glob.glob(os.path.join(floor_decor_path, "*.png"))
+        if not floor_decor_files:
+            print(f"No floor decoration images found in {floor_decor_path}")
+            return
+            
+        # Get all valid floor tile positions (tile value 0)
+        valid_positions = []
+        for y in range(self.height):
+            for x in range(self.width):
+                # Only use floor tiles that aren't near doors and aren't walls or destroyable walls
+                if self.tiles[y][x] == 0 and not self._is_near_door(x, y):
+                    # Check if this position is a destroyable wall
+                    is_destroyable = (hasattr(self, 'destroyable_walls') and 
+                                     y < len(self.destroyable_walls) and 
+                                     x < len(self.destroyable_walls[y]) and 
+                                     self.destroyable_walls[y][x])
+                    
+                    if not is_destroyable:
+                        valid_positions.append((x, y))
+                    
+        # Determine how many decorations to place based on room type
+        if self.room_type == 'start':
+            # Starting rooms have fewer decorations (1-2)
+            num_decorations = random.randint(1, 2)
+        else:
+            # Other rooms have 3-6 decorations
+            num_decorations = random.randint(3, 6)
+            
+        num_decorations = min(num_decorations, len(valid_positions))
+        
+        # Place the decorations
+        for i in range(num_decorations):
+            if not valid_positions:
+                break
+                
+            # Choose a random position
+            pos_index = random.randint(0, len(valid_positions) - 1)
+            x, y = valid_positions.pop(pos_index)
+            
+            # Choose a random decoration image
+            decor_image = random.choice(floor_decor_files)
+            
+            # Create the decoration
+            tile_x = x * TILE_SIZE
+            tile_y = y * TILE_SIZE
+            floor_decor = FloorDecoration(tile_x, tile_y, decor_image)
+            self.floor_decorations.append(floor_decor)
+            
+            print(f"Added decoration {i+1}/{num_decorations}: {os.path.basename(decor_image)} at position ({x}, {y})")
+
+    def _place_magic_potion(self):
+        """Place a magic potion in the center of treasure rooms"""
+        center_x = self.width // 2
+        center_y = self.height // 2
+        
+        # Ensure the center tile is floor (not a wall)
+        if self.tiles[center_y][center_x] != 0:
+            # If center isn't floor, find a nearby floor tile
+            for dy in range(-2, 3):
+                for dx in range(-2, 3):
+                    check_y = center_y + dy
+                    check_x = center_x + dx
+                    if (0 <= check_y < self.height and 0 <= check_x < self.width and 
+                        self.tiles[check_y][check_x] == 0):
+                        center_y = check_y
+                        center_x = check_x
+                        break
+                else:
+                    continue
+                break
+        
+        # Place the potion at the center of the tile
+        pixel_x = center_x * TILE_SIZE + TILE_SIZE // 2
+        pixel_y = center_y * TILE_SIZE + TILE_SIZE // 2
+        self.magic_potion = MagicPotionPickup(pixel_x, pixel_y)
+        print(f"Magic potion placed at position ({center_x}, {center_y}) in treasure room")
+
+    def try_pickup_magic_potion(self, player_rect):
+        """Check if player is touching the magic potion"""
+        if self.magic_potion and not self.magic_potion.collected and self.magic_potion.rect.colliderect(player_rect):
+            self.magic_potion.collected = True
+            print(f"Magic potion collected!")
+            # Return the magic potion with a flag for health increase
+            return True
+        return False
 
 class Level:
     def __init__(self, level_number):
@@ -2772,6 +2922,15 @@ class Level:
         # Check if player picked up the key
         self.check_key_pickup(player.hitbox)
         
+        # Check if player picked up a magic potion
+        if self.check_magic_potion_pickup(player.hitbox):
+            # Display message to player when potion is collected
+            if hasattr(self, 'game') and hasattr(self.game, 'display_message'):
+                self.game.display_message("Magic Potion Collected!", (180, 0, 255))
+            else:
+                # Alternative notification if game message system isn't available
+                self.show_notification("Magic Potion Collected!", (180, 0, 255))
+        
         # Check exit use (only if not already showing confirmation)
         if not self.show_exit_confirmation:
             self.check_exit_use(player.hitbox)
@@ -2825,14 +2984,27 @@ class Level:
         """Check if player is touching a health pickup in the current room"""
         if self.current_room_coords in self.rooms:
             room = self.rooms[self.current_room_coords]
-            return room.try_pickup_health(player_rect)
+            
+            # Get player health status from game reference if available
+            player_health = None
+            player_max_health = None
+            if hasattr(self, 'game') and self.game and hasattr(self.game, 'player'):
+                player_health = self.game.player.health
+                player_max_health = self.game.player.max_health
+                
+            # Pass player health info to try_pickup_health
+            heal_amount = room.try_pickup_health(player_rect, player_health, player_max_health)
+            if heal_amount > 0:
+                # Show notification for health pickup
+                self.show_notification(f"Health restored: +{heal_amount}")
+            return heal_amount
         return 0
         
-    def check_arrow_pickup(self, player_rect):
+    def check_arrow_pickup(self, player_rect, check_only=False):
         """Check if player is touching an arrow pickup in the current room"""
         if self.current_room_coords in self.rooms:
             room = self.rooms[self.current_room_coords]
-            return room.try_pickup_arrows(player_rect)
+            return room.try_pickup_arrows(player_rect, check_only)
         return 0
         
     def check_weapon_pickup(self, player_rect):
@@ -2857,33 +3029,9 @@ class Level:
                 for ray in self.death_rays:
                     ray.draw(surface)
             
-            # Draw notification if active
-            if self.notification_text:
-                current_time = pygame.time.get_ticks()
-                time_elapsed = current_time - self.notification_time
-                
-                if time_elapsed < self.notification_duration:
-                    # Create pulsing effect
-                    pulse = 0.7 + 0.3 * abs(math.sin(time_elapsed / 200))
-                    
-                    try:
-                        # Create background for better readability
-                        font = pygame.font.Font(None, 32)
-                        text = font.render(self.notification_text, True, self.notification_color)
-                        text_rect = text.get_rect(center=(WINDOW_WIDTH//2, 50))
-                        
-                        # Draw background
-                        bg_rect = text_rect.inflate(20, 10)
-                        pygame.draw.rect(surface, (0, 0, 0, 150), bg_rect, border_radius=5)
-                        
-                        # Draw the text
-                        surface.blit(text, text_rect)
-                    except Exception as e:
-                        print(f"Error drawing notification: {e}")
-                else:
-                    # Clear notification after duration expires
-                    self.notification_text = None
-        
+            # Remove the notification drawing code
+            # The notifications will no longer be displayed on screen
+            
     def draw_exit_confirmation(self, surface):
         """Draw confirmation dialog when trying to exit level"""
         # This dialog should be drawn directly on the screen, not affected by camera zoom
@@ -3006,9 +3154,39 @@ class Level:
         return yes_rect, no_rect 
 
     def show_notification(self, message, color=(255, 255, 0), duration=3000):
-        """Show a notification message"""
-        self.notification_text = message
-        self.notification_color = color
-        self.notification_time = pygame.time.get_ticks()
-        self.notification_duration = duration
-        print(f"Showing notification: {message}")
+        """Show a notification message (now only prints to console)"""
+        # Keep only the console print for debugging
+        print(f"Game message: {message}")
+        # No longer storing notification text, color, or timing
+
+    def check_magic_potion_pickup(self, player_rect):
+        """Check if player picked up a magic potion in the current room"""
+        current_room = self.get_current_room()
+        if current_room:
+            potion_collected = current_room.try_pickup_magic_potion(player_rect)
+            if potion_collected and hasattr(self, 'game') and self.game.player:
+                # Play magic potion sound effect
+                self.game.sound_manager.play_sound("effects/magic_potion")
+                
+                # Create sparkling particle effects around the player
+                if hasattr(self, 'particle_system'):
+                    # Create sparkles around the player's position
+                    self.particle_system.create_magic_sparkles(
+                        self.game.player.rect.centerx,
+                        self.game.player.rect.centery,
+                        amount=50,  # Lots of sparkles for a dramatic effect
+                        spread=60   # Wider spread around the player
+                    )
+                
+                # Increase max health by 10 and heal to full
+                self.game.player.increase_max_health(10)
+                # Show notification
+                self.show_notification("Magic potion collected! Max health increased!", (255, 100, 255), 3000)
+            return potion_collected
+        return False
+
+    def get_current_room(self):
+        """Get the current room the player is in"""
+        if self.current_room_coords in self.rooms:
+            return self.rooms[self.current_room_coords]
+        return None

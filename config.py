@@ -21,6 +21,11 @@ GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 YELLOW = (255, 255, 0)
 BROWN = (150, 75, 0)
+BONUS_HEALTH_COLOR = (0, 100, 50)  # Dark green color for bonus health
+
+# Health Settings
+PLAYER_START_HEALTH = 100
+MAX_BONUS_HEALTH = 100  # Maximum possible bonus health (10 potions * 10 health)
 
 # Asset Paths
 import os
@@ -35,9 +40,8 @@ UI_SPRITES_PATH = os.path.join(ASSET_PATH, "ui")
 SOUNDS_PATH = os.path.join(ASSET_PATH, "sounds")
 
 # Player Settings
-PLAYER_START_HEALTH = 100
 PLAYER_SPEED = 3.5  # Reduced from 5 to make player movement slower
-SWORD_DAMAGE = 500 # 25 default
+SWORD_DAMAGE = 25 # 25 default
 BOW_DAMAGE = 15
 BOW_COOLDOWN = 1000  # milliseconds
 SWORD_COOLDOWN = 500  # milliseconds

@@ -487,10 +487,7 @@ class Game:
                         # Show audio menu
                         self.menu.showing_audio = True
                         self.menu.showing_options = False
-                        # Initialize slider values from sound manager
-                        sound_manager = self.sound_manager
-                        self.menu.music_volume = sound_manager.music_volume
-                        self.menu.sfx_volume = sound_manager.sfx_volume
+                        # Slider values are now synced in draw_audio_menu
                     elif button_clicked == 'artworks':
                         print("Artworks button clicked")
                         # Show artworks menu
@@ -1115,22 +1112,24 @@ class Game:
         try:
             health_amount = self.level.check_health_pickup(self.player.hitbox)
             if health_amount > 0:
-                # Only heal if health is not full
-                if self.player.health < PLAYER_START_HEALTH:
-                    self.player.heal(health_amount)
-                    print(f"Player healed for {health_amount} HP!")
-                else:
-                    print("Health is already full!")
+                # Heal player with the amount returned
+                self.player.heal(health_amount)
+                print(f"Player healed for {health_amount} HP!")
         except Exception as e:
             print(f"Error checking health pickup: {e}")
                 
         # Check for arrow pickups
         try:
-            arrow_amount = self.level.check_arrow_pickup(self.player.hitbox)
-            if arrow_amount > 0:
-                # Add arrows to player inventory
-                arrows_added = self.player.add_arrows(arrow_amount)
-                print(f"Player picked up {arrow_amount} arrows! Now has {self.player.arrow_count}/{self.player.max_arrows} arrows.")
+            # Only check for arrow pickups if player doesn't have max arrows
+            if self.player.arrow_count < self.player.max_arrows:
+                arrow_amount = self.level.check_arrow_pickup(self.player.hitbox)
+                if arrow_amount > 0:
+                    # Add arrows to player inventory
+                    arrows_added = self.player.add_arrows(arrow_amount)
+                    print(f"Player picked up {arrow_amount} arrows! Now has {self.player.arrow_count}/{self.player.max_arrows} arrows.")
+            else:
+                # Still check if player is touching an arrow pickup, but don't collect it
+                self.level.check_arrow_pickup(self.player.hitbox, check_only=True)
         except Exception as e:
             print(f"Error checking arrow pickup: {e}")
             

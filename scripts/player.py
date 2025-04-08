@@ -555,9 +555,22 @@ class Player(pygame.sprite.Sprite):
         # Don't take damage if already dead
         if self.is_dead:
             return False
-            
-        self.health -= amount
         
+        # Handle damage reduction - first decrease bonus health, then normal health
+        if self.health > PLAYER_START_HEALTH:
+            # Player has bonus health, reduce that first
+            bonus_health = self.health - PLAYER_START_HEALTH
+            
+            if amount <= bonus_health:
+                # Damage only affects bonus health
+                self.health -= amount
+            else:
+                # Damage depletes bonus health and affects regular health
+                self.health = PLAYER_START_HEALTH - (amount - bonus_health)
+        else:
+            # No bonus health, reduce normal health directly
+            self.health -= amount
+            
         # Play damage sound effect
         self.sound_manager.play_sound("effects/player_dmg")
         
@@ -658,6 +671,11 @@ class Player(pygame.sprite.Sprite):
     def heal(self, amount):
         """Heal the player by the given amount, capped at max health"""
         self.health = min(self.health + amount, self.max_health)
+        
+    def increase_max_health(self, amount):
+        """Increase the player's maximum health by the given amount and heal to full"""
+        self.max_health += amount
+        self.health = self.max_health  # Heal to full health
         
     def update(self):
         # Get current time at the beginning for consistent timing
