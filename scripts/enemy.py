@@ -4079,7 +4079,10 @@ class Boss(Enemy):
         # Draw blood zones for Boss 1 BEFORE drawing the boss
         if self.level == 1 and hasattr(self, 'blood_zones') and self.blood_zones:
             for zone in self.blood_zones:
-                surface.blit(zone.image, zone.rect)
+                if hasattr(zone, 'draw'):
+                    zone.draw(surface)
+                else:
+                    surface.blit(zone.image, zone.rect)
         
         # Calculate position with visual offset
         draw_x = self.rect.x - self.visual_offset_x
@@ -5498,44 +5501,59 @@ class BloodZone(pygame.sprite.Sprite):
         # Size should be 4 tiles (2x2 grid)
         self.size = size
         
-        # Create the image with transparency
-        self.image = pygame.Surface((size, size), pygame.SRCALPHA)
-        
-        # Calculate center point
-        center_point = (size // 2, size // 2)
-        
-        # Add a glowing effect (red mist)
-        for i in range(6):
-            glow_radius = size // 2 + (5 - i) * 3
-            glow_alpha = 15 + i * 10
-            glow_col = (150, 0, 0, glow_alpha)  # Red glow for blood
-            pygame.draw.circle(self.image, glow_col, center_point, glow_radius)
-        
-        # Main blood puddle colors - dark red
-        outer_color = (120, 0, 0, 190)  # Dark red
-        main_color = (180, 0, 0, 200)   # Medium red
-        inner_color = (220, 0, 0, 220)  # Lighter red
-        
-        # Draw the base puddle shape as a circle
-        pygame.draw.circle(self.image, outer_color, center_point, size // 2 - 2)
-        
-        # Draw a smaller inner puddle
-        pygame.draw.circle(self.image, main_color, center_point, int(size * 0.4) - 1)
-        
-        # Draw the blood center
-        pygame.draw.circle(self.image, inner_color, center_point, int(size * 0.25))
-        
-        # Add some blood splatter details
-        for _ in range(8):
-            angle = random.uniform(0, math.pi * 2)
-            distance = random.uniform(0, size // 4)
+        # Load the blood zone image from assets
+        try:
+            # Path to the blood zone image
+            image_path = os.path.join(BOSS_SPRITES_PATH, "blood_zone.png")
             
-            dot_x = center_point[0] + int(math.cos(angle) * distance)
-            dot_y = center_point[1] + int(math.sin(angle) * distance)
+            # Load the image
+            original_image = pygame.image.load(image_path).convert_alpha()
             
-            dot_size = random.randint(2, 5)
-            bubble_color = (220, 0, 0, 230)  # Bright red for blood drops
-            pygame.draw.circle(self.image, bubble_color, (dot_x, dot_y), dot_size)
+            # Scale it to the desired size
+            self.image = pygame.transform.scale(original_image, (size, size))
+            
+            print(f"Successfully loaded blood zone image from {image_path}")
+        except Exception as e:
+            print(f"Failed to load blood zone image: {e}")
+            
+            # Create a fallback image with transparency if loading fails
+            self.image = pygame.Surface((size, size), pygame.SRCALPHA)
+            
+            # Calculate center point
+            center_point = (size // 2, size // 2)
+            
+            # Add a glowing effect (red mist)
+            for i in range(6):
+                glow_radius = size // 2 + (5 - i) * 3
+                glow_alpha = 15 + i * 10
+                glow_col = (150, 0, 0, glow_alpha)  # Red glow for blood
+                pygame.draw.circle(self.image, glow_col, center_point, glow_radius)
+            
+            # Main blood puddle colors - dark red
+            outer_color = (120, 0, 0, 190)  # Dark red
+            main_color = (180, 0, 0, 200)   # Medium red
+            inner_color = (220, 0, 0, 220)  # Lighter red
+            
+            # Draw the base puddle shape as a circle
+            pygame.draw.circle(self.image, outer_color, center_point, size // 2 - 2)
+            
+            # Draw a smaller inner puddle
+            pygame.draw.circle(self.image, main_color, center_point, int(size * 0.4) - 1)
+            
+            # Draw the blood center
+            pygame.draw.circle(self.image, inner_color, center_point, int(size * 0.25))
+            
+            # Add some blood splatter details
+            for _ in range(8):
+                angle = random.uniform(0, math.pi * 2)
+                distance = random.uniform(0, size // 4)
+                
+                dot_x = center_point[0] + int(math.cos(angle) * distance)
+                dot_y = center_point[1] + int(math.sin(angle) * distance)
+                
+                dot_size = random.randint(2, 5)
+                bubble_color = (220, 0, 0, 230)  # Bright red for blood drops
+                pygame.draw.circle(self.image, bubble_color, (dot_x, dot_y), dot_size)
         
         self.rect = self.image.get_rect(center=(x, y))
         self.true_center = (x, y)  # Store the exact center for accurate positioning
@@ -5558,6 +5576,9 @@ class BloodZone(pygame.sprite.Sprite):
         self.pulse_time += self.pulse_speed
         if self.pulse_time > math.pi * 2:
             self.pulse_time -= math.pi * 2
+            
+        # Apply a subtle pulse effect to the size of the blood zone
+        # This is now handled in the draw method for the loaded image
 
     def check_collision(self, rect):
         # Don't collide with the boss that created this zone
@@ -5572,7 +5593,23 @@ class BloodZone(pygame.sprite.Sprite):
             self.last_damage_time = current_time
             return True
         return False
-
+        
+    def draw(self, surface):
+        # Apply a subtle pulsing effect when drawing
+        pulse_scale = 1.0 + 0.05 * math.sin(self.pulse_time)
+        
+        # Calculate scaled size
+        scaled_size = int(self.size * pulse_scale)
+        
+        if scaled_size != self.size:
+            # Create a temporary scaled image
+            scaled_image = pygame.transform.scale(self.image, (scaled_size, scaled_size))
+            # Keep it centered
+            scaled_rect = scaled_image.get_rect(center=self.rect.center)
+            surface.blit(scaled_image, scaled_rect)
+        else:
+            # Normal drawing
+            surface.blit(self.image, self.rect)
 class DeathRay(pygame.sprite.Sprite):
     """Death ray that spins around the boss 7 and damages the player"""
     def __init__(self, boss, length, damage):
