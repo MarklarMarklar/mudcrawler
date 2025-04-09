@@ -656,7 +656,7 @@ class Menu:
             self.screen.blit(subtitle, subtitle_rect)
         
         # Draw version number in top right corner
-        version_text = self.instruction_font.render("1.0 Alpha", True, (255, 255, 0))
+        version_text = self.instruction_font.render("1.0 Beta", True, (255, 255, 0))
         version_rect = version_text.get_rect(topright=(WINDOW_WIDTH - 10, 10))
         self.screen.blit(version_text, version_rect)
         

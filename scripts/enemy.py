@@ -1,4 +1,4 @@
-import pygame
+﻿import pygame
 import math
 import random
 import os
@@ -5491,7 +5491,7 @@ class BloodZone(pygame.sprite.Sprite):
     def __init__(self, x, y, size, damage, creator=None):
         super().__init__()
         self.creation_time = pygame.time.get_ticks()
-        self.duration = 18000  # 18 seconds lifetime
+        self.duration = 24000  # 24 seconds lifetime
         self.damage = damage
         self.creator = creator  # Reference to the boss that created this zone
         
@@ -5541,7 +5541,7 @@ class BloodZone(pygame.sprite.Sprite):
         self.true_center = (x, y)  # Store the exact center for accurate positioning
         
         # Add damage cooldown
-        self.last_damage_time = 0
+        self.last_damage_time = pygame.time.get_ticks() + 500  # 500ms grace period
         self.damage_cooldown = 1000  # 1 second between damage applications
         
         # Add pulse/glow effect
