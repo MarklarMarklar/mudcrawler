@@ -1063,10 +1063,10 @@ class Room:
                 # Only collect the health pickup if the player isn't at max health
                 if player_health is None or player_max_health is None or player_health < player_max_health:
                     pickup.collected = True
-                    print(f"Health pickup collected")
+                    # print(f"Health pickup collected")
                     return pickup.heal_amount
                 else:
-                    print(f"Player already at max health, health pickup not collected")
+                    # print(f"Player already at max health, health pickup not collected")
                     return 0
                 
         return 0
@@ -2242,7 +2242,7 @@ class Room:
             floor_decor = FloorDecoration(tile_x, tile_y, decor_image)
             self.floor_decorations.append(floor_decor)
             
-            print(f"Added decoration {i+1}/{num_decorations}: {os.path.basename(decor_image)} at position ({x}, {y})")
+            # print(f"Added decoration {i+1}/{num_decorations}: {os.path.basename(decor_image)} at position ({x}, {y})")
 
     def _place_magic_potion(self):
         """Place a magic potion in the center of treasure rooms"""

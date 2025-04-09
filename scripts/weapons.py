@@ -27,10 +27,10 @@ class Arrow:
             if os.path.exists(arrow_path):
                 self.arrow_texture = self.asset_manager.load_image(arrow_path, scale=(self.size, self.size))
             else:
-                print(f"Arrow texture does not exist: {arrow_path}")
+                # print(f"Arrow texture does not exist: {arrow_path}")
                 self.arrow_texture = None
         except Exception as e:
-            print(f"Failed to load arrow texture: {e}")
+            # print(f"Failed to load arrow texture: {e}")
             self.arrow_texture = None
         
     def update(self):
@@ -46,7 +46,8 @@ class Arrow:
         if hasattr(self, 'frames_alive'):
             self.frames_alive += 1
             if self.frames_alive % 10 == 0:
-                print(f"Arrow at ({int(self.x)}, {int(self.y)}) moving {self.direction} - lifetime: {self.lifetime}")
+                # print(f"Arrow at ({int(self.x)}, {int(self.y)}) moving {self.direction} - lifetime: {self.lifetime}")
+                pass
         else:
             self.frames_alive = 1
         
@@ -211,9 +212,9 @@ class Sword(pygame.sprite.Sprite):
                 self.sword_images['left'] = left_sword
                 self.animation_frames['left'] = self._create_animation_frames(left_sword, 'left')
                 
-                print("Successfully loaded normal_sword.png for all directions")
+                # print("Successfully loaded normal_sword.png for all directions")
             else:
-                print("Using simple sword graphics - normal_sword.png not found")
+                # print("Using simple sword graphics - normal_sword.png not found")
                 # We'll use the simple shapes defined above if the PNG isn't available
                 
                 # Create animation frames for each direction
@@ -296,9 +297,9 @@ class Sword(pygame.sprite.Sprite):
                 self.fire_sword_images['left'] = left_fire_sword
                 self.fire_animation_frames['left'] = self._create_animation_frames(left_fire_sword, 'left')
                 
-                print("Successfully loaded fire_sword.png for all directions")
+                # print("Successfully loaded fire_sword.png for all directions")
             else:
-                print("fire_sword.png not found - using normal sword images for fire sword")
+                # print("fire_sword.png not found - using normal sword images for fire sword")
                 # Use normal sword images as fallback
                 self.fire_sword_images = self.sword_images.copy()
                 self.fire_animation_frames = self.animation_frames.copy()
@@ -342,9 +343,9 @@ class Sword(pygame.sprite.Sprite):
                 self.lightning_sword_images['left'] = left_lightning_sword
                 self.lightning_animation_frames['left'] = self._create_animation_frames(left_lightning_sword, 'left')
                 
-                print("Successfully loaded lightning_sword.png for all directions")
+                # print("Successfully loaded lightning_sword.png for all directions")
             else:
-                print("lightning_sword.png not found - using normal sword images for lightning sword")
+                # print("lightning_sword.png not found - using normal sword images for lightning sword")
                 # Use normal sword images as fallback
                 self.lightning_sword_images = self.sword_images.copy()
         except Exception as e:
@@ -1017,7 +1018,7 @@ class Bow:
         
     def draw(self, surface):
         # Debug message
-        print(f"DEBUG: Rendering {len(self.arrows)} arrows")
+        # print(f"DEBUG: Rendering {len(self.arrows)} arrows")
         
         # Draw each arrow
         for arrow in self.arrows:
@@ -1062,10 +1063,10 @@ class WeaponManager:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_1:
                 self.current_weapon = "sword"
-                print("Switched to sword")
+                #  print("Switched to sword")
             elif event.key == pygame.K_2:
                 self.current_weapon = "bow"
-                print("Switched to bow")
+                # print("Switched to bow")
         
         # Handle attack with current weapon
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -1139,7 +1140,7 @@ class WeaponManager:
             self.sound_manager.play_sound("effects/arrow")
             
             # For debugging
-            print(f"Created arrow at ({self.player.rect.centerx}, {self.player.rect.centery}) moving in direction ({dx}, {dy})")
+            # print(f"Created arrow at ({self.player.rect.centerx}, {self.player.rect.centery}) moving in direction ({dx}, {dy})")
             
             return arrow
         
@@ -1169,4 +1170,4 @@ class WeaponManager:
         """Remove all arrows when warping between levels or resetting the game"""
         if hasattr(self, 'bow') and self.bow:
             self.bow.arrows = []
-            print("Cleared all arrows")
+            # print("Cleared all arrows")

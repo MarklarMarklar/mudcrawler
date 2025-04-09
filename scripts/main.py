@@ -697,7 +697,7 @@ class Game:
             # Initialize start time if not set
             if self.splash_start_time == 0:
                 self.splash_start_time = current_time
-                print(f"Splash screen started at time: {current_time}")
+                # print(f"Splash screen started at time: {current_time}")
                 # Force an immediate glitch effect at the beginning
                 self.glitched_splash_image = self._apply_horizontal_glitch(self.original_splash_image)
                 self.glitch_last_update = current_time
@@ -708,7 +708,7 @@ class Game:
             if current_time - self.splash_start_time < self.glitch_duration:
                 # Update glitch effect at regular intervals
                 if current_time - self.glitch_last_update > self.glitch_update_rate:
-                    print(f"Applying glitch effect at time: {current_time - self.splash_start_time}ms")
+                    # print(f"Applying glitch effect at time: {current_time - self.splash_start_time}ms")
                     self.glitched_splash_image = self._apply_horizontal_glitch(self.original_splash_image.copy())
                     self.glitch_last_update = current_time
                     self.splash_image = self.glitched_splash_image
@@ -719,15 +719,15 @@ class Game:
                         self.glitch_next_frame = False
             else:
                 if self.splash_image != self.original_splash_image:
-                    print(f"Glitch effect ended at time: {current_time - self.splash_start_time}ms")
+                    #  print(f"Glitch effect ended at time: {current_time - self.splash_start_time}ms")
                     self.splash_image = self.original_splash_image
                     self.glitch_next_frame = False
             
             # Check if splash duration has passed
             if current_time - self.splash_start_time >= self.splash_duration:
-                print(f"Splash screen complete at time: {current_time - self.splash_start_time}ms")
+                # print(f"Splash screen complete at time: {current_time - self.splash_start_time}ms")
                 self.state = MENU
-                print("Starting welcome screen music")
+                # print("Starting welcome screen music")
                 self.sound_manager.play_music('menu')
             return  # Skip other updates during splash screen
             
