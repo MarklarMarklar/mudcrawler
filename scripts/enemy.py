@@ -130,7 +130,8 @@ class BossProjectile(pygame.sprite.Sprite):
         self.warning_pulse_rate = 0.1
         
         # Trail effect properties
-        self.trail_enabled = False if hasattr(self, 'boss_level') and self.boss_level == 10 else True
+        # Trail effect properties
+        self.trail_enabled = False if hasattr(self, 'boss_level') and (self.boss_level == 10 or self.boss_level == 2) else True
         self.position_history = []
         self.max_trail_length = 8  # Number of previous positions to remember
         self.trail_update_rate = 2  # Update trail every N frames
@@ -508,27 +509,8 @@ class BossProjectile(pygame.sprite.Sprite):
                 # Draw the orbiting projectile on top of all effects
                 if hasattr(self, 'boss_level') and self.boss_level == 8:
                     # For boss 8, redraw the projectile to ensure it's on top
-                    surface.blit(self.image, self.rect.topleft)
+                    surface.blit(self.image, self.rect.topleft)     
         
-        # Add a glowing core to all projectiles
-        if not self.is_orbiting and (not hasattr(self, 'boss_level') or self.boss_level != 10):
-            # For Boss 8 and 10 projectiles, don't use a core
-            if hasattr(self, 'boss_level') and (self.boss_level == 8 or self.boss_level == 10):
-                # No core for boss 8 projectiles
-                pass
-            else:
-                # Create a small white core at the center for extra brightness (original behavior)
-                core_size = int(TILE_SIZE // 3)
-                core_surface = pygame.Surface((core_size, core_size), pygame.SRCALPHA)
-                
-                # White core with high alpha
-                pygame.draw.circle(core_surface, (255, 255, 255, 200), (core_size // 2, core_size // 2), core_size // 2)
-                
-                # Draw the core centered in the projectile
-                core_x = self.rect.centerx - core_size // 2
-                core_y = self.rect.centery - core_size // 2
-                surface.blit(core_surface, (core_x, core_y))
-    
     def check_collision(self, player_rect):
         """Check if projectile collides with player"""
         # For Boss 8 floor projectiles, check if they've been activated
