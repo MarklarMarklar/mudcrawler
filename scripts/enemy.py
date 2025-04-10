@@ -3171,6 +3171,26 @@ class Boss(Enemy):
             else:
                 # Already in defensive mode, check if it's time to deactivate
                 time_in_defensive_mode = current_time - self.last_defensive_mode_time
+                
+                # NEW CODE: Shoot rope 2 seconds into defensive mode
+                if time_in_defensive_mode >= 2000 and time_in_defensive_mode < 2100 and not hasattr(self, 'rope_started_during_defense'):
+                    # Start shooting rope at 2 seconds into defensive mode
+                    self.is_shooting_rope = True
+                    self.rope_start_time = current_time
+                    self.rope_target = player
+                    self.rope_length = 0
+                    self.rope_reached_player = False
+                    self.rope_end_pos = (self.rect.centerx, self.rect.centery)
+                    self.is_pulling_player = False
+                    # Mark that we've already started rope in this defensive mode cycle
+                    self.rope_started_during_defense = True
+                    print(f"Level 4 boss starting to shoot rope at player 2 seconds into defensive mode!")
+                    
+                    # Play the boss voice when shooting rope
+                    voice_file = f"effects/boss_{self.level}_voice"
+                    self.sound_manager.play_sound(voice_file)
+                    self.last_voice_time = current_time
+                
                 if time_in_defensive_mode >= self.defensive_mode_duration:
                     # Deactivate defensive mode
                     self.defensive_mode_engaged = False
@@ -3183,21 +3203,12 @@ class Boss(Enemy):
                     # Ensure reflected damage is reset when leaving defensive mode
                     self.reflected_damage = 0
                     
-                    # After leaving defensive mode, shoot a rope at the player
-                    self.is_shooting_rope = True
-                    self.rope_start_time = current_time
-                    self.rope_target = player
-                    self.rope_length = 0
-                    self.rope_reached_player = False
-                    self.rope_end_pos = (self.rect.centerx, self.rect.centery)
-                    self.is_pulling_player = False
-                    print(f"Level 4 boss starting to shoot rope at player at time {current_time}!")
+                    # REMOVED: No longer shoot rope here since we do it at 2 seconds in
                     
-                    # Play the boss voice when leaving defensive mode
-                    voice_file = f"effects/boss_{self.level}_voice"
-                    self.sound_manager.play_sound(voice_file)
-                    self.last_voice_time = current_time
-                        
+                    # Clear the rope started flag when leaving defensive mode
+                    if hasattr(self, 'rope_started_during_defense'):
+                        delattr(self, 'rope_started_during_defense')
+                    
                     print(f"Level 4 boss leaving defensive mode at time {current_time}!")
         
         # Handle rope shooting and player pulling for boss level 4

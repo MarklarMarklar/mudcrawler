@@ -51,11 +51,11 @@ ENEMY_TYPES = {
     'level1': {'name': 'Slime', 'health': 50, 'damage': 10, 'speed': 2},
     'level2': {'name': 'Skeleton', 'health': 60, 'damage': 12, 'speed': 2},
     'level3': {'name': 'Ghost', 'health': 40, 'damage': 15, 'speed': 2},
-    'level4': {'name': 'Goblin', 'health': 70, 'damage': 20, 'speed': 2.5},
+    'level4': {'name': 'Goblin', 'health': 70, 'damage': 20, 'speed': 2.3},
     'level5': {'name': 'Dark Knight', 'health': 80, 'damage': 25, 'speed': 2},
-    'level6': {'name': 'Wizard', 'health': 65, 'damage': 35, 'speed': 2.4},
-    'level7': {'name': 'Demon', 'health': 100, 'damage': 30, 'speed': 2.4},
-    'level8': {'name': 'Dragon Spawn', 'health': 120, 'damage': 35, 'speed': 2.5},
+    'level6': {'name': 'Wizard', 'health': 65, 'damage': 35, 'speed': 2.3},
+    'level7': {'name': 'Demon', 'health': 100, 'damage': 30, 'speed': 2.3},
+    'level8': {'name': 'Dragon Spawn', 'health': 120, 'damage': 35, 'speed': 2.3},
     'level9': {'name': 'Shadow', 'health': 100, 'damage': 20, 'speed': 2.8},
     'level10': {'name': 'Dark Elf', 'health': 140, 'damage': 40, 'speed': 2.8}
 }
@@ -64,14 +64,14 @@ ENEMY_TYPES = {
 BOSS_TYPES = {
     'level1': {'name': 'King Slime', 'health': 500, 'damage': 30, 'speed': 2.2},
     'level2': {'name': 'Skeleton Lord', 'health': 700, 'damage': 25, 'speed': 2.2},
-    'level3': {'name': 'Phantom King', 'health': 600, 'damage': 25, 'speed': 3},
+    'level3': {'name': 'Phantom King', 'health': 600, 'damage': 25, 'speed': 2.8},
     'level4': {'name': 'Goblin Chief', 'health': 1000, 'damage': 30, 'speed': 3},
     'level5': {'name': 'Dark Champion', 'health': 800, 'damage': 25, 'speed': 2.2},
-    'level6': {'name': 'Arch Wizard', 'health': 1000, 'damage': 25, 'speed': 2.5},
-    'level7': {'name': 'Demon Lord', 'health': 1100, 'damage': 20, 'speed': 2.5},
-    'level8': {'name': 'Dragon', 'health': 1200, 'damage': 20, 'speed': 2.5},
+    'level6': {'name': 'Arch Wizard', 'health': 1000, 'damage': 25, 'speed': 2.3},
+    'level7': {'name': 'Demon Lord', 'health': 1100, 'damage': 20, 'speed': 2.2},
+    'level8': {'name': 'Dragon', 'health': 1200, 'damage': 20, 'speed': 2.2},
     'level9': {'name': 'Shadow King', 'health': 1300, 'damage': 30, 'speed': 3},
-    'level10': {'name': 'Dark Lord', 'health': 1500, 'damage': 30, 'speed': 2.5}
+    'level10': {'name': 'Dark Lord', 'health': 1500, 'damage': 30, 'speed': 2.8}
 }
 
 # Game States
