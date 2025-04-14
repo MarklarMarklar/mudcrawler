@@ -125,6 +125,9 @@ class Game:
         self.shake_duration = 0
         self.shake_offset = [0, 0]
         
+        # List to store delayed screen shake requests
+        self.shake_requests = []
+        
         # Initialize game variables
         self.last_frame_time = pygame.time.get_ticks()
         self.frame_times = []  # Store last N frame times
@@ -1776,6 +1779,16 @@ class Game:
             print("Player died - starting death sequence")
             # We'll show the game over screen after death animation completes
         
+        # Process delayed screen shake requests
+        current_time = pygame.time.get_ticks()
+        due_requests = [req for req in self.shake_requests if current_time >= req['trigger_at']]
+        for req in due_requests:
+            self.trigger_screen_shake(req['amount'], req['duration'])
+        self.shake_requests = [req for req in self.shake_requests if current_time < req['trigger_at']]
+
+        # Update screen shake effect
+        self.update_screen_shake()
+
     def render(self):
         # Clear screen first
         self.screen.fill(BLACK)
@@ -3105,6 +3118,15 @@ class Game:
         # Only set position if it needs to be changed
         if (mouse_x, mouse_y) != (constrained_x, constrained_y):
             pygame.mouse.set_pos((constrained_x, constrained_y))
+
+    def request_screen_shake(self, delay, amount, duration):
+        """Request a screen shake to happen after a delay."""
+        current_time = pygame.time.get_ticks()
+        self.shake_requests.append({
+            'trigger_at': current_time + delay,
+            'amount': amount,
+            'duration': duration
+        })
 
 if __name__ == "__main__":
     import argparse

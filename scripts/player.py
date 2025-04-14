@@ -575,11 +575,12 @@ class Player(pygame.sprite.Sprite):
         self.sound_manager.play_sound("effects/player_dmg")
         
         # Trigger screen shake if game instance is available
-        if self.game and hasattr(self.game, 'trigger_screen_shake'):
+        if self.game and hasattr(self.game, 'trigger_screen_shake') and hasattr(self.game, 'request_screen_shake'):
             # Scale shake amount based on damage
             shake_amount = min(12, 5 + amount)
             shake_duration = min(20, 10 + amount * 2)
-            self.game.trigger_screen_shake(amount=shake_amount, duration=shake_duration)
+            # Use request_screen_shake with a delay
+            self.game.request_screen_shake(delay=300, amount=shake_amount, duration=shake_duration)
         
         # Create blood particles effect if game instance is available
         if self.game and hasattr(self.game, 'particle_system'):

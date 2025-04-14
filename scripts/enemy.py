@@ -2576,7 +2576,7 @@ class Boss(Enemy):
         # Boss 1 blood zone attributes
         if level == 1:
             self.blood_zones = pygame.sprite.Group()
-            self.zone_creation_interval = 6000  # Create a zone every 6 seconds
+            self.zone_creation_interval = 4000  # Create a zone every 4 seconds
             self.last_zone_creation_time = 0
             self.zone_creation_delay = 2000  # First zone appears after 6 seconds of engagement
             self.combat_start_time = 0
