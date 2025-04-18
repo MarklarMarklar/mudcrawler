@@ -6,6 +6,7 @@ import random
 import math
 import atexit
 import argparse
+import traceback
 
 # Add the parent directory to the path so we can import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -62,6 +63,25 @@ class Game:
         self.glitch_last_update = 0  # Time of last glitch update
         self.glitch_update_rate = 50  # Update glitches every 50ms
         
+        # Intro scene attributes
+        self.intro_images = []
+        self.intro_current_image = 0
+        self.intro_start_time = 0
+        self.intro_image_duration = 5000  # 5 seconds per image
+        self.intro_fade_duration = 1000  # 1 second fade transition
+        self.intro_alpha = 255  # Fully opaque
+        self.intro_fading = False
+        self.intro_fade_start_time = 0
+        self.intro_fade_in = True
+        self.intro_subtitles = [
+            ["In the realm of Eldoria, peace reigned,", "and Princess Anya's laughter filled the halls."],
+            ["She was the light of my life,", "the anchor of my world."], 
+            ["Then, from the chaotic void, he emerged", "Git, the Unclean Merger."],
+            ["His corrupted code lashed out,", "ensnaring the Princess in broken data!"],
+            ["He dragged her into the murky depths", "of the Mud Crawler's Lair..."],
+            ["Through mud and conflict,", "I will merge her fate back with mine.", "Anya, I'm coming!"]
+        ]
+        
         # Try to create a simple splash screen
         try:
             # Create a black screen with logo
@@ -109,6 +129,44 @@ class Game:
             self.splash_image.fill((0, 0, 0))
             self.original_splash_image = self.splash_image
             self.glitched_splash_image = self.splash_image
+            
+        # Load intro images
+        try:
+            intro_dir = os.path.join(ASSET_PATH, "images/intro_scene")
+            if os.path.exists(intro_dir):
+                intro_files = sorted([f for f in os.listdir(intro_dir) if f.startswith('intro_') and f.endswith(('.png', '.jpg'))])
+                for file in intro_files:
+                    img_path = os.path.join(intro_dir, file)
+                    # Load the original image
+                    original_img = pygame.image.load(img_path)
+                    orig_width, orig_height = original_img.get_size()
+                    
+                    # Calculate the scaling factor to maintain aspect ratio
+                    # while fitting within the window
+                    width_ratio = WINDOW_WIDTH / orig_width
+                    height_ratio = WINDOW_HEIGHT / orig_height
+                    scale_factor = min(width_ratio, height_ratio)
+                    
+                    # Calculate new dimensions
+                    new_width = int(orig_width * scale_factor)
+                    new_height = int(orig_height * scale_factor)
+                    
+                    # Scale the image while maintaining aspect ratio
+                    img = pygame.transform.smoothscale(original_img, (new_width, new_height))
+                    self.intro_images.append({
+                        'image': img,
+                        'width': new_width,
+                        'height': new_height,
+                        'x': (WINDOW_WIDTH - new_width) // 2,  # Center horizontally
+                        'y': (WINDOW_HEIGHT - new_height) // 2  # Center vertically
+                    })
+                
+                print(f"Loaded {len(self.intro_images)} intro scene images with preserved aspect ratio")
+            else:
+                print(f"Intro scene directory not found: {intro_dir}")
+        except Exception as e:
+            print(f"Failed to load intro images: {e}")
+            traceback.print_exc()
         
         # Game configuration
         self.god_mode = False
@@ -392,8 +450,31 @@ class Game:
             if self.state == SPLASH_SCREEN:
                 if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
                     print(f"Splash screen skipped after {pygame.time.get_ticks() - self.splash_start_time}ms")
+                    if self.intro_images and len(self.intro_images) > 0:
+                        # If we have intro images, go to intro scene
+                        self.state = INTRO_SCENE
+                        self.intro_start_time = pygame.time.get_ticks()
+                        self.intro_current_image = 0
+                        self.intro_alpha = 0  # Start with fade in
+                        self.intro_fading = True
+                        self.intro_fade_in = True
+                        self.intro_fade_start_time = pygame.time.get_ticks()
+                        print("Starting intro scene")
+                        # Play intro music if available
+                        self.sound_manager.play_music('intro')
+                    else:
+                        # Otherwise go directly to menu
+                        self.state = MENU
+                        print("Starting welcome screen music (after skip)")
+                        self.sound_manager.play_music('menu')
+                continue
+                
+            # Handle intro scene - allow skipping with any key/click
+            if self.state == INTRO_SCENE:
+                if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                    print(f"Intro scene skipped at image {self.intro_current_image + 1}/{len(self.intro_images)}")
                     self.state = MENU
-                    print("Starting welcome screen music (after skip)")
+                    print("Starting welcome screen music (after intro skip)")
                     self.sound_manager.play_music('menu')
                 continue
             
@@ -729,10 +810,76 @@ class Game:
             # Check if splash duration has passed
             if current_time - self.splash_start_time >= self.splash_duration:
                 # print(f"Splash screen complete at time: {current_time - self.splash_start_time}ms")
-                self.state = MENU
-                # print("Starting welcome screen music")
-                self.sound_manager.play_music('menu')
+                if self.intro_images and len(self.intro_images) > 0:
+                    # If we have intro images, go to intro scene
+                    self.state = INTRO_SCENE
+                    self.intro_start_time = pygame.time.get_ticks()
+                    self.intro_current_image = 0
+                    self.intro_alpha = 0  # Start with fade in
+                    self.intro_fading = True
+                    self.intro_fade_in = True
+                    self.intro_fade_start_time = pygame.time.get_ticks()
+                    print("Starting intro scene")
+                    # Play intro music if available
+                    self.sound_manager.play_music('intro')
+                else:
+                    # Otherwise go directly to menu
+                    self.state = MENU
+                    # print("Starting welcome screen music")
+                    self.sound_manager.play_music('menu')
             return  # Skip other updates during splash screen
+            
+        # Update intro scene
+        if self.state == INTRO_SCENE:
+            current_time = pygame.time.get_ticks()
+            
+            # Handle fading effects
+            if self.intro_fading:
+                elapsed = current_time - self.intro_fade_start_time
+                # Calculate fade progress (0.0 to 1.0)
+                progress = min(1.0, elapsed / self.intro_fade_duration)
+                
+                if self.intro_fade_in:
+                    # Fade in (0 to 255)
+                    self.intro_alpha = int(255 * progress)
+                    # When fade in completes
+                    if progress >= 1.0:
+                        self.intro_fading = False
+                        self.intro_alpha = 255
+                else:
+                    # Fade out (255 to 0)
+                    self.intro_alpha = int(255 * (1 - progress))
+                    # When fade out completes
+                    if progress >= 1.0:
+                        self.intro_fading = False
+                        self.intro_alpha = 0
+                        
+                        # Advance to next image
+                        self.intro_current_image += 1
+                        
+                        # If we've shown all images, move to the menu
+                        if self.intro_current_image >= len(self.intro_images):
+                            print("Intro scene complete, going to menu")
+                            self.state = MENU
+                            self.sound_manager.play_music('menu')
+                        else:
+                            # Start fade in for the next image
+                            self.intro_fade_in = True
+                            self.intro_fading = True
+                            self.intro_fade_start_time = current_time
+            else:
+                # If not fading, wait for the image duration
+                # For the last image, don't auto-transition (wait for keypress instead)
+                if self.intro_current_image < len(self.intro_images) - 1:
+                    elapsed = current_time - (self.intro_fade_start_time + self.intro_fade_duration)
+                    if elapsed >= self.intro_image_duration:
+                        # Start fade out to next image
+                        self.intro_fading = True
+                        self.intro_fade_in = False
+                        self.intro_fade_start_time = current_time
+                # Last image just stays until user presses a key (handled in handle_events)
+                    
+            return  # Skip other updates during intro scene
             
         # Tell controller handler if we're in a menu or playing
         self.controller_handler.set_menu_state(self.state != PLAYING)
@@ -1098,11 +1245,12 @@ class Game:
                     self.boss_intro_original_camera_pos = (self.camera.x, self.camera.y)
                     print("Starting boss introduction sequence")
                     
-                    # Play level 10 boss music if in level 10 boss room
-                    if self.current_level == 10:
-                        self.sound_manager.play_music('level10_boss')
-                        print("Playing level 10 boss music")
-                        return
+                    # REMOVED: No longer play level 10 boss music here. 
+                    # It will be handled by play_level_appropriate_music when the game state updates.
+                    # if self.current_level == 10:
+                    #     self.sound_manager.play_music('level10_boss')
+                    #     print("Playing level 10 boss music")
+                    #     return
                 
         except Exception as e:
             print(f"Error during door transition: {e}")
@@ -1803,9 +1951,23 @@ class Game:
             current_time = pygame.time.get_ticks()
             if current_time - self.splash_start_time > self.splash_duration:
                 print("Splash screen timed out, transitioning to menu")
-                self.state = MENU
-                # Start welcome screen music after splash screen
-                self.sound_manager.play_music('menu')
+                if self.intro_images and len(self.intro_images) > 0:
+                    # If we have intro images, go to intro scene
+                    self.state = INTRO_SCENE
+                    self.intro_start_time = pygame.time.get_ticks()
+                    self.intro_current_image = 0
+                    self.intro_alpha = 0  # Start with fade in
+                    self.intro_fading = True
+                    self.intro_fade_in = True
+                    self.intro_fade_start_time = pygame.time.get_ticks()
+                    print("Starting intro scene")
+                    # Play intro music if available
+                    self.sound_manager.play_music('intro')
+                else:
+                    # Otherwise go directly to menu
+                    self.state = MENU
+                    # Start welcome screen music after splash screen
+                    self.sound_manager.play_music('menu')
                     
             # Render the splash screen
             if self.glitch_next_frame:
@@ -1814,6 +1976,94 @@ class Game:
             else:
                 # Show the normal splash screen
                 self.screen.blit(self.original_splash_image, (0, 0))
+        elif self.state == INTRO_SCENE:
+            # Render intro scene images with fade effects
+            if self.intro_images and 0 <= self.intro_current_image < len(self.intro_images):
+                # Get the current image to display
+                image_data = self.intro_images[self.intro_current_image]
+                current_image = image_data['image'].copy()
+                
+                # Apply alpha/transparency for fading
+                if self.intro_alpha < 255:
+                    # Create a copy with transparency
+                    alpha_surface = pygame.Surface(current_image.get_size(), pygame.SRCALPHA)
+                    alpha_surface.fill((255, 255, 255, self.intro_alpha))
+                    current_image.blit(alpha_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                
+                # Draw the image on screen (centered)
+                self.screen.blit(current_image, (image_data['x'], image_data['y']))
+                
+                # Draw subtitle if available
+                if self.intro_current_image < len(self.intro_subtitles):
+                    # Create subtitle font with smaller size
+                    font_path = os.path.join(ASSET_PATH, "fonts/PixelatedEleganceRegular-ovyAA.ttf")
+                    if os.path.exists(font_path):
+                        subtitle_font = pygame.font.Font(font_path, 22)  # Reduced from 28 to 22
+                    else:
+                        subtitle_font = pygame.font.Font(None, 22)  # Reduced from 28 to 22
+                    
+                    # Get the lines of text
+                    subtitle_lines = self.intro_subtitles[self.intro_current_image]
+                    num_lines = len(subtitle_lines)
+                    
+                    # Calculate total height for all lines with spacing
+                    line_height = subtitle_font.get_height()
+                    line_spacing = 8  # 8px spacing between lines
+                    total_height = (line_height * num_lines) + (line_spacing * (num_lines - 1))
+                    
+                    # Find the widest line to determine background width
+                    line_surfaces = []
+                    max_width = 0
+                    
+                    for line in subtitle_lines:
+                        line_surface = subtitle_font.render(line, True, (255, 255, 255))
+                        line_surfaces.append(line_surface)
+                        max_width = max(max_width, line_surface.get_width())
+                    
+                    # Apply alpha to each line
+                    if self.intro_alpha < 255:
+                        for i, surface in enumerate(line_surfaces):
+                            alpha_surface = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+                            alpha_surface.fill((255, 255, 255, self.intro_alpha))
+                            surface.blit(alpha_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                    
+                    # Position subtitle at bottom of screen with some padding
+                    # Move up a bit more if we have 3 lines
+                    subtitle_x = (WINDOW_WIDTH - max_width) // 2
+                    subtitle_base_y = WINDOW_HEIGHT - total_height - (70 if num_lines > 2 else 60)
+                    
+                    # Add a semi-transparent background for better readability
+                    bg_rect = pygame.Rect(
+                        subtitle_x - 20, 
+                        subtitle_base_y - 10, 
+                        max_width + 40, 
+                        total_height + 20
+                    )
+                    bg_surface = pygame.Surface((bg_rect.width, bg_rect.height), pygame.SRCALPHA)
+                    bg_surface.fill((0, 0, 0, min(150, self.intro_alpha // 2)))  # Semi-transparent black background
+                    self.screen.blit(bg_surface, (bg_rect.x, bg_rect.y))
+                    
+                    # Draw each line of the subtitle
+                    for i, line_surface in enumerate(line_surfaces):
+                        line_x = (WINDOW_WIDTH - line_surface.get_width()) // 2
+                        line_y = subtitle_base_y + (i * (line_height + line_spacing))
+                        self.screen.blit(line_surface, (line_x, line_y))
+                
+                # Add skip text with appropriate transparency
+                font = pygame.font.Font(None, 24)
+                if self.intro_current_image < len(self.intro_images) - 1:
+                    skip_text = font.render("Press any key to skip...", True, (200, 200, 200))
+                else:
+                    # For the last slide, show "Press any key to continue..." instead
+                    skip_text = font.render("Press any key to continue...", True, (255, 255, 255))
+                
+                # Apply alpha to the skip text
+                if self.intro_alpha < 255:
+                    alpha_surface = pygame.Surface(skip_text.get_size(), pygame.SRCALPHA)
+                    alpha_surface.fill((255, 255, 255, self.intro_alpha))
+                    skip_text.blit(alpha_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                
+                self.screen.blit(skip_text, (WINDOW_WIDTH - skip_text.get_width() - 20, WINDOW_HEIGHT - 40))
         elif self.state == MENU:
             if self.menu.showing_controls:
                 self.menu.draw_controls_menu()
@@ -2267,6 +2517,27 @@ class Game:
                     print(f"Splash sound file not found at: {splash_path}")
             except Exception as e:
                 print(f"Error with splash sound (outer try/catch): {e}")
+                
+        # Pre-load the intro music if it exists
+        try:
+            # Check if intro music file exists directly in the sounds directory
+            intro_music_path = os.path.join(ASSET_PATH, "sounds", "Intro.mp3")  # Note: Updated to use exact filename with capital I
+            if not os.path.exists(intro_music_path):
+                # Try lowercase name
+                intro_music_path = os.path.join(ASSET_PATH, "sounds", "intro.mp3")
+            if not os.path.exists(intro_music_path):
+                # Try .ogg format if mp3 doesn't exist
+                intro_music_path = os.path.join(ASSET_PATH, "sounds", "intro.ogg")
+            
+            if os.path.exists(intro_music_path):
+                print(f"Intro music found at: {intro_music_path}")
+                # Add the intro music to the sound manager's music tracks dictionary
+                self.sound_manager.music_tracks['intro'] = intro_music_path
+                print(f"Added intro music to sound manager: {intro_music_path}")
+            else:
+                print(f"No intro music found, will use menu music for intro scene")
+        except Exception as e:
+            print(f"Error checking for intro music: {e}")
                 
         while self.running:
             self.handle_events()

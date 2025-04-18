@@ -76,6 +76,7 @@ BOSS_TYPES = {
 
 # Game States
 SPLASH_SCREEN = 'splash_screen'
+INTRO_SCENE = 'intro_scene'  # New game state for intro cutscene
 MENU = 'menu'
 PLAYING = 'playing'
 PAUSED = 'paused'
