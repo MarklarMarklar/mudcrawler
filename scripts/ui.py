@@ -140,10 +140,12 @@ class Button:
         return False
 
 class VideoPlayer:
-    def __init__(self, video_path, screen, loop=True):
+    def __init__(self, video_path, screen, loop=True, ping_pong=False):
         self.video_path = video_path
         self.screen = screen
         self.loop = loop
+        self.ping_pong = ping_pong
+        self.playing_reverse = False
         self.is_playing = False
         
         # Skip initialization if OpenCV is not available
@@ -176,13 +178,34 @@ class VideoPlayer:
         print(f"Initialized video player for {video_path}")
         print(f"Video size: {self.width}x{self.height}, FPS: {self.fps}, Frames: {self.frame_count}")
         
-        # Read first frame
-        self.success, self.frame = self.video.read()
-        if self.success:
-            self.surface = self.convert_frame_to_surface(self.frame)
+        # For ping-pong mode, we'll need to store frames
+        self.frames = []
+        if ping_pong:
+            print(f"Ping-pong mode enabled, pre-loading frames...")
+            # Pre-load all frames for ping-pong mode
+            success = True
+            while success:
+                success, frame = self.video.read()
+                if success:
+                    # Store the frame
+                    self.frames.append(frame)
+            print(f"Loaded {len(self.frames)} frames for ping-pong mode")
+            # Reset video to first frame
+            self.current_frame = 0
+            if self.frames:
+                self.frame = self.frames[0]
+                self.surface = self.convert_frame_to_surface(self.frame)
+            else:
+                print("Error: Could not load any frames for ping-pong mode")
+                self.is_playing = False
         else:
-            print("Error: Could not read first frame")
-            self.is_playing = False
+            # Read first frame
+            self.success, self.frame = self.video.read()
+            if self.success:
+                self.surface = self.convert_frame_to_surface(self.frame)
+            else:
+                print("Error: Could not read first frame")
+                self.is_playing = False
     
     def convert_frame_to_surface(self, frame):
         """Convert OpenCV frame to a pygame surface"""
@@ -210,25 +233,45 @@ class VideoPlayer:
         
         # Check if it's time to update the frame
         if time_elapsed >= self.frame_delay:
-            # Read next frame
-            self.success, self.frame = self.video.read()
-            
-            # If end of video, loop or stop
-            if not self.success:
-                if self.loop:
-                    self.video.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    self.success, self.frame = self.video.read()
-                    if not self.success:
+            if self.ping_pong and self.frames:
+                # Ping-pong mode using stored frames
+                if not self.playing_reverse:
+                    # Playing forward
+                    self.current_frame += 1
+                    # If we reach the end, switch to reverse
+                    if self.current_frame >= len(self.frames) - 1:
+                        self.playing_reverse = True
+                else:
+                    # Playing backward
+                    self.current_frame -= 1
+                    # If we reach the beginning, switch to forward
+                    if self.current_frame <= 0:
+                        self.playing_reverse = False
+                
+                # Get the current frame
+                self.frame = self.frames[self.current_frame]
+                self.surface = self.convert_frame_to_surface(self.frame)
+                self.last_frame_time = current_time
+            else:
+                # Standard mode: Read next frame
+                self.success, self.frame = self.video.read()
+                
+                # If end of video, loop or stop
+                if not self.success:
+                    if self.loop:
+                        self.video.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        self.success, self.frame = self.video.read()
+                        if not self.success:
+                            self.is_playing = False
+                            return self.surface
+                    else:
                         self.is_playing = False
                         return self.surface
-                else:
-                    self.is_playing = False
-                    return self.surface
-            
-            # Convert frame to surface
-            self.surface = self.convert_frame_to_surface(self.frame)
-            self.current_frame += 1
-            self.last_frame_time = current_time
+                
+                # Convert frame to surface
+                self.surface = self.convert_frame_to_surface(self.frame)
+                self.current_frame += 1
+                self.last_frame_time = current_time
         
         return self.surface
     

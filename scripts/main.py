@@ -65,6 +65,7 @@ class Game:
         
         # Intro scene attributes
         self.intro_images = []
+        self.intro_videos = []
         self.intro_current_image = 0
         self.intro_start_time = 0
         self.intro_image_duration = 5000  # 5 seconds per image
@@ -73,6 +74,7 @@ class Game:
         self.intro_fading = False
         self.intro_fade_start_time = 0
         self.intro_fade_in = True
+        self.current_video_player = None
         self.intro_subtitles = [
             ["In the realm of Eldoria, peace reigned,", "and Princess Anya's laughter filled the halls."],
             ["She was the light of my life,", "the anchor of my world."], 
@@ -130,42 +132,33 @@ class Game:
             self.original_splash_image = self.splash_image
             self.glitched_splash_image = self.splash_image
             
-        # Load intro images
+        # Load intro videos and images
         try:
             intro_dir = os.path.join(ASSET_PATH, "images/intro_scene")
             if os.path.exists(intro_dir):
-                intro_files = sorted([f for f in os.listdir(intro_dir) if f.startswith('intro_') and f.endswith(('.png', '.jpg'))])
-                for file in intro_files:
-                    img_path = os.path.join(intro_dir, file)
-                    # Load the original image
-                    original_img = pygame.image.load(img_path)
-                    orig_width, orig_height = original_img.get_size()
-                    
-                    # Calculate the scaling factor to maintain aspect ratio
-                    # while fitting within the window
-                    width_ratio = WINDOW_WIDTH / orig_width
-                    height_ratio = WINDOW_HEIGHT / orig_height
-                    scale_factor = min(width_ratio, height_ratio)
-                    
-                    # Calculate new dimensions
-                    new_width = int(orig_width * scale_factor)
-                    new_height = int(orig_height * scale_factor)
-                    
-                    # Scale the image while maintaining aspect ratio
-                    img = pygame.transform.smoothscale(original_img, (new_width, new_height))
-                    self.intro_images.append({
-                        'image': img,
-                        'width': new_width,
-                        'height': new_height,
-                        'x': (WINDOW_WIDTH - new_width) // 2,  # Center horizontally
-                        'y': (WINDOW_HEIGHT - new_height) // 2  # Center vertically
-                    })
+                # Check for all 6 videos
+                for i in range(1, 7):
+                    video_path = os.path.join(intro_dir, f"intro_0{i}.mp4")
+                    if os.path.exists(video_path):
+                        # For the last video, we'll use ping-pong mode
+                        ping_pong = (i == 6)
+                        
+                        # Create placeholder entries - actual VideoPlayer will be initialized when needed
+                        self.intro_videos.append({
+                            'path': video_path,
+                            'player': None,
+                            'ping_pong': ping_pong
+                        })
+                        print(f"Found intro video: {video_path}" + (" (ping-pong)" if ping_pong else ""))
+                    else:
+                        print(f"Video not found: {video_path}")
+                        self.intro_videos.append(None)
                 
-                print(f"Loaded {len(self.intro_images)} intro scene images with preserved aspect ratio")
+                print(f"Loaded {len(self.intro_videos)} intro videos")
             else:
                 print(f"Intro scene directory not found: {intro_dir}")
         except Exception as e:
-            print(f"Failed to load intro images: {e}")
+            print(f"Failed to load intro assets: {e}")
             traceback.print_exc()
         
         # Game configuration
@@ -472,7 +465,13 @@ class Game:
             # Handle intro scene - allow skipping with any key/click
             if self.state == INTRO_SCENE:
                 if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
-                    print(f"Intro scene skipped at image {self.intro_current_image + 1}/{len(self.intro_images)}")
+                    print(f"Intro scene skipped at image {self.intro_current_image + 1}")
+                    
+                    # Stop video player if it's active
+                    if self.current_video_player:
+                        self.current_video_player.stop()
+                        self.current_video_player = None
+                    
                     self.state = MENU
                     print("Starting welcome screen music (after intro skip)")
                     self.sound_manager.play_music('menu')
@@ -810,8 +809,8 @@ class Game:
             # Check if splash duration has passed
             if current_time - self.splash_start_time >= self.splash_duration:
                 # print(f"Splash screen complete at time: {current_time - self.splash_start_time}ms")
-                if self.intro_images and len(self.intro_images) > 0:
-                    # If we have intro images, go to intro scene
+                if self.intro_videos and len(self.intro_videos) > 0:
+                    # If we have intro videos, go to intro scene
                     self.state = INTRO_SCENE
                     self.intro_start_time = pygame.time.get_ticks()
                     self.intro_current_image = 0
@@ -833,51 +832,46 @@ class Game:
         if self.state == INTRO_SCENE:
             current_time = pygame.time.get_ticks()
             
-            # Handle fading effects
-            if self.intro_fading:
-                elapsed = current_time - self.intro_fade_start_time
-                # Calculate fade progress (0.0 to 1.0)
-                progress = min(1.0, elapsed / self.intro_fade_duration)
-                
-                if self.intro_fade_in:
-                    # Fade in (0 to 255)
-                    self.intro_alpha = int(255 * progress)
-                    # When fade in completes
-                    if progress >= 1.0:
-                        self.intro_fading = False
-                        self.intro_alpha = 255
-                else:
-                    # Fade out (255 to 0)
-                    self.intro_alpha = int(255 * (1 - progress))
-                    # When fade out completes
-                    if progress >= 1.0:
-                        self.intro_fading = False
-                        self.intro_alpha = 0
-                        
-                        # Advance to next image
-                        self.intro_current_image += 1
-                        
-                        # If we've shown all images, move to the menu
-                        if self.intro_current_image >= len(self.intro_images):
-                            print("Intro scene complete, going to menu")
-                            self.state = MENU
-                            self.sound_manager.play_music('menu')
-                        else:
-                            # Start fade in for the next image
-                            self.intro_fade_in = True
-                            self.intro_fading = True
-                            self.intro_fade_start_time = current_time
+            # All screens are now video-based
+            # Initialize video player if needed
+            if self.current_video_player is None and self.intro_current_image < len(self.intro_videos):
+                video_data = self.intro_videos[self.intro_current_image]
+                if video_data:
+                    # Import here to avoid circular imports
+                    from ui import VideoPlayer
+                    # For the last video (intro_06), use ping-pong mode and loop
+                    is_last_video = (self.intro_current_image == 5)  # 0-based index, so 5 is the 6th video
+                    loop = is_last_video
+                    ping_pong = video_data.get('ping_pong', False)
+                    
+                    self.current_video_player = VideoPlayer(
+                        video_data['path'], 
+                        self.screen, 
+                        loop=loop, 
+                        ping_pong=ping_pong
+                    )
+                    print(f"Initialized video player for intro scene {self.intro_current_image + 1}" + 
+                          (" (ping-pong, looping)" if ping_pong else ""))
+            
+            # For the last video, we continue playing in ping-pong mode until a key is pressed
+            # This is handled in handle_events
+            if self.intro_current_image == 5:  # Last video (0-based index)
+                # Just keep the video playing in ping-pong mode
+                if self.current_video_player:
+                    self.current_video_player.update()
             else:
-                # If not fading, wait for the image duration
-                # For the last image, don't auto-transition (wait for keypress instead)
-                if self.intro_current_image < len(self.intro_images) - 1:
-                    elapsed = current_time - (self.intro_fade_start_time + self.intro_fade_duration)
-                    if elapsed >= self.intro_image_duration:
-                        # Start fade out to next image
-                        self.intro_fading = True
-                        self.intro_fade_in = False
-                        self.intro_fade_start_time = current_time
-                # Last image just stays until user presses a key (handled in handle_events)
+                # For other videos, check if finished playing
+                if self.current_video_player and not self.current_video_player.is_playing:
+                    # Move to next video
+                    self.intro_current_image += 1
+                    # Clean up current video player
+                    if self.current_video_player:
+                        self.current_video_player.stop()
+                        self.current_video_player = None
+            
+            # Always update video player if active
+            if self.current_video_player:
+                self.current_video_player.update()
                     
             return  # Skip other updates during intro scene
             
@@ -1941,7 +1935,7 @@ class Game:
         # Clear screen first
         self.screen.fill(BLACK)
         
-        # Handle different game states
+        # Draw based on current game state
         if self.state == SPLASH_SCREEN:
             # Simple splash screen with generated logo
             if self.splash_start_time == 0:
@@ -1977,30 +1971,19 @@ class Game:
                 # Show the normal splash screen
                 self.screen.blit(self.original_splash_image, (0, 0))
         elif self.state == INTRO_SCENE:
-            # Render intro scene images with fade effects
-            if self.intro_images and 0 <= self.intro_current_image < len(self.intro_images):
-                # Get the current image to display
-                image_data = self.intro_images[self.intro_current_image]
-                current_image = image_data['image'].copy()
+            # All screens now use videos
+            if self.current_video_player:
+                # Draw the video frame
+                self.current_video_player.draw()
                 
-                # Apply alpha/transparency for fading
-                if self.intro_alpha < 255:
-                    # Create a copy with transparency
-                    alpha_surface = pygame.Surface(current_image.get_size(), pygame.SRCALPHA)
-                    alpha_surface.fill((255, 255, 255, self.intro_alpha))
-                    current_image.blit(alpha_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-                
-                # Draw the image on screen (centered)
-                self.screen.blit(current_image, (image_data['x'], image_data['y']))
-                
-                # Draw subtitle if available
+                # Get the subtitle for this screen
                 if self.intro_current_image < len(self.intro_subtitles):
                     # Create subtitle font with smaller size
                     font_path = os.path.join(ASSET_PATH, "fonts/PixelatedEleganceRegular-ovyAA.ttf")
                     if os.path.exists(font_path):
-                        subtitle_font = pygame.font.Font(font_path, 22)  # Reduced from 28 to 22
+                        subtitle_font = pygame.font.Font(font_path, 22)
                     else:
-                        subtitle_font = pygame.font.Font(None, 22)  # Reduced from 28 to 22
+                        subtitle_font = pygame.font.Font(None, 22)
                     
                     # Get the lines of text
                     subtitle_lines = self.intro_subtitles[self.intro_current_image]
@@ -2020,15 +2003,7 @@ class Game:
                         line_surfaces.append(line_surface)
                         max_width = max(max_width, line_surface.get_width())
                     
-                    # Apply alpha to each line
-                    if self.intro_alpha < 255:
-                        for i, surface in enumerate(line_surfaces):
-                            alpha_surface = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
-                            alpha_surface.fill((255, 255, 255, self.intro_alpha))
-                            surface.blit(alpha_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-                    
                     # Position subtitle at bottom of screen with some padding
-                    # Move up a bit more if we have 3 lines
                     subtitle_x = (WINDOW_WIDTH - max_width) // 2
                     subtitle_base_y = WINDOW_HEIGHT - total_height - (70 if num_lines > 2 else 60)
                     
@@ -2040,7 +2015,7 @@ class Game:
                         total_height + 20
                     )
                     bg_surface = pygame.Surface((bg_rect.width, bg_rect.height), pygame.SRCALPHA)
-                    bg_surface.fill((0, 0, 0, min(150, self.intro_alpha // 2)))  # Semi-transparent black background
+                    bg_surface.fill((0, 0, 0, 150))  # Semi-transparent black background
                     self.screen.blit(bg_surface, (bg_rect.x, bg_rect.y))
                     
                     # Draw each line of the subtitle
@@ -2049,21 +2024,16 @@ class Game:
                         line_y = subtitle_base_y + (i * (line_height + line_spacing))
                         self.screen.blit(line_surface, (line_x, line_y))
                 
-                # Add skip text with appropriate transparency
-                font = pygame.font.Font(None, 24)
-                if self.intro_current_image < len(self.intro_images) - 1:
-                    skip_text = font.render("Press any key to skip...", True, (200, 200, 200))
-                else:
-                    # For the last slide, show "Press any key to continue..." instead
-                    skip_text = font.render("Press any key to continue...", True, (255, 255, 255))
-                
-                # Apply alpha to the skip text
-                if self.intro_alpha < 255:
-                    alpha_surface = pygame.Surface(skip_text.get_size(), pygame.SRCALPHA)
-                    alpha_surface.fill((255, 255, 255, self.intro_alpha))
-                    skip_text.blit(alpha_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-                
-                self.screen.blit(skip_text, (WINDOW_WIDTH - skip_text.get_width() - 20, WINDOW_HEIGHT - 40))
+                    # Add skip text for videos 1-5, and "press any key to continue" for video 6
+                    font = pygame.font.Font(None, 24)
+                    if self.intro_current_image < 5:  # Not the last video
+                        skip_text = font.render("Press any key to skip...", True, (200, 200, 200))
+                    else:
+                        # For the last video, show "Press any key to continue..." instead
+                        skip_text = font.render("Press any key to continue...", True, (255, 255, 255))
+                    
+                    self.screen.blit(skip_text, (WINDOW_WIDTH - skip_text.get_width() - 20, WINDOW_HEIGHT - 40))
+            
         elif self.state == MENU:
             if self.menu.showing_controls:
                 self.menu.draw_controls_menu()
